@@ -1,0 +1,24 @@
+{
+  "name": "HABA — Costeo y Presupuestos",
+  "short_name": "HABA",
+  "description": "App de costeo, precios multicanal y presupuestos para emprendedoras.",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#fbfaf6",
+  "theme_color": "#3b7c42",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

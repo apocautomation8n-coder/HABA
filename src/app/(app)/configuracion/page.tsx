@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { User, Store, Mail, ShieldCheck, LogOut, Check, Sparkles } from "lucide-react";
+import { User, Store, Mail, ShieldCheck, LogOut, Check, Sparkles, Smartphone } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
 
@@ -195,8 +195,36 @@ export default function SettingsPage() {
         </div>
       )}
 
+      {/* Instalar App en el Celular */}
+      <div className="bg-white border border-[#eef2eb] p-4 rounded-3xl flex items-center justify-between shadow-sm">
+        <div className="flex items-center gap-2.5">
+          <div className="w-9 h-9 rounded-2xl bg-[#e5f2e6] text-[#3b7c42] flex items-center justify-center">
+            <Smartphone className="w-5 h-5" />
+          </div>
+          <div>
+            <p className="text-xs font-bold text-neutral-800">Instalar en la pantalla de inicio</p>
+            <p className="text-[11px] text-neutral-500">Usá HABA como app en tu celular</p>
+          </div>
+        </div>
+        <button
+          onClick={() => {
+            const isRunningStandalone =
+              window.matchMedia("(display-mode: standalone)").matches ||
+              (window.navigator as any).standalone === true;
+            if (isRunningStandalone) {
+              alert("¡Ya tenés HABA instalada como aplicación!");
+            } else {
+              alert("Para instalar en iPhone: Toca el botón Compartir en Safari y luego 'Agregar a pantalla de inicio'. En Android: Toca el menú de 3 puntos y 'Instalar aplicación'.");
+            }
+          }}
+          className="px-3 py-1.5 bg-[#3b7c42] hover:bg-[#326b38] text-white font-semibold rounded-xl text-xs transition"
+        >
+          Instalar
+        </button>
+      </div>
+
       {/* Botón Cerrar Sesión */}
-      <div className="pt-2">
+      <div className="pt-1">
         <button
           onClick={handleLogout}
           className="w-full py-3 px-4 bg-white hover:bg-rose-50 border border-rose-200 text-rose-600 font-semibold rounded-2xl text-xs transition flex items-center justify-center gap-2 shadow-sm"

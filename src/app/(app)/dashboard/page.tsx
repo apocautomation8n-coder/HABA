@@ -5,6 +5,7 @@ import Link from "next/link";
 import { PlusCircle, ShoppingBag, Receipt, Sparkles, DollarSign, ArrowRight } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
+import { InstallPwaModal } from "@/components/InstallPwaModal";
 
 export default function DashboardPage() {
   const supabase = createClient();
@@ -49,6 +50,9 @@ export default function DashboardPage() {
 
   return (
     <div className="w-full flex flex-col space-y-4">
+      {/* Botón / Banner de Descarga PWA */}
+      <InstallPwaModal />
+
       {/* Tarjeta Mascota Consejo */}
       <div className="bg-[#e5f2e6] border border-[#cce5ce] rounded-3xl p-4 flex items-center gap-3.5 shadow-sm">
         <HabaMascot size={64} className="flex-shrink-0" />
