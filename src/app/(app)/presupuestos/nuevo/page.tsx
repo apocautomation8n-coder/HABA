@@ -1,0 +1,559 @@
+"use client";
+
+import React, { useEffect, useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import {
+  ArrowLeft,
+  Receipt,
+  Plus,
+  Trash2,
+  AlertCircle,
+  Check,
+  Sparkles,
+  ShoppingBag,
+  Percent,
+  Calendar,
+  User,
+  Phone,
+  FileText,
+  ChevronRight,
+  Share2,
+  Download,
+} from "lucide-react";
+import { HabaMascot } from "@/components/HabaMascot";
+import { createClient } from "@/lib/supabase/client";
+import { formatCurrency } from "@/lib/units";
+
+interface ProductPrice {
+  id: string;
+  channel_name: string;
+  profit_margin_percent: number;
+  selling_price: number;
+}
+
+interface Product {
+  id: string;
+  name: string;
+  total_cost: number;
+  product_prices: ProductPrice[];
+}
+
+interface QuoteItemLine {
+  productId: string;
+  productName: string;
+  channelName: string;
+  unitPrice: number;
+  quantity: number;
+}
+
+export default function NuevoPresupuestoPage() {
+  const router = useRouter();
+  const supabase = createClient();
+
+  const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Productos disponibles en catálogo
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loadingProducts, setLoadingProducts] = useState(true);
+
+  // Datos del Cliente
+  const [clientName, setClientName] = useState("");
+  const [clientContact, setClientContact] = useState("");
+  const [deliveryDate, setDeliveryDate] = useState("");
+  const [notes, setNotes] = useState("");
+  const [discountPercent, setDiscountPercent] = useState<number>(0);
+
+  // Líneas del presupuesto
+  const [items, setItems] = useState<QuoteItemLine[]>([]);
+  const [isProductPickerOpen, setIsProductPickerOpen] = useState(false);
+
+  // Cargar catálogo de productos con sus precios
+  useEffect(() => {
+    const fetchCatalog = async () => {
+      try {
+        setLoadingProducts(true);
+        const { data, error } = await supabase
+          .from("products")
+          .select(`
+            id,
+            name,
+            total_cost,
+            product_prices (
+              id,
+              channel_name,
+              profit_margin_percent,
+              selling_price
+            )
+          `)
+          .order("name", { ascending: true });
+
+        if (!error && data) {
+          setProducts(data as Product[]);
+        }
+      } catch (err) {
+        console.error("Error loading products:", err);
+      } finally {
+        setLoadingProducts(false);
+      }
+    };
+
+    fetchCatalog();
+  }, [supabase]);
+
+  // Agregar producto a la cotización
+  const handleAddProduct = (product: Product, price: ProductPrice) => {
+    setItems((prev) => [
+      ...prev,
+      {
+        productId: product.id,
+        productName: product.name,
+        channelName: price.channel_name,
+        unitPrice: price.selling_price,
+        quantity: 1,
+      },
+    ]);
+    setIsProductPickerOpen(false);
+  };
+
+  const handleUpdateItemQty = (index: number, qty: number) => {
+    setItems((prev) => {
+      const updated = [...prev];
+      updated[index].quantity = qty;
+      return updated;
+    });
+  };
+
+  const handleUpdateItemPrice = (index: number, price: number) => {
+    setItems((prev) => {
+      const updated = [...prev];
+      updated[index].unitPrice = price;
+      return updated;
+    });
+  };
+
+  const handleRemoveItem = (index: number) => {
+    setItems((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  // Cálculos reactivos de subtotales y total congelado
+  const subtotal = useMemo(() => {
+    return items.reduce((acc, item) => acc + item.unitPrice * (item.quantity || 0), 0);
+  }, [items]);
+
+  const discountAmount = useMemo(() => {
+    if (!discountPercent || discountPercent <= 0) return 0;
+    return subtotal * (discountPercent / 100);
+  }, [subtotal, discountPercent]);
+
+  const total = useMemo(() => {
+    return Math.max(0, subtotal - discountAmount);
+  }, [subtotal, discountAmount]);
+
+  // Guardar presupuesto congelado en Supabase
+  const handleSaveQuote = async () => {
+    setErrorMsg(null);
+    if (!clientName.trim()) {
+      setErrorMsg("El nombre del cliente o contacto es obligatorio");
+      return;
+    }
+    if (items.length === 0) {
+      setErrorMsg("Agregá al menos un producto al presupuesto");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) throw new Error("Sesión no válida");
+
+      // Generar número correlativo o de referencia: PRES-YYYYMMDD-XXXX
+      const datePart = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+      const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+      const quoteNumber = `PRES-${datePart}-${randomSuffix}`;
+
+      // 1. Insertar en tabla quotes
+      const { data: quoteData, error: quoteError } = await supabase
+        .from("quotes")
+        .insert({
+          user_id: user.id,
+          quote_number: quoteNumber,
+          client_name: clientName.trim(),
+          client_contact: clientContact.trim() || null,
+          delivery_date: deliveryDate ? new Date(deliveryDate).toISOString() : null,
+          discount_percent: discountPercent || 0,
+          subtotal: subtotal,
+          total: total,
+          notes: notes.trim() || null,
+        })
+        .select()
+        .single();
+
+      if (quoteError || !quoteData) {
+        throw new Error(quoteError?.message || "Error al crear presupuesto");
+      }
+
+      // 2. Insertar los items congelados en quote_items
+      const quoteItemsToInsert = items.map((item) => ({
+        quote_id: quoteData.id,
+        product_name: item.productName,
+        channel_name: item.channelName,
+        unit_price: item.unitPrice,
+        quantity: item.quantity,
+        subtotal: item.unitPrice * item.quantity,
+      }));
+
+      const { error: itemsError } = await supabase
+        .from("quote_items")
+        .insert(quoteItemsToInsert);
+
+      if (itemsError) {
+        console.error("Error inserting quote items:", itemsError);
+      }
+
+      // Redirigir a listado de presupuestos
+      router.push("/presupuestos");
+    } catch (err: any) {
+      setErrorMsg(err.message || "Error al generar el presupuesto");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="w-full flex flex-col space-y-4 pb-12">
+      {/* Encabezado con Volver */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Link
+            href="/presupuestos"
+            className="p-2 bg-white hover:bg-neutral-100 text-neutral-600 rounded-2xl border border-neutral-200 shadow-sm transition"
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </Link>
+          <div>
+            <h2 className="text-xl font-bold text-neutral-800">Nuevo Presupuesto</h2>
+            <p className="text-xs text-neutral-500">Cotización con valores congelados y exportación</p>
+          </div>
+        </div>
+      </div>
+
+      {errorMsg && (
+        <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl text-rose-700 text-xs flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 flex-shrink-0" />
+          <span>{errorMsg}</span>
+        </div>
+      )}
+
+      {/* Tarjeta de Resumen Total */}
+      <div className="bg-[#e5f2e6] border border-[#cce5ce] p-4 rounded-3xl flex items-center justify-between shadow-sm">
+        <div>
+          <span className="text-[10px] font-bold uppercase tracking-wider text-[#306236] block">
+            Total Presupuestado
+          </span>
+          <span className="text-xs text-[#2a4f2f]">
+            Subtotal: {formatCurrency(subtotal)}
+            {discountPercent > 0 && ` | Dcto: -${discountPercent}%`}
+          </span>
+        </div>
+        <div className="text-right">
+          <span className="text-2xl font-black text-[#244228]">
+            {formatCurrency(total)}
+          </span>
+          <span className="text-[9px] block text-[#306236]">Valor final congelado</span>
+        </div>
+      </div>
+
+      {/* Formulario: Datos del Cliente */}
+      <div className="bg-white p-5 rounded-3xl border border-[#eef2eb] shadow-sm space-y-4">
+        <div className="flex items-center gap-2 border-b border-neutral-100 pb-3">
+          <User className="w-5 h-5 text-[#3b7c42]" />
+          <h3 className="text-sm font-bold text-neutral-800">1. Datos del Cliente</h3>
+        </div>
+
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-neutral-700">
+              Nombre o Razón Social <span className="text-rose-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={clientName}
+              onChange={(e) => setClientName(e.target.value)}
+              placeholder="Ej: Laura Gómez, Tienda Creaciones..."
+              className="w-full px-3.5 py-2.5 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#4f9856] outline-none"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-neutral-700 flex items-center gap-1">
+                <Phone className="w-3.5 h-3.5 text-neutral-400" />
+                <span>Teléfono / WhatsApp</span>
+              </label>
+              <input
+                type="text"
+                value={clientContact}
+                onChange={(e) => setClientContact(e.target.value)}
+                placeholder="Ej: +54 9 11 1234-5678"
+                className="w-full px-3.5 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#4f9856] outline-none"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-neutral-700 flex items-center gap-1">
+                <Calendar className="w-3.5 h-3.5 text-neutral-400" />
+                <span>Fecha Estimada de Entrega</span>
+              </label>
+              <input
+                type="date"
+                value={deliveryDate}
+                onChange={(e) => setDeliveryDate(e.target.value)}
+                className="w-full px-3.5 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#4f9856] outline-none"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Formulario: Productos a Cotizar */}
+      <div className="bg-white p-5 rounded-3xl border border-[#eef2eb] shadow-sm space-y-4">
+        <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+          <div className="flex items-center gap-2">
+            <ShoppingBag className="w-5 h-5 text-[#3b7c42]" />
+            <div>
+              <h3 className="text-sm font-bold text-neutral-800">2. Productos a Presupuestar</h3>
+              <p className="text-[11px] text-neutral-400">
+                Seleccioná el producto y el canal de venta aplicado
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setIsProductPickerOpen(true)}
+            className="py-1.5 px-3 bg-[#e5f2e6] hover:bg-[#cce5ce] text-[#306236] rounded-2xl text-xs font-bold flex items-center gap-1 transition"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Agregar</span>
+          </button>
+        </div>
+
+        {items.length === 0 ? (
+          <div className="py-8 text-center space-y-3 bg-neutral-50 rounded-2xl border border-dashed border-neutral-200">
+            <Receipt className="w-8 h-8 text-neutral-300 mx-auto" />
+            <p className="text-xs text-neutral-500 max-w-[220px] mx-auto">
+              Aún no agregaste productos a este presupuesto.
+            </p>
+            <button
+              onClick={() => setIsProductPickerOpen(true)}
+              className="py-2 px-4 bg-[#3b7c42] text-white text-xs font-bold rounded-2xl shadow-sm"
+            >
+              Elegir del Catálogo
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {items.map((item, idx) => {
+              const lineTotal = item.unitPrice * item.quantity;
+
+              return (
+                <div
+                  key={idx}
+                  className="p-3 bg-neutral-50 rounded-2xl border border-neutral-200/80 space-y-2.5"
+                >
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <span className="text-xs font-bold text-neutral-800 block">
+                        {item.productName}
+                      </span>
+                      <span className="text-[10px] text-[#306236] bg-[#e5f2e6] px-1.5 py-0.5 rounded-md font-semibold inline-block mt-0.5">
+                        Canal: {item.channelName}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => handleRemoveItem(idx)}
+                      className="p-1 text-neutral-400 hover:text-rose-500 rounded-lg transition"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 pt-1 border-t border-neutral-200/50">
+                    <div className="flex items-center gap-1.5">
+                      <label className="text-[11px] font-semibold text-neutral-600">Cant:</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={item.quantity}
+                        onChange={(e) =>
+                          handleUpdateItemQty(idx, parseInt(e.target.value) || 1)
+                        }
+                        className="w-16 px-2 py-1 text-xs bg-white border border-neutral-200 rounded-xl text-center font-bold outline-none focus:border-[#4f9856]"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-end gap-1.5">
+                      <label className="text-[11px] font-semibold text-neutral-600">Unit ($):</label>
+                      <input
+                        type="number"
+                        step="any"
+                        value={item.unitPrice}
+                        onChange={(e) =>
+                          handleUpdateItemPrice(idx, parseFloat(e.target.value) || 0)
+                        }
+                        className="w-24 px-2 py-1 text-xs bg-white border border-neutral-200 rounded-xl text-right font-bold outline-none focus:border-[#4f9856]"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="text-right pt-1 border-t border-neutral-200/40">
+                    <span className="text-[11px] text-neutral-400 mr-1">Subtotal ítem:</span>
+                    <span className="text-xs font-black text-[#244228]">
+                      {formatCurrency(lineTotal)}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Descuento y Notas */}
+        <div className="pt-3 border-t border-neutral-100 space-y-3">
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-semibold text-neutral-700 flex items-center gap-1">
+              <Percent className="w-3.5 h-3.5 text-neutral-400" />
+              <span>Descuento global (%)</span>
+            </label>
+            <div className="relative">
+              <input
+                type="number"
+                min="0"
+                max="100"
+                value={discountPercent}
+                onChange={(e) => setDiscountPercent(parseFloat(e.target.value) || 0)}
+                className="w-20 px-2.5 py-1 text-xs bg-neutral-50 border border-neutral-200 rounded-xl text-center font-bold outline-none focus:border-[#4f9856]"
+              />
+              <span className="absolute right-2.5 top-1 text-xs text-neutral-400 font-bold">
+                %
+              </span>
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-neutral-700 flex items-center gap-1">
+              <FileText className="w-3.5 h-3.5 text-neutral-400" />
+              <span>Condiciones o notas para el cliente</span>
+            </label>
+            <textarea
+              rows={2}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Ej: Seña del 50% al encargar. Validez de presupuesto: 7 días corridos..."
+              className="w-full px-3.5 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#4f9856] outline-none resize-none"
+            />
+          </div>
+        </div>
+
+        <div className="pt-2 flex justify-end">
+          <button
+            onClick={handleSaveQuote}
+            disabled={loading || items.length === 0}
+            className="w-full py-3.5 bg-[#3b7c42] hover:bg-[#326b38] disabled:opacity-60 text-white rounded-2xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-md"
+          >
+            {loading ? (
+              <span>Generando Presupuesto...</span>
+            ) : (
+              <>
+                <Check className="w-4 h-4" />
+                <span>Emitir y Guardar Presupuesto</span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* MODAL SELECTOR DE PRODUCTOS Y PRECIOS */}
+      {isProductPickerOpen && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl border border-[#eef2eb] max-h-[85vh] flex flex-col animate-in slide-in-from-bottom-6">
+            <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
+              <h3 className="text-sm font-bold text-neutral-800">Agregar Producto del Catálogo</h3>
+              <button
+                onClick={() => setIsProductPickerOpen(false)}
+                className="p-1.5 text-neutral-400 hover:text-neutral-600 rounded-full"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 my-3 space-y-3 pr-1">
+              {products.length === 0 ? (
+                <div className="p-4 text-center text-xs text-neutral-500">
+                  No tenés productos cargados en tu catálogo. Creá uno en Productos primero.
+                </div>
+              ) : (
+                products.map((prod) => (
+                  <div
+                    key={prod.id}
+                    className="p-3 bg-neutral-50 rounded-2xl border border-neutral-200/80 space-y-2"
+                  >
+                    <span className="text-xs font-bold text-neutral-800 block">
+                      {prod.name}
+                    </span>
+
+                    <div className="space-y-1.5">
+                      {prod.product_prices && prod.product_prices.length > 0 ? (
+                        prod.product_prices.map((price) => (
+                          <button
+                            key={price.id}
+                            onClick={() => handleAddProduct(prod, price)}
+                            className="w-full p-2 bg-white hover:bg-[#e5f2e6] border border-neutral-200 hover:border-[#3b7c42] rounded-xl flex items-center justify-between text-xs transition"
+                          >
+                            <span className="font-semibold text-neutral-700">
+                              {price.channel_name}
+                            </span>
+                            <span className="font-extrabold text-[#244228]">
+                              {formatCurrency(price.selling_price)}
+                            </span>
+                          </button>
+                        ))
+                      ) : (
+                        <button
+                          onClick={() =>
+                            handleAddProduct(prod, {
+                              id: "default",
+                              channel_name: "General",
+                              profit_margin_percent: 0,
+                              selling_price: prod.total_cost,
+                            })
+                          }
+                          className="w-full p-2 bg-white hover:bg-[#e5f2e6] border border-neutral-200 rounded-xl flex items-center justify-between text-xs"
+                        >
+                          <span className="font-semibold text-neutral-700">Precio Base</span>
+                          <span className="font-extrabold text-[#244228]">
+                            {formatCurrency(prod.total_cost)}
+                          </span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <button
+              onClick={() => setIsProductPickerOpen(false)}
+              className="w-full py-2.5 bg-neutral-100 text-neutral-700 text-xs font-semibold rounded-2xl"
+            >
+              Cerrar
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

@@ -1,12 +1,26 @@
 "use client";
 
 import React, { useEffect, useState, useMemo } from "react";
-import { Boxes, Plus, Search, Sparkles, Edit2, History, Trash2, Package, Tag, Layers } from "lucide-react";
+import {
+  Boxes,
+  Plus,
+  Search,
+  Sparkles,
+  Edit2,
+  History,
+  Trash2,
+  Package,
+  Layers,
+  Clock,
+  TrendingUp,
+  ChevronRight,
+} from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency, calculateUnitCost } from "@/lib/units";
 import { SupplyModal, SupplyItem } from "@/components/SupplyModal";
-import { SupplyHistoryModal } from "@/components/SupplyHistoryModal";
+import { PriceHistoryDrawer } from "@/components/insumos/PriceHistoryDrawer";
+import { Insumo, PriceRecord } from "@/types/insumo";
 
 export default function InsumosPage() {
   const supabase = createClient();
@@ -19,7 +33,10 @@ export default function InsumosPage() {
   // Modales
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSupply, setEditingSupply] = useState<SupplyItem | null>(null);
-  const [historySupply, setHistorySupply] = useState<SupplyItem | null>(null);
+
+  // Rolan's Price History Drawer integration
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [selectedInsumoForDrawer, setSelectedInsumoForDrawer] = useState<Insumo | null>(null);
 
   const loadSupplies = async () => {
     try {
@@ -62,6 +79,95 @@ export default function InsumosPage() {
     }
   };
 
+  // Abrir Drawer de Rolan cargando el histórico real desde Supabase
+  const handleOpenHistoryDrawer = async (supply: SupplyItem) => {
+    if (!supply.id) return;
+
+    try {
+      const { data: historyData } = await supabase
+        .from("supply_price_history")
+        .select("*")
+        .eq("supply_id", supply.id)
+        .order("date", { ascending: true });
+
+      const records: PriceRecord[] =
+        historyData && historyData.length > 0
+          ? historyData.map((h: any) => ({
+              id: String(h.id),
+              price: Number(h.price),
+              date: h.date || h.created_at || new Date().toISOString(),
+              note: h.note || undefined,
+            }))
+          : [
+              {
+                id: "init-" + supply.id,
+                price: Number(supply.current_price),
+                date: supply.updated_at || supply.created_at || new Date().toISOString(),
+                note: "Precio de reposición actual",
+              },
+            ];
+
+      const insumoModel: Insumo = {
+        id: supply.id,
+        name: supply.name,
+        category: supply.category === "packaging" ? "Packaging" : "Materia Prima",
+        current_price: supply.current_price,
+        purchase_unit: supply.purchase_unit,
+        purchase_quantity: supply.purchase_quantity,
+        updated_at: supply.updated_at || supply.created_at || new Date().toISOString(),
+        history: records,
+      };
+
+      setSelectedInsumoForDrawer(insumoModel);
+      setIsDrawerOpen(true);
+    } catch (err) {
+      console.error("Error opening history drawer:", err);
+    }
+  };
+
+  // Guardar nuevo registro de precio desde el Drawer
+  const handleAddPriceFromDrawer = async (
+    insumoId: string,
+    newRecordData: Omit<PriceRecord, "id">
+  ) => {
+    try {
+      // 1. Actualizar el precio actual del insumo en supplies
+      await supabase
+        .from("supplies")
+        .update({
+          current_price: newRecordData.price,
+          updated_at: newRecordData.date,
+        })
+        .eq("id", insumoId);
+
+      // 2. Insertar en supply_price_history
+      await supabase.from("supply_price_history").insert({
+        supply_id: insumoId,
+        price: newRecordData.price,
+        date: newRecordData.date,
+        note: newRecordData.note,
+      });
+
+      // Recargar lista y actualizar estado local
+      await loadSupplies();
+
+      if (selectedInsumoForDrawer && selectedInsumoForDrawer.id === insumoId) {
+        const newRecord: PriceRecord = {
+          ...newRecordData,
+          id: "rec-" + Date.now(),
+        };
+        setSelectedInsumoForDrawer({
+          ...selectedInsumoForDrawer,
+          current_price: newRecordData.price,
+          updated_at: newRecordData.date,
+          history: [...selectedInsumoForDrawer.history, newRecord],
+        });
+      }
+    } catch (err: any) {
+      alert("Error al actualizar precio: " + err.message);
+    }
+  };
+
   const filteredSupplies = useMemo(() => {
     return supplies.filter((item) => {
       const matchesCategory = filter === "todos" || item.category === filter;
@@ -79,7 +185,7 @@ export default function InsumosPage() {
   }, [supplies]);
 
   return (
-    <div className="w-full flex flex-col space-y-4">
+    <div className="w-full flex flex-col space-y-4 pb-12">
       {/* Encabezado del Módulo */}
       <div className="flex items-center justify-between">
         <div>
@@ -113,7 +219,7 @@ export default function InsumosPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Buscar insumo (ej: harina, caja, tela...)"
-          className="w-full pl-10 pr-4 py-2 text-xs bg-white border border-neutral-200 rounded-2xl focus:border-[#4f9856] focus:ring-2 focus:ring-[#e5f2e6] outline-none shadow-sm transition"
+          className="w-full pl-10 pr-4 py-2.5 text-xs bg-white border border-neutral-200 rounded-2xl focus:border-[#4f9856] focus:ring-2 focus:ring-[#e5f2e6] outline-none shadow-sm transition"
         />
       </div>
 
@@ -224,11 +330,11 @@ export default function InsumosPage() {
                   {/* Acciones */}
                   <div className="flex items-center gap-1">
                     <button
-                      onClick={() => setHistorySupply(supply)}
+                      onClick={() => handleOpenHistoryDrawer(supply)}
                       className="p-1.5 text-neutral-400 hover:text-amber-600 hover:bg-amber-50 rounded-xl transition"
-                      title="Ver historial de precios"
+                      title="Ver gráfico e historial de precios"
                     >
-                      <History className="w-4 h-4" />
+                      <TrendingUp className="w-4 h-4" />
                     </button>
                     <button
                       onClick={() => {
@@ -251,26 +357,32 @@ export default function InsumosPage() {
                 </div>
 
                 {/* Precios y Costo Unitario */}
-                <div className="bg-neutral-50 rounded-2xl p-3 flex items-center justify-between border border-neutral-100">
+                <div
+                  onClick={() => handleOpenHistoryDrawer(supply)}
+                  className="bg-neutral-50 hover:bg-[#f3f8f3] cursor-pointer rounded-2xl p-3 flex items-center justify-between border border-neutral-100 transition"
+                >
                   <div>
                     <span className="text-[10px] text-neutral-400 block font-medium">
-                      Precio de Reposición
+                      Precio de Reposición (ARS)
                     </span>
                     <span className="text-xs font-bold text-neutral-700">
                       {formatCurrency(supply.current_price)}
                     </span>
                   </div>
 
-                  <div className="text-right">
-                    <span className="text-[10px] text-[#306236] block font-semibold">
-                      Costo por {supply.use_unit}
-                    </span>
-                    <span className="text-sm font-black text-[#244228]">
-                      {formatCurrency(unitCost)}
-                      <span className="text-[10px] font-normal text-neutral-400">
-                        /{supply.use_unit}
+                  <div className="flex items-center gap-2">
+                    <div className="text-right">
+                      <span className="text-[10px] text-[#306236] block font-semibold">
+                        Costo por {supply.use_unit}
                       </span>
-                    </span>
+                      <span className="text-sm font-black text-[#244228]">
+                        {formatCurrency(unitCost)}
+                        <span className="text-[10px] font-normal text-neutral-400">
+                          /{supply.use_unit}
+                        </span>
+                      </span>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-neutral-400" />
                   </div>
                 </div>
               </div>
@@ -290,11 +402,12 @@ export default function InsumosPage() {
         initialSupply={editingSupply}
       />
 
-      {/* Modal de Historial de Precios */}
-      <SupplyHistoryModal
-        isOpen={!!historySupply}
-        onClose={() => setHistorySupply(null)}
-        supply={historySupply}
+      {/* Drawer Lateral de Historial y Gráfico de Precios (Rolan integration) */}
+      <PriceHistoryDrawer
+        isOpen={isDrawerOpen}
+        onClose={() => setIsDrawerOpen(false)}
+        insumo={selectedInsumoForDrawer}
+        onAddPriceRecord={handleAddPriceFromDrawer}
       />
     </div>
   );
