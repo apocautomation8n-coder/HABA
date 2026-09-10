@@ -49,31 +49,31 @@ export default function DashboardPage() {
   }, [supabase]);
 
   return (
-    <div className="w-full flex flex-col space-y-4">
+    <div className="w-full flex flex-col space-y-3 pb-2">
       {/* Botón / Banner de Descarga PWA */}
       <InstallPwaModal />
 
       {/* Tarjeta Mascota Consejo */}
-      <div className="bg-[#e5f2e6] border border-[#cce5ce] rounded-3xl p-4 flex items-center gap-3.5 shadow-sm">
-        <HabaMascot size={64} className="flex-shrink-0" />
+      <div className="bg-[#e5f2e6] border border-[#cce5ce] rounded-3xl p-3.5 flex items-center gap-3 shadow-xs">
+        <HabaMascot size={56} className="flex-shrink-0" />
         <div>
-          <h2 className="text-sm font-bold text-[#2a4f2f]">
+          <h2 className="text-xs sm:text-sm font-bold text-[#2a4f2f]">
             ¡Hola{userName ? `, ${userName}` : ""}! 🌿
           </h2>
-          <p className="text-xs text-[#3b7c42] mt-0.5 leading-relaxed">
-            Cada paso te acerca a conocer el verdadero costo de tus productos y cobrar lo que vale tu trabajo.
+          <p className="text-[11px] text-[#3b7c42] mt-0.5 leading-snug">
+            Cada paso te acerca a conocer el verdadero costo de tus creaciones y cobrar lo que vale tu trabajo.
           </p>
         </div>
       </div>
 
       {/* Accesos directos principales (Grid 2x2) */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-2.5">
         <Link
           href="/insumos"
-          className="bg-white p-4 rounded-3xl border border-[#eef2eb] shadow-sm hover:shadow-md hover:border-[#cce5ce] transition flex flex-col items-center text-center space-y-2 group"
+          className="bg-white p-3.5 rounded-3xl border border-[#eef2eb] shadow-xs hover:shadow-sm hover:border-[#cce5ce] transition flex flex-col items-center text-center space-y-1.5 group"
         >
-          <div className="w-11 h-11 rounded-2xl bg-[#e5f2e6] text-[#3b7c42] flex items-center justify-center group-hover:scale-110 transition-transform">
-            <PlusCircle className="w-6 h-6" />
+          <div className="w-10 h-10 rounded-2xl bg-[#e5f2e6] text-[#3b7c42] flex items-center justify-center group-hover:scale-105 transition-transform">
+            <PlusCircle className="w-5 h-5" />
           </div>
           <div>
             <span className="block text-xs font-bold text-neutral-800">Insumos</span>
@@ -85,10 +85,10 @@ export default function DashboardPage() {
 
         <Link
           href="/productos"
-          className="bg-white p-4 rounded-3xl border border-[#eef2eb] shadow-sm hover:shadow-md hover:border-rose-200 transition flex flex-col items-center text-center space-y-2 group"
+          className="bg-white p-3.5 rounded-3xl border border-[#eef2eb] shadow-xs hover:shadow-sm hover:border-rose-200 transition flex flex-col items-center text-center space-y-1.5 group"
         >
-          <div className="w-11 h-11 rounded-2xl bg-rose-50 text-rose-500 flex items-center justify-center group-hover:scale-110 transition-transform">
-            <ShoppingBag className="w-6 h-6" />
+          <div className="w-10 h-10 rounded-2xl bg-rose-50 text-rose-500 flex items-center justify-center group-hover:scale-105 transition-transform">
+            <ShoppingBag className="w-5 h-5" />
           </div>
           <div>
             <span className="block text-xs font-bold text-neutral-800">Productos</span>
@@ -100,10 +100,10 @@ export default function DashboardPage() {
 
         <Link
           href="/presupuestos"
-          className="bg-white p-4 rounded-3xl border border-[#eef2eb] shadow-sm hover:shadow-md hover:border-amber-200 transition flex flex-col items-center text-center space-y-2 group"
+          className="bg-white p-3.5 rounded-3xl border border-[#eef2eb] shadow-xs hover:shadow-sm hover:border-amber-200 transition flex flex-col items-center text-center space-y-1.5 group"
         >
-          <div className="w-11 h-11 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center group-hover:scale-110 transition-transform">
-            <Receipt className="w-6 h-6" />
+          <div className="w-10 h-10 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center group-hover:scale-105 transition-transform">
+            <Receipt className="w-5 h-5" />
           </div>
           <div>
             <span className="block text-xs font-bold text-neutral-800">Presupuestos</span>
@@ -115,10 +115,10 @@ export default function DashboardPage() {
 
         <Link
           href="/gastos"
-          className="bg-white p-4 rounded-3xl border border-[#eef2eb] shadow-sm hover:shadow-md hover:border-sky-200 transition flex flex-col items-center text-center space-y-2 group"
+          className="bg-white p-3.5 rounded-3xl border border-[#eef2eb] shadow-xs hover:shadow-sm hover:border-sky-200 transition flex flex-col items-center text-center space-y-1.5 group"
         >
-          <div className="w-11 h-11 rounded-2xl bg-sky-50 text-sky-600 flex items-center justify-center group-hover:scale-110 transition-transform">
-            <DollarSign className="w-6 h-6" />
+          <div className="w-10 h-10 rounded-2xl bg-sky-50 text-sky-600 flex items-center justify-center group-hover:scale-105 transition-transform">
+            <DollarSign className="w-5 h-5" />
           </div>
           <div>
             <span className="block text-xs font-bold text-neutral-800">Gastos Fijos</span>
@@ -128,23 +128,23 @@ export default function DashboardPage() {
       </div>
 
       {/* Banner / Tip inferior */}
-      <div className="bg-white rounded-3xl p-4 border border-[#eef2eb] shadow-sm flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-xl bg-amber-100/60 text-amber-700 flex items-center justify-center flex-shrink-0">
-            <Sparkles className="w-4 h-4" />
+      <div className="bg-white rounded-3xl p-3.5 border border-[#eef2eb] shadow-xs flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-xl bg-amber-100/60 text-amber-700 flex items-center justify-center flex-shrink-0">
+            <Sparkles className="w-3.5 h-3.5" />
           </div>
           <div>
-            <p className="text-xs font-semibold text-neutral-800">
+            <p className="text-xs font-bold text-neutral-800">
               ¿Por dónde empezar?
             </p>
-            <p className="text-[11px] text-neutral-500">
-              Cargá tus insumos para luego armar tus productos.
+            <p className="text-[10.5px] text-neutral-500">
+              Cargá tus insumos para luego armar tus recetas y precios.
             </p>
           </div>
         </div>
         <Link
           href="/insumos"
-          className="p-2 text-[#3b7c42] hover:bg-[#e5f2e6] rounded-xl transition"
+          className="p-1.5 text-[#3b7c42] hover:bg-[#e5f2e6] rounded-xl transition"
         >
           <ArrowRight className="w-4 h-4" />
         </Link>
