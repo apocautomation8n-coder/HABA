@@ -8,143 +8,107 @@ import {
   TrendingUp,
   Clock,
   Sparkles,
+  Loader2,
 } from "lucide-react";
 import { Insumo, PriceRecord } from "@/types/insumo";
 import { PriceHistoryDrawer } from "@/components/insumos/PriceHistoryDrawer";
 import { HabaMascot } from "@/components/HabaMascot";
-
-// Datos iniciales de insumos basados en los mockups oficiales de HABA
-const INITIAL_INSUMOS: Insumo[] = [
-  {
-    id: "insumo-1",
-    name: "Harina 000",
-    category: "Alimentos",
-    current_price: 2500,
-    purchase_unit: "kg",
-    purchase_quantity: 1,
-    recipe_unit: "g",
-    updated_at: "2026-09-08",
-    history: [
-      { id: "p1-1", price: 1800, date: "2026-04-10", note: "Distribuidora San Martín" },
-      { id: "p1-2", price: 2000, date: "2026-05-20", note: "Compra bulto cerrado" },
-      { id: "p1-3", price: 2150, date: "2026-06-15", note: "Ajuste de precio proveedor" },
-      { id: "p1-4", price: 2300, date: "2026-07-28", note: "Supermercado Mayorista" },
-      { id: "p1-5", price: 2500, date: "2026-09-08", note: "Última reposición" },
-    ],
-  },
-  {
-    id: "insumo-2",
-    name: "Azúcar",
-    category: "Alimentos",
-    current_price: 1200,
-    purchase_unit: "kg",
-    purchase_quantity: 1,
-    recipe_unit: "g",
-    updated_at: "2026-09-05",
-    history: [
-      { id: "p2-1", price: 950, date: "2026-05-12", note: "Oferta por 10 paquetes" },
-      { id: "p2-2", price: 1050, date: "2026-06-30", note: "Mayorista" },
-      { id: "p2-3", price: 1150, date: "2026-08-10", note: "Aumento por flete" },
-      { id: "p2-4", price: 1200, date: "2026-09-05", note: "Reposición habitual" },
-    ],
-  },
-  {
-    id: "insumo-3",
-    name: "Manteca",
-    category: "Alimentos",
-    current_price: 4500,
-    purchase_unit: "kg",
-    purchase_quantity: 1,
-    recipe_unit: "g",
-    updated_at: "2026-09-07",
-    history: [
-      { id: "p3-1", price: 3200, date: "2026-04-01", note: "Lácteos del Sur" },
-      { id: "p3-2", price: 3800, date: "2026-06-15", note: "Distribuidora" },
-      { id: "p3-3", price: 4100, date: "2026-07-20", note: "Ajuste invernal" },
-      { id: "p3-4", price: 4500, date: "2026-09-07", note: "Caja por 10kg" },
-    ],
-  },
-  {
-    id: "insumo-4",
-    name: "Huevos",
-    category: "Alimentos",
-    current_price: 650,
-    purchase_unit: "u",
-    purchase_quantity: 30,
-    recipe_unit: "u",
-    updated_at: "2026-09-07",
-    history: [
-      { id: "p4-1", price: 500, date: "2026-06-01", note: "Granja local" },
-      { id: "p4-2", price: 580, date: "2026-07-15", note: "Maple x 30" },
-      { id: "p4-3", price: 650, date: "2026-09-07", note: "Aumento de granja" },
-    ],
-  },
-  {
-    id: "insumo-5",
-    name: "Cacao en polvo",
-    category: "Alimentos",
-    current_price: 2300,
-    purchase_unit: "kg",
-    purchase_quantity: 1,
-    recipe_unit: "g",
-    updated_at: "2026-09-04",
-    history: [
-      { id: "p5-1", price: 1800, date: "2026-05-10", note: "Distribuidora Repostería" },
-      { id: "p5-2", price: 2050, date: "2026-07-02", note: "Cacao alcalino" },
-      { id: "p5-3", price: 2300, date: "2026-09-04", note: "Bolsa x 5kg" },
-    ],
-  },
-  {
-    id: "insumo-6",
-    name: "Cajas de cartón",
-    category: "Packaging",
-    current_price: 350,
-    purchase_unit: "u",
-    purchase_quantity: 50,
-    recipe_unit: "u",
-    updated_at: "2026-09-02",
-    history: [
-      { id: "p6-1", price: 250, date: "2026-04-20", note: "Pack x 100 kraft" },
-      { id: "p6-2", price: 290, date: "2026-06-10", note: "Fábrica de cajas" },
-      { id: "p6-3", price: 320, date: "2026-08-15", note: "Aumento papel" },
-      { id: "p6-4", price: 350, date: "2026-09-02", note: "Último pedido" },
-    ],
-  },
-];
-
-const STORAGE_KEY = "haba_insumos_v1";
+import { createClient } from "@/lib/supabase/client";
 
 export default function InsumosPage() {
-  const [insumos, setInsumos] = useState<Insumo[]>(INITIAL_INSUMOS);
+  const supabase = createClient();
+  const [insumos, setInsumos] = useState<Insumo[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("Todos");
   const [selectedInsumo, setSelectedInsumo] = useState<Insumo | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
-  // Cargar datos persistidos en localStorage si existen
+  // Limpiar cualquier residuo de mock de versiones anteriores en localStorage
   useEffect(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setInsumos(parsed);
-        }
-      }
+      localStorage.removeItem("haba_insumos_v1");
     } catch {
-      // Usar datos iniciales si no hay localStorage
+      // Ignorar
     }
   }, []);
 
-  // Guardar en localStorage ante cambios
-  const saveInsumos = (newList: Insumo[]) => {
-    setInsumos(newList);
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(newList));
-    } catch {
-      // Ignorar errores
+  // Cargar insumos exclusivamente desde la base de datos de Supabase
+  useEffect(() => {
+    async function loadInsumos() {
+      try {
+        setLoading(true);
+
+        // Consultar la tabla supplies de Supabase
+        const { data: suppliesData, error } = await supabase
+          .from("supplies")
+          .select("*")
+          .order("name", { ascending: true });
+
+        if (error || !suppliesData || suppliesData.length === 0) {
+          setInsumos([]);
+          return;
+        }
+
+        // Consultar el historial de precios si existe la tabla
+        let historyData: any[] = [];
+        try {
+          const { data: hData } = await supabase
+            .from("supply_price_history")
+            .select("*")
+            .order("date", { ascending: true });
+          if (hData) historyData = hData;
+        } catch {
+          // Si la tabla no existe o no tiene registros
+        }
+
+        // Mapear insumos con su respectivo historial
+        const mappedInsumos: Insumo[] = suppliesData.map((item: any) => {
+          const itemHistory = historyData
+            .filter((h: any) => h.supply_id === item.id || h.insumo_id === item.id)
+            .map((h: any) => ({
+              id: String(h.id),
+              price: Number(h.price),
+              date: h.date || h.created_at || new Date().toISOString(),
+              note: h.note || h.supplier || undefined,
+            }));
+
+          // Si no tiene registros en el historial, creamos el inicial con su precio actual
+          const history: PriceRecord[] =
+            itemHistory.length > 0
+              ? itemHistory
+              : [
+                  {
+                    id: "init-" + item.id,
+                    price: Number(item.current_price ?? item.price ?? 0),
+                    date: item.updated_at || item.created_at || new Date().toISOString(),
+                    note: "Precio inicial",
+                  },
+                ];
+
+          return {
+            id: String(item.id),
+            name: item.name || "Sin nombre",
+            category: item.category || "Alimentos",
+            current_price: Number(item.current_price ?? item.price ?? 0),
+            purchase_unit: item.purchase_unit ?? item.unit ?? "u",
+            purchase_quantity: item.purchase_quantity ? Number(item.purchase_quantity) : 1,
+            recipe_unit: item.recipe_unit,
+            updated_at: item.updated_at || item.created_at || new Date().toISOString(),
+            history,
+          };
+        });
+
+        setInsumos(mappedInsumos);
+      } catch {
+        setInsumos([]);
+      } finally {
+        setLoading(false);
+      }
     }
-  };
+
+    loadInsumos();
+  }, [supabase]);
 
   // Abrir el Drawer para un insumo
   const handleOpenDrawer = (insumo: Insumo) => {
@@ -158,7 +122,7 @@ export default function InsumosPage() {
   };
 
   // Agregar un nuevo registro de precio desde el Drawer
-  const handleAddPriceRecord = (
+  const handleAddPriceRecord = async (
     insumoId: string,
     newRecordData: Omit<PriceRecord, "id">
   ) => {
@@ -167,33 +131,52 @@ export default function InsumosPage() {
       id: "rec-" + Date.now(),
     };
 
-    const updated = insumos.map((item) => {
-      if (item.id === insumoId) {
-        const updatedHistory = [...item.history, newRecord];
-        // Determinar el nuevo precio actual (el más reciente por fecha)
-        const sortedByDate = [...updatedHistory].sort(
-          (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
-        );
-        const latestPrice = sortedByDate[sortedByDate.length - 1].price;
+    // Actualizar estado local
+    setInsumos((prev) =>
+      prev.map((item) => {
+        if (item.id === insumoId) {
+          const updatedHistory = [...item.history, newRecord];
+          const sortedByDate = [...updatedHistory].sort(
+            (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+          );
+          const latestPrice = sortedByDate[sortedByDate.length - 1].price;
 
-        const updatedInsumo: Insumo = {
-          ...item,
-          current_price: latestPrice,
+          const updatedInsumo: Insumo = {
+            ...item,
+            current_price: latestPrice,
+            updated_at: newRecord.date,
+            history: updatedHistory,
+          };
+
+          setSelectedInsumo(updatedInsumo);
+          return updatedInsumo;
+        }
+        return item;
+      })
+    );
+
+    // Intentar persistir en Supabase
+    try {
+      await supabase
+        .from("supplies")
+        .update({
+          current_price: newRecord.price,
           updated_at: newRecord.date,
-          history: updatedHistory,
-        };
+        })
+        .eq("id", insumoId);
 
-        // Actualizar el insumo activo en el drawer
-        setSelectedInsumo(updatedInsumo);
-        return updatedInsumo;
-      }
-      return item;
-    });
-
-    saveInsumos(updated);
+      await supabase.from("supply_price_history").insert({
+        supply_id: insumoId,
+        price: newRecord.price,
+        date: newRecord.date,
+        note: newRecord.note,
+      });
+    } catch {
+      // Ignorar si falla la inserción en tablas auxiliares
+    }
   };
 
-  // Filtros de categorías compatibles con la vista de Eze y los mockups
+  // Filtros de pestañas
   const filterTabs = [
     { key: "Todos", label: "Todos" },
     { key: "Alimentos", label: "Materia Prima" },
@@ -241,18 +224,20 @@ export default function InsumosPage() {
             Materia prima y packaging con historial de reposición
           </p>
         </div>
-        <button
-          onClick={() => {
-            if (filteredInsumos.length > 0) {
-              handleOpenDrawer(filteredInsumos[0]);
-            }
-          }}
-          className="p-2.5 bg-[#3b7c42] hover:bg-[#326b38] active:scale-95 text-white rounded-2xl shadow-sm transition flex items-center gap-1.5 text-xs font-semibold"
-          title="Ver historial o agregar"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Nuevo precio</span>
-        </button>
+        {insumos.length > 0 && (
+          <button
+            onClick={() => {
+              if (filteredInsumos.length > 0) {
+                handleOpenDrawer(filteredInsumos[0]);
+              }
+            }}
+            className="p-2.5 bg-[#3b7c42] hover:bg-[#326b38] active:scale-95 text-white rounded-2xl shadow-sm transition flex items-center gap-1.5 text-xs font-semibold"
+            title="Ver historial o registrar precio"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Nuevo precio</span>
+          </button>
+        )}
       </div>
 
       {/* Buscador */}
@@ -264,7 +249,7 @@ export default function InsumosPage() {
           type="text"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          placeholder="Buscar harina, azúcar, caja, manteca..."
+          placeholder="Buscar harina, azúcar, caja, cinta..."
           className="w-full pl-10 pr-4 py-2 text-xs bg-white border border-neutral-200 rounded-2xl focus:border-[#4f9856] focus:ring-2 focus:ring-[#e5f2e6] outline-none shadow-sm transition"
         />
       </div>
@@ -286,46 +271,66 @@ export default function InsumosPage() {
         ))}
       </div>
 
-      {/* Banner explicativo del historial cronológico */}
-      <div className="bg-[#eaf4ea] border border-[#cbe3cc] rounded-3xl p-3 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-xl bg-white text-[#3b7c42] flex items-center justify-center font-bold text-sm shadow-xs">
-            <TrendingUp className="w-4 h-4" />
-          </div>
+      {/* Estado de Carga */}
+      {loading ? (
+        <div className="bg-white rounded-3xl p-12 border border-[#eef2eb] shadow-sm flex flex-col items-center justify-center text-center space-y-3">
+          <Loader2 className="w-7 h-7 text-[#3b7c42] animate-spin" />
+          <p className="text-xs text-neutral-500 font-medium">
+            Cargando insumos desde la base de datos...
+          </p>
+        </div>
+      ) : insumos.length === 0 ? (
+        /* Estado vacío cuando no hay insumos en la base de datos */
+        <div className="bg-white rounded-3xl p-8 border border-[#eef2eb] shadow-sm flex flex-col items-center text-center space-y-3">
+          <HabaMascot size={80} />
           <div>
-            <p className="text-xs font-bold text-[#2a4f2f]">
-              Historial y Gráfico de Precios
-            </p>
-            <p className="text-[11px] text-[#3b7c42]">
-              Tocá cualquier insumo para abrir el panel lateral con su evolución.
+            <h3 className="text-sm font-bold text-neutral-700">
+              Aún no tenés insumos cargados
+            </h3>
+            <p className="text-xs text-neutral-500 max-w-[240px] mt-1 leading-relaxed">
+              Cargá los materiales que comprás con su precio actual de reposición para calcular tus recetas.
             </p>
           </div>
         </div>
-      </div>
-
-      {/* Lista de Insumos */}
-      <div className="space-y-2.5">
-        {filteredInsumos.length === 0 ? (
-          <div className="bg-white rounded-3xl p-8 border border-[#eef2eb] shadow-sm flex flex-col items-center text-center space-y-3">
-            <HabaMascot size={70} />
-            <div>
-              <h3 className="text-sm font-bold text-neutral-700">
-                No se encontraron insumos
-              </h3>
-              <p className="text-xs text-neutral-500 max-w-[240px] mt-1">
-                Probá con otro término de búsqueda o seleccioná otra categoría.
-              </p>
+      ) : filteredInsumos.length === 0 ? (
+        /* Sin resultados para la búsqueda */
+        <div className="bg-white rounded-3xl p-8 border border-[#eef2eb] shadow-sm flex flex-col items-center text-center space-y-3">
+          <HabaMascot size={70} />
+          <div>
+            <h3 className="text-sm font-bold text-neutral-700">
+              No se encontraron insumos
+            </h3>
+            <p className="text-xs text-neutral-500 max-w-[240px] mt-1">
+              Probá con otro término de búsqueda o seleccioná otra categoría.
+            </p>
+          </div>
+        </div>
+      ) : (
+        /* Lista de Insumos provenientes de la base de datos */
+        <div className="space-y-2.5">
+          <div className="bg-[#eaf4ea] border border-[#cbe3cc] rounded-3xl p-3 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-xl bg-white text-[#3b7c42] flex items-center justify-center font-bold text-sm shadow-xs">
+                <TrendingUp className="w-4 h-4" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-[#2a4f2f]">
+                  Historial y Gráfico de Precios
+                </p>
+                <p className="text-[11px] text-[#3b7c42]">
+                  Tocá cualquier insumo para abrir el panel lateral con su evolución.
+                </p>
+              </div>
             </div>
           </div>
-        ) : (
-          filteredInsumos.map((insumo) => (
+
+          {filteredInsumos.map((insumo) => (
             <div
               key={insumo.id}
               onClick={() => handleOpenDrawer(insumo)}
               className="group bg-white hover:bg-[#fafcfa] active:scale-[0.99] border border-[#edf2ea] hover:border-[#cde3ce] rounded-3xl p-3.5 transition-all shadow-xs cursor-pointer flex items-center justify-between"
             >
               <div className="flex items-center gap-3">
-                {/* Icono de Insumo kawaii */}
                 <div className="w-10 h-10 rounded-2xl bg-[#f4f8f3] group-hover:bg-[#e5f2e6] border border-[#e2ebd8] flex items-center justify-center text-lg transition-colors">
                   {insumo.category === "Packaging" ? "📦" : "🌾"}
                 </div>
@@ -358,7 +363,6 @@ export default function InsumosPage() {
                 </div>
               </div>
 
-              {/* Trigger lateral */}
               <div className="flex items-center gap-1 text-neutral-400 group-hover:text-[#3b7c42] transition-colors">
                 <span className="hidden sm:inline text-xs font-medium">
                   Ver gráfico
@@ -366,9 +370,9 @@ export default function InsumosPage() {
                 <ChevronRight className="w-5 h-5 transition-transform group-hover:translate-x-0.5" />
               </div>
             </div>
-          ))
-        )}
-      </div>
+          ))}
+        </div>
+      )}
 
       {/* Drawer lateral de historial cronológico de precios */}
       <PriceHistoryDrawer
