@@ -155,8 +155,14 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-end justify-center">
-      <div className="bg-white w-full max-w-md rounded-t-3xl shadow-2xl flex flex-col border border-[#eef2eb] animate-in fade-in slide-in-from-bottom-6 duration-200" style={{ maxHeight: 'calc(100vh - env(safe-area-inset-top, 20px) - 20px)' }}>
+    <div className="fixed inset-0 z-[99999] bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center">
+      <div 
+        className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col border border-[#eef2eb] animate-in fade-in slide-in-from-bottom-6 duration-200" 
+        style={{ 
+          height: 'min(92vh, 720px)',
+          maxHeight: 'calc(100dvh - env(safe-area-inset-top, 20px) - 10px)'
+        }}
+      >
         
         {/* Header fijo */}
         <div className="p-4 pb-3 border-b border-neutral-100 flex items-center justify-between flex-shrink-0">
@@ -177,8 +183,8 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
         </div>
 
         {/* Contenido scrolleable del formulario */}
-        <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
-          <div className="overflow-y-auto px-4 py-3 space-y-3.5 flex-1">
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+          <div className="overflow-y-auto px-4 py-3 space-y-3.5 flex-1 min-h-0 overscroll-contain">
             {error && (
               <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-2 text-rose-700 text-xs">
                 <AlertCircle className="w-4 h-4 flex-shrink-0" />
@@ -348,7 +354,12 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
           </div>
 
           {/* Footer Fijo: Botones SIEMPRE visibles y bien acomodados en mobile */}
-          <div className="p-3.5 border-t border-neutral-100 bg-white flex gap-2 flex-shrink-0 rounded-b-3xl" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 8px) + 14px)' }}>
+          <div 
+            className="p-3.5 border-t border-neutral-100 bg-white flex gap-2 flex-shrink-0 rounded-b-3xl shadow-[0_-4px_16px_rgba(0,0,0,0.05)]" 
+            style={{ 
+              paddingBottom: 'max(env(safe-area-inset-bottom, 16px), 20px)' 
+            }}
+          >
             <button
               type="button"
               onClick={onClose}
