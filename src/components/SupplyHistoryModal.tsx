@@ -57,7 +57,7 @@ export const SupplyHistoryModal: React.FC<SupplyHistoryModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="bg-white w-full max-w-sm rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl max-h-[85vh] overflow-y-auto border border-[#eef2eb] animate-in fade-in slide-in-from-bottom-6 duration-200">
+      <div className="bg-white w-full max-w-sm rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl max-h-[85vh] overflow-y-auto border border-[#EAF0E8] animate-in fade-in slide-in-from-bottom-6 duration-200">
         {/* Header */}
         <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
           <div className="flex items-center gap-2">
@@ -80,16 +80,16 @@ export const SupplyHistoryModal: React.FC<SupplyHistoryModalProps> = ({
         </div>
 
         {/* Precio Actual Destacado */}
-        <div className="mt-4 p-3.5 bg-[#e5f2e6] border border-[#cce5ce] rounded-2xl flex items-center justify-between">
+        <div className="mt-4 p-3.5 bg-[#DCF4D7] border border-[#C3EBC0] rounded-2xl flex items-center justify-between">
           <div>
-            <span className="text-[10px] font-bold text-[#306236] uppercase tracking-wider block">
+            <span className="text-[10px] font-bold text-[#1F7A4C] uppercase tracking-wider block">
               Precio Actual
             </span>
-            <span className="text-xs text-[#3b7c42]">
+            <span className="text-xs text-[#3BB578]">
               por {supply.purchase_quantity} {supply.purchase_unit}
             </span>
           </div>
-          <span className="text-lg font-black text-[#244228]">
+          <span className="text-lg font-black text-[#1F7A4C]">
             {formatCurrency(supply.current_price)}
           </span>
         </div>

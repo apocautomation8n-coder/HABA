@@ -3,53 +3,78 @@
 @tailwind utilities;
 
 :root {
-  --background: #fbfaf6;
-  --foreground: #2d3748;
+  /* HABA Brand Tokens */
+  --haba-primary:         #3BB578;
+  --haba-primary-hover:   #2E9E65;
+  --haba-primary-text:    #1F7A4C;
+  --haba-highlight:       #DCF4D7;
+  --haba-highlight-border:#C3EBC0;
+  --haba-bg:              #F6F7F2;
+  --haba-card:            #FFFFFF;
+  --haba-border:          #EAF0E8;
+  --haba-text-main:       #2B2B2B;
+  --haba-text-sub:        #7A7A7A;
+  /* Pasteles */
+  --haba-pastel-green:    #E4F5E2;
+  --haba-pastel-pink:     #FFE3E3;
+  --haba-pastel-yellow:   #FFF2CE;
+  --haba-pastel-lila:     #EBDDF9;
+  /* Legacy (mantener para transición) */
+  --background: #F6F7F2;
+  --foreground: #2B2B2B;
 }
 
 body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  color: var(--haba-text-main);
+  background: var(--haba-bg);
+  font-family: var(--font-nunito), "Nunito", system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Kawaii friendly styles */
-.kawaii-card {
+/* HABA Card — estilo base para tarjetas */
+.haba-card {
   background: #ffffff;
-  border-radius: 1.75rem;
-  border: 1px solid #eef2eb;
-  box-shadow: 0 4px 20px -2px rgba(90, 130, 95, 0.07);
+  border-radius: 1.5rem;
+  border: 1px solid var(--haba-border);
+  box-shadow: 0 2px 12px -2px rgba(59, 181, 120, 0.06);
 }
 
-.kawaii-input {
-  border-radius: 1.25rem;
+/* HABA Input */
+.haba-input {
+  border-radius: 1rem;
   border: 1.5px solid #e2e8df;
   transition: all 0.2s ease;
 }
 
-.kawaii-input:focus {
-  border-color: #52a65b;
+.haba-input:focus {
+  border-color: var(--haba-primary);
   outline: none;
-  box-shadow: 0 0 0 3px rgba(82, 166, 91, 0.15);
+  box-shadow: 0 0 0 3px rgba(59, 181, 120, 0.15);
 }
 
-.kawaii-btn-primary {
-  background-color: #3b7c42;
+/* HABA Button Primary */
+.haba-btn-primary {
+  background-color: var(--haba-primary);
   color: white;
   border-radius: 1.5rem;
   font-weight: 600;
+  font-family: var(--font-nunito), "Nunito", sans-serif;
   transition: all 0.15s ease;
 }
 
-.kawaii-btn-primary:hover {
-  background-color: #326b38;
+.haba-btn-primary:hover {
+  background-color: var(--haba-primary-hover);
   transform: translateY(-1px);
 }
 
-.kawaii-btn-primary:active {
+.haba-btn-primary:active {
   transform: translateY(1px);
 }
+
+/* Kawaii aliases (legacy compat) */
+.kawaii-card  { @apply haba-card; }
+.kawaii-input { @apply haba-input; }
+.kawaii-btn-primary { @apply haba-btn-primary; }
 
 /* iOS Safe Areas */
 .safe-area-top {
@@ -59,4 +84,3 @@ body {
 .safe-area-bottom {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
-

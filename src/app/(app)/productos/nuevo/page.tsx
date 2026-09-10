@@ -318,7 +318,7 @@ export default function NuevoProductoPage() {
       </div>
 
       {/* Barra de Pasos Kawaii */}
-      <div className="bg-white p-3 rounded-3xl border border-[#eef2eb] shadow-sm flex items-center justify-between text-xs">
+      <div className="bg-white p-3 rounded-3xl border border-[#EAF0E8] shadow-sm flex items-center justify-between text-xs">
         {[
           { step: 1, label: "Detalles" },
           { step: 2, label: "Insumos" },
@@ -330,18 +330,18 @@ export default function NuevoProductoPage() {
             onClick={() => setCurrentStep(item.step)}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-2xl font-bold transition ${
               currentStep === item.step
-                ? "bg-[#3b7c42] text-white shadow-sm"
+                ? "bg-[#3BB578] text-white shadow-sm"
                 : currentStep > item.step
-                ? "bg-[#e5f2e6] text-[#306236]"
+                ? "bg-[#DCF4D7] text-[#1F7A4C]"
                 : "text-neutral-400 hover:text-neutral-600"
             }`}
           >
             <span
               className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] ${
                 currentStep === item.step
-                  ? "bg-white text-[#3b7c42]"
+                  ? "bg-white text-[#3BB578]"
                   : currentStep > item.step
-                  ? "bg-[#306236] text-white"
+                  ? "bg-[#1F7A4C] text-white"
                   : "bg-neutral-200 text-neutral-600"
               }`}
             >
@@ -360,32 +360,32 @@ export default function NuevoProductoPage() {
       )}
 
       {/* Resumen Flotante / Tarjeta de Costo en Vivo */}
-      <div className="bg-[#e5f2e6] border border-[#cce5ce] p-3.5 rounded-3xl flex items-center justify-between shadow-sm">
+      <div className="bg-[#DCF4D7] border border-[#C3EBC0] p-3.5 rounded-3xl flex items-center justify-between shadow-sm">
         <div className="flex items-center gap-2.5">
-          <Calculator className="w-5 h-5 text-[#306236]" />
+          <Calculator className="w-5 h-5 text-[#1F7A4C]" />
           <div>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-[#306236] block">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-[#1F7A4C] block">
               Costo Unitario en Vivo
             </span>
-            <span className="text-xs text-[#2a4f2f]">
+            <span className="text-xs text-[#1F7A4C]">
               Mat: {formatCurrency(directCost)}
               {includeLabor && ` | M.O: ${formatCurrency(laborCost)}`}
             </span>
           </div>
         </div>
         <div className="text-right">
-          <span className="text-lg font-black text-[#244228]">
+          <span className="text-lg font-black text-[#1F7A4C]">
             {formatCurrency(totalCost)}
           </span>
-          <span className="text-[9px] block text-[#306236]">Costo total por unidad</span>
+          <span className="text-[9px] block text-[#1F7A4C]">Costo total por unidad</span>
         </div>
       </div>
 
       {/* PASO 1: Datos Básicos */}
       {currentStep === 1 && (
-        <div className="bg-white p-5 rounded-3xl border border-[#eef2eb] shadow-sm space-y-4">
+        <div className="bg-white p-5 rounded-3xl border border-[#EAF0E8] shadow-sm space-y-4">
           <div className="flex items-center gap-2 border-b border-neutral-100 pb-3">
-            <ShoppingBag className="w-5 h-5 text-[#3b7c42]" />
+            <ShoppingBag className="w-5 h-5 text-[#3BB578]" />
             <h3 className="text-sm font-bold text-neutral-800">1. Datos del Producto</h3>
           </div>
 
@@ -398,7 +398,7 @@ export default function NuevoProductoPage() {
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Ej: Libreta A5 Cuero Artesanal, Vela de Soja 200g..."
-              className="w-full px-3.5 py-2.5 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#4f9856] focus:ring-2 focus:ring-[#e5f2e6] outline-none"
+              className="w-full px-3.5 py-2.5 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] focus:ring-2 focus:ring-[#DCF4D7] outline-none"
             />
           </div>
 
@@ -411,7 +411,7 @@ export default function NuevoProductoPage() {
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Medidas, tipo de papel, encuadernación, aromas o notas para la producción..."
-              className="w-full px-3.5 py-2.5 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#4f9856] outline-none resize-none"
+              className="w-full px-3.5 py-2.5 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none resize-none"
             />
           </div>
 
@@ -419,7 +419,7 @@ export default function NuevoProductoPage() {
             <button
               onClick={() => setCurrentStep(2)}
               disabled={!name.trim()}
-              className="py-2.5 px-5 bg-[#3b7c42] hover:bg-[#326b38] disabled:opacity-50 text-white rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+              className="py-2.5 px-5 bg-[#3BB578] hover:bg-[#2E9E65] disabled:opacity-50 text-white rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
             >
               <span>Siguiente: Insumos</span>
               <ChevronRight className="w-4 h-4" />
@@ -430,10 +430,10 @@ export default function NuevoProductoPage() {
 
       {/* PASO 2: Receta de Insumos & Packaging */}
       {currentStep === 2 && (
-        <div className="bg-white p-5 rounded-3xl border border-[#eef2eb] shadow-sm space-y-4">
+        <div className="bg-white p-5 rounded-3xl border border-[#EAF0E8] shadow-sm space-y-4">
           <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
             <div className="flex items-center gap-2">
-              <Boxes className="w-5 h-5 text-[#3b7c42]" />
+              <Boxes className="w-5 h-5 text-[#3BB578]" />
               <div>
                 <h3 className="text-sm font-bold text-neutral-800">2. Insumos & Packaging</h3>
                 <p className="text-[11px] text-neutral-400">
@@ -443,7 +443,7 @@ export default function NuevoProductoPage() {
             </div>
             <button
               onClick={() => setSupplyPickerOpen(true)}
-              className="py-1.5 px-3 bg-[#e5f2e6] hover:bg-[#cce5ce] text-[#306236] rounded-2xl text-xs font-bold flex items-center gap-1 transition"
+              className="py-1.5 px-3 bg-[#DCF4D7] hover:bg-[#C3EBC0] text-[#1F7A4C] rounded-2xl text-xs font-bold flex items-center gap-1 transition"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Agregar</span>
@@ -458,7 +458,7 @@ export default function NuevoProductoPage() {
               </p>
               <button
                 onClick={() => setSupplyPickerOpen(true)}
-                className="py-2 px-4 bg-[#3b7c42] text-white text-xs font-bold rounded-2xl shadow-sm"
+                className="py-2 px-4 bg-[#3BB578] text-white text-xs font-bold rounded-2xl shadow-sm"
               >
                 Elegir insumo
               </button>
@@ -509,7 +509,7 @@ export default function NuevoProductoPage() {
                             onChange={(e) =>
                               handleUpdateSupplyQty(idx, parseFloat(e.target.value) || 0)
                             }
-                            className="w-20 px-2 py-1 text-xs bg-white border border-neutral-200 rounded-xl text-center font-bold outline-none focus:border-[#4f9856]"
+                            className="w-20 px-2 py-1 text-xs bg-white border border-neutral-200 rounded-xl text-center font-bold outline-none focus:border-[#3BB578]"
                           />
                           <span className="text-xs font-semibold text-neutral-500">
                             {item.supply.use_unit}
@@ -518,7 +518,7 @@ export default function NuevoProductoPage() {
                       </div>
 
                       <div className="text-right">
-                        <span className="text-xs font-bold text-[#244228]">
+                        <span className="text-xs font-bold text-[#1F7A4C]">
                           {formatCurrency(subtotal)}
                         </span>
                       </div>
@@ -539,7 +539,7 @@ export default function NuevoProductoPage() {
             <button
               onClick={() => setCurrentStep(3)}
               disabled={selectedSupplies.length === 0}
-              className="py-2.5 px-5 bg-[#3b7c42] hover:bg-[#326b38] disabled:opacity-50 text-white rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+              className="py-2.5 px-5 bg-[#3BB578] hover:bg-[#2E9E65] disabled:opacity-50 text-white rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
             >
               <span>Siguiente: Mano de Obra</span>
               <ChevronRight className="w-4 h-4" />
@@ -550,9 +550,9 @@ export default function NuevoProductoPage() {
 
       {/* PASO 3: Mano de Obra & Prorrateo */}
       {currentStep === 3 && (
-        <div className="bg-white p-5 rounded-3xl border border-[#eef2eb] shadow-sm space-y-4">
+        <div className="bg-white p-5 rounded-3xl border border-[#EAF0E8] shadow-sm space-y-4">
           <div className="flex items-center gap-2 border-b border-neutral-100 pb-3">
-            <Clock className="w-5 h-5 text-[#3b7c42]" />
+            <Clock className="w-5 h-5 text-[#3BB578]" />
             <div>
               <h3 className="text-sm font-bold text-neutral-800">3. Mano de Obra y Costos Indirectos</h3>
               <p className="text-[11px] text-neutral-400">
@@ -578,7 +578,7 @@ export default function NuevoProductoPage() {
                 type="button"
                 onClick={() => setIncludeLabor(!includeLabor)}
                 className={`w-12 h-6 flex items-center rounded-full p-1 transition duration-300 ${
-                  includeLabor ? "bg-[#3b7c42]" : "bg-neutral-300"
+                  includeLabor ? "bg-[#3BB578]" : "bg-neutral-300"
                 }`}
               >
                 <div
@@ -601,15 +601,15 @@ export default function NuevoProductoPage() {
                       min="1"
                       value={workTimeMinutes}
                       onChange={(e) => setWorkTimeMinutes(parseInt(e.target.value) || 0)}
-                      className="w-20 px-2 py-1 text-xs bg-white border border-neutral-200 rounded-xl text-center font-bold outline-none focus:border-[#4f9856]"
+                      className="w-20 px-2 py-1 text-xs bg-white border border-neutral-200 rounded-xl text-center font-bold outline-none focus:border-[#3BB578]"
                     />
                     <span className="text-xs text-neutral-500 font-medium">min</span>
                   </div>
                 </div>
 
-                <div className="bg-[#e5f2e6] p-2.5 rounded-xl flex items-center justify-between text-xs">
-                  <span className="text-[#306236] font-semibold">Costo por tu tiempo:</span>
-                  <span className="font-extrabold text-[#244228]">
+                <div className="bg-[#DCF4D7] p-2.5 rounded-xl flex items-center justify-between text-xs">
+                  <span className="text-[#1F7A4C] font-semibold">Costo por tu tiempo:</span>
+                  <span className="font-extrabold text-[#1F7A4C]">
                     {formatCurrency(laborCost)}
                   </span>
                 </div>
@@ -632,7 +632,7 @@ export default function NuevoProductoPage() {
                   value={indirectCost}
                   onChange={(e) => setIndirectCost(parseFloat(e.target.value) || 0)}
                   placeholder="0.00"
-                  className="w-24 px-2 py-1 text-xs bg-white border border-neutral-200 rounded-xl text-right font-bold outline-none focus:border-[#4f9856]"
+                  className="w-24 px-2 py-1 text-xs bg-white border border-neutral-200 rounded-xl text-right font-bold outline-none focus:border-[#3BB578]"
                 />
               </div>
             </div>
@@ -650,7 +650,7 @@ export default function NuevoProductoPage() {
             </button>
             <button
               onClick={() => setCurrentStep(4)}
-              className="py-2.5 px-5 bg-[#3b7c42] hover:bg-[#326b38] text-white rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+              className="py-2.5 px-5 bg-[#3BB578] hover:bg-[#2E9E65] text-white rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
             >
               <span>Siguiente: Precios Multicanal</span>
               <ChevronRight className="w-4 h-4" />
@@ -661,9 +661,9 @@ export default function NuevoProductoPage() {
 
       {/* PASO 4: Precios Multicanal & Margen de Ganancia */}
       {currentStep === 4 && (
-        <div className="bg-white p-5 rounded-3xl border border-[#eef2eb] shadow-sm space-y-4">
+        <div className="bg-white p-5 rounded-3xl border border-[#EAF0E8] shadow-sm space-y-4">
           <div className="flex items-center gap-2 border-b border-neutral-100 pb-3">
-            <TrendingUp className="w-5 h-5 text-[#3b7c42]" />
+            <TrendingUp className="w-5 h-5 text-[#3BB578]" />
             <div>
               <h3 className="text-sm font-bold text-neutral-800">4. Precios por Canal de Venta</h3>
               <p className="text-[11px] text-neutral-400">
@@ -688,7 +688,7 @@ export default function NuevoProductoPage() {
                     <span
                       className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                         profitAmount >= 0
-                          ? "bg-[#e5f2e6] text-[#306236]"
+                          ? "bg-[#DCF4D7] text-[#1F7A4C]"
                           : "bg-rose-100 text-rose-700"
                       }`}
                     >
@@ -711,7 +711,7 @@ export default function NuevoProductoPage() {
                           onChange={(e) =>
                             handleMarginChange(idx, parseFloat(e.target.value) || 0)
                           }
-                          className="w-full px-2.5 py-1.5 text-xs bg-white border border-neutral-200 rounded-xl font-bold outline-none focus:border-[#4f9856]"
+                          className="w-full px-2.5 py-1.5 text-xs bg-white border border-neutral-200 rounded-xl font-bold outline-none focus:border-[#3BB578]"
                         />
                         <span className="absolute right-2.5 top-1.5 text-xs text-neutral-400 font-bold">
                           %
@@ -732,7 +732,7 @@ export default function NuevoProductoPage() {
                         onChange={(e) =>
                           handlePriceChange(idx, parseFloat(e.target.value) || 0)
                         }
-                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-neutral-200 rounded-xl font-bold text-[#244228] outline-none focus:border-[#4f9856]"
+                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-neutral-200 rounded-xl font-bold text-[#1F7A4C] outline-none focus:border-[#3BB578]"
                       />
                     </div>
                   </div>
@@ -751,7 +751,7 @@ export default function NuevoProductoPage() {
             <button
               onClick={handleSaveProduct}
               disabled={loading}
-              className="py-3 px-6 bg-[#3b7c42] hover:bg-[#326b38] disabled:opacity-60 text-white rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-md"
+              className="py-3 px-6 bg-[#3BB578] hover:bg-[#2E9E65] disabled:opacity-60 text-white rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-md"
             >
               {loading ? (
                 <span>Guardando Producto...</span>
@@ -770,7 +770,7 @@ export default function NuevoProductoPage() {
       {supplyPickerOpen && (
         <div className="fixed inset-0 z-[99999] bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center">
           <div
-            className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl border border-[#eef2eb] flex flex-col animate-in slide-in-from-bottom-6"
+            className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl border border-[#EAF0E8] flex flex-col animate-in slide-in-from-bottom-6"
             style={{
               height: 'min(88vh, 600px)',
               maxHeight: 'calc(100dvh - env(safe-area-inset-top, 20px) - 10px)'
@@ -808,7 +808,7 @@ export default function NuevoProductoPage() {
                       className={`w-full p-3 rounded-2xl border text-left transition flex items-center justify-between ${
                         isSelected
                           ? "bg-neutral-100 border-neutral-200 opacity-50 cursor-not-allowed"
-                          : "bg-white hover:bg-[#e5f2e6]/50 border-neutral-200 hover:border-[#3b7c42]"
+                          : "bg-white hover:bg-[#DCF4D7]/50 border-neutral-200 hover:border-[#3BB578]"
                       }`}
                     >
                       <div>
@@ -820,7 +820,7 @@ export default function NuevoProductoPage() {
                         </span>
                       </div>
                       <div className="text-right">
-                        <span className="text-xs font-bold text-[#244228]">
+                        <span className="text-xs font-bold text-[#1F7A4C]">
                           {formatCurrency(unitCost)}
                         </span>
                         <span className="text-[9px] block text-neutral-400">

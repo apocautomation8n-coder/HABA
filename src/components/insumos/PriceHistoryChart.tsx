@@ -163,7 +163,7 @@ export function PriceHistoryChart({ history, unit }: PriceHistoryChartProps) {
               : "Último precio de reposición"}
           </span>
           <div className="flex items-baseline gap-1.5 mt-0.5">
-            <span className="text-lg font-bold text-[#2a4f2f]">
+            <span className="text-lg font-bold text-[#1F7A4C]">
               {formatCurrency(activePoint.record.price)}
             </span>
             <span className="text-xs text-neutral-500 font-medium">
@@ -201,7 +201,7 @@ export function PriceHistoryChart({ history, unit }: PriceHistoryChartProps) {
           <defs>
             {/* Gradiente relleno kawaii */}
             <linearGradient id="habaChartGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#4f9856" stopOpacity="0.32" />
+              <stop offset="0%" stopColor="#3BB578" stopOpacity="0.32" />
               <stop offset="50%" stopColor="#73b57a" stopOpacity="0.12" />
               <stop offset="100%" stopColor="#a3d1a7" stopOpacity="0.0" />
             </linearGradient>
@@ -212,7 +212,7 @@ export function PriceHistoryChart({ history, unit }: PriceHistoryChartProps) {
                 dx="0"
                 dy="3"
                 stdDeviation="3"
-                floodColor="#306236"
+                floodColor="#1F7A4C"
                 floodOpacity="0.18"
               />
             </filter>
@@ -257,7 +257,7 @@ export function PriceHistoryChart({ history, unit }: PriceHistoryChartProps) {
             <path
               d={linePath}
               fill="none"
-              stroke="#3b7c42"
+              stroke="#3BB578"
               strokeWidth="3"
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -313,7 +313,7 @@ export function PriceHistoryChart({ history, unit }: PriceHistoryChartProps) {
                     cx={pt.x}
                     cy={pt.y}
                     r="9"
-                    fill="#3b7c42"
+                    fill="#3BB578"
                     fillOpacity="0.2"
                     className="animate-pulse"
                   />
@@ -325,14 +325,14 @@ export function PriceHistoryChart({ history, unit }: PriceHistoryChartProps) {
                   cy={pt.y}
                   r={isActive ? "6" : "4.5"}
                   fill="#ffffff"
-                  stroke="#3b7c42"
+                  stroke="#3BB578"
                   strokeWidth={isActive ? "3" : "2"}
                   className="transition-all duration-150"
                 />
 
                 {/* Punto interior si está activo */}
                 {isActive && (
-                  <circle cx={pt.x} cy={pt.y} r="2.5" fill="#3b7c42" />
+                  <circle cx={pt.x} cy={pt.y} r="2.5" fill="#3BB578" />
                 )}
 
                 {/* Etiqueta de fecha en el eje X */}
@@ -342,7 +342,7 @@ export function PriceHistoryChart({ history, unit }: PriceHistoryChartProps) {
                   textAnchor="middle"
                   fontSize="9.5"
                   fontWeight={isActive ? "700" : "500"}
-                  fill={isActive ? "#2a4f2f" : "#8ca388"}
+                  fill={isActive ? "#1F7A4C" : "#8ca388"}
                 >
                   {formatDateLabel(pt.record.date)}
                 </text>
@@ -354,7 +354,7 @@ export function PriceHistoryChart({ history, unit }: PriceHistoryChartProps) {
 
       {/* Detalle del punto seleccionado (nota / proveedor) */}
       {activePoint.record.note && (
-        <div className="bg-[#f0f6ee] rounded-2xl px-3 py-2 text-[11px] text-[#306236] flex items-center gap-1.5 border border-[#dbe8d8]">
+        <div className="bg-[#f0f6ee] rounded-2xl px-3 py-2 text-[11px] text-[#1F7A4C] flex items-center gap-1.5 border border-[#dbe8d8]">
           <span>💬</span>
           <span className="font-medium">{activePoint.record.note}</span>
         </div>

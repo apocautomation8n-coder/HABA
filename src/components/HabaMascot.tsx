@@ -39,23 +39,23 @@ export const HabaMascot: React.FC<HabaMascotProps> = ({
         {/* Hojas / Brote en la cabeza */}
         <path
           d="M80 32C80 32 70 12 55 18C42 24 54 44 72 38"
-          fill="#3b7c42"
-          stroke="#254d2a"
+          fill="#3BB578"
+          stroke="#1F7A4C"
           strokeWidth="3.5"
           strokeLinecap="round"
           strokeLinejoin="round"
         />
         <path
           d="M78 32C78 32 88 10 102 14C115 19 105 40 86 36"
-          fill="#4f9856"
-          stroke="#254d2a"
+          fill="#2E9E65"
+          stroke="#1F7A4C"
           strokeWidth="3.5"
           strokeLinecap="round"
           strokeLinejoin="round"
         />
         <path
           d="M78 35L77 48"
-          stroke="#254d2a"
+          stroke="#1F7A4C"
           strokeWidth="3.5"
           strokeLinecap="round"
         />

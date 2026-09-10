@@ -172,14 +172,14 @@ export function PriceHistoryDrawer({
 
       {/* Panel lateral deslizante */}
       <div
-        className={`fixed inset-y-0 right-0 max-w-full flex w-full sm:max-w-md bg-[#fbfaf6] shadow-2xl transition-transform duration-300 ease-out flex-col ${
+        className={`fixed inset-y-0 right-0 max-w-full flex w-full sm:max-w-md bg-[#F6F7F2] shadow-2xl transition-transform duration-300 ease-out flex-col ${
           isOpen ? "translate-x-0" : "translate-x-full"
         }`}
       >
         {/* Cabecera del Drawer */}
         <div className="p-4 sm:p-5 border-b border-[#e9efe6] bg-white flex items-center justify-between sticky top-0 z-10">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-[#e5f2e6] text-[#3b7c42] flex items-center justify-center font-bold text-lg">
+            <div className="w-10 h-10 rounded-2xl bg-[#DCF4D7] text-[#3BB578] flex items-center justify-center font-bold text-lg">
               🌱
             </div>
             <div>
@@ -187,7 +187,7 @@ export function PriceHistoryDrawer({
                 <h2 className="text-base font-bold text-neutral-800 leading-tight">
                   {insumo.name}
                 </h2>
-                <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-[#f0f6ee] text-[#306236] border border-[#dbe8d8]">
+                <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-[#f0f6ee] text-[#1F7A4C] border border-[#dbe8d8]">
                   {insumo.category}
                 </span>
               </div>
@@ -215,7 +215,7 @@ export function PriceHistoryDrawer({
                 Precio actual (reposición)
               </span>
               <div className="flex items-baseline gap-1 mt-1">
-                <span className="text-xl font-extrabold text-[#2a4f2f]">
+                <span className="text-xl font-extrabold text-[#1F7A4C]">
                   {formatCurrency(insumo.current_price)}
                 </span>
                 <span className="text-xs font-semibold text-neutral-500">
@@ -259,7 +259,7 @@ export function PriceHistoryDrawer({
           <div>
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-bold text-neutral-700 flex items-center gap-1.5">
-                <TrendingUp className="w-3.5 h-3.5 text-[#3b7c42]" />
+                <TrendingUp className="w-3.5 h-3.5 text-[#3BB578]" />
                 Evolución de precio en el tiempo
               </span>
               <span className="text-[11px] text-neutral-400 font-medium">
@@ -277,14 +277,14 @@ export function PriceHistoryDrawer({
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-neutral-700 flex items-center gap-1.5">
-                <Calendar className="w-3.5 h-3.5 text-[#3b7c42]" />
+                <Calendar className="w-3.5 h-3.5 text-[#3BB578]" />
                 Registros en orden cronológico
               </span>
 
               <button
                 type="button"
                 onClick={() => setIsDescOrder(!isDescOrder)}
-                className="text-[11px] font-semibold text-[#3b7c42] hover:text-[#2a4f2f] flex items-center gap-1 bg-[#e5f2e6]/70 px-2.5 py-1 rounded-xl transition"
+                className="text-[11px] font-semibold text-[#3BB578] hover:text-[#1F7A4C] flex items-center gap-1 bg-[#DCF4D7]/70 px-2.5 py-1 rounded-xl transition"
               >
                 <ArrowUpDown className="w-3 h-3" />
                 {isDescOrder ? "Más recientes primero" : "Más antiguos primero"}
@@ -298,7 +298,7 @@ export function PriceHistoryDrawer({
                   key={item.id || idx}
                   className={`p-3.5 rounded-2xl border transition-all ${
                     item.isLatest
-                      ? "bg-white border-[#cce5ce] shadow-xs ring-1 ring-[#cce5ce]/50"
+                      ? "bg-white border-[#C3EBC0] shadow-xs ring-1 ring-[#C3EBC0]/50"
                       : "bg-white/80 border-[#edf2ea]"
                   }`}
                 >
@@ -313,7 +313,7 @@ export function PriceHistoryDrawer({
                         </span>
 
                         {item.isLatest && (
-                          <span className="text-[9.5px] font-bold px-2 py-0.5 rounded-full bg-[#e5f2e6] text-[#306236]">
+                          <span className="text-[9.5px] font-bold px-2 py-0.5 rounded-full bg-[#DCF4D7] text-[#1F7A4C]">
                             Actual
                           </span>
                         )}
@@ -366,7 +366,7 @@ export function PriceHistoryDrawer({
               <button
                 type="button"
                 onClick={() => setShowAddForm(true)}
-                className="w-full py-2.5 px-4 bg-[#e5f2e6] hover:bg-[#d5ead7] text-[#306236] font-bold text-xs rounded-2xl flex items-center justify-center gap-2 transition active:scale-[0.99]"
+                className="w-full py-2.5 px-4 bg-[#DCF4D7] hover:bg-[#d5ead7] text-[#1F7A4C] font-bold text-xs rounded-2xl flex items-center justify-center gap-2 transition active:scale-[0.99]"
               >
                 <Plus className="w-4 h-4" />
                 Registrar nuevo precio de compra
@@ -375,7 +375,7 @@ export function PriceHistoryDrawer({
               <form onSubmit={handleSavePrice} className="space-y-3">
                 <div className="flex items-center justify-between pb-1 border-b border-neutral-100">
                   <span className="text-xs font-bold text-neutral-800 flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-[#3b7c42]" />
+                    <Sparkles className="w-3.5 h-3.5 text-[#3BB578]" />
                     Nuevo precio de reposición
                   </span>
                   <button
@@ -409,7 +409,7 @@ export function PriceHistoryDrawer({
                         value={newPrice}
                         onChange={(e) => setNewPrice(e.target.value)}
                         required
-                        className="w-full pl-7 pr-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-xl focus:bg-white focus:border-[#4f9856] outline-none transition"
+                        className="w-full pl-7 pr-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-xl focus:bg-white focus:border-[#3BB578] outline-none transition"
                       />
                     </div>
                   </div>
@@ -423,7 +423,7 @@ export function PriceHistoryDrawer({
                       value={newDate}
                       onChange={(e) => setNewDate(e.target.value)}
                       required
-                      className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-xl focus:bg-white focus:border-[#4f9856] outline-none transition"
+                      className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-xl focus:bg-white focus:border-[#3BB578] outline-none transition"
                     />
                   </div>
                 </div>
@@ -437,13 +437,13 @@ export function PriceHistoryDrawer({
                     placeholder="Ej: Mayorista San Martín, subió el flete..."
                     value={newNote}
                     onChange={(e) => setNewNote(e.target.value)}
-                    className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-xl focus:bg-white focus:border-[#4f9856] outline-none transition"
+                    className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-xl focus:bg-white focus:border-[#3BB578] outline-none transition"
                   />
                 </div>
 
                 <button
                   type="submit"
-                  className="w-full py-2.5 bg-[#3b7c42] hover:bg-[#326b38] active:scale-[0.99] text-white font-bold text-xs rounded-2xl shadow-xs transition"
+                  className="w-full py-2.5 bg-[#3BB578] hover:bg-[#2E9E65] active:scale-[0.99] text-white font-bold text-xs rounded-2xl shadow-xs transition"
                 >
                   Guardar y actualizar histórico
                 </button>
@@ -452,7 +452,7 @@ export function PriceHistoryDrawer({
           </div>
 
           {/* Haba mascota tip */}
-          <div className="bg-[#eef7ee] border border-[#d6ebd7] rounded-2xl p-3 flex items-center gap-2.5 text-[11px] text-[#306236]">
+          <div className="bg-[#eef7ee] border border-[#d6ebd7] rounded-2xl p-3 flex items-center gap-2.5 text-[11px] text-[#1F7A4C]">
             <HabaMascot size={36} />
             <p>
               ¡Recordá! HABA siempre calcula tus costos sobre el <strong>precio más reciente</strong>.

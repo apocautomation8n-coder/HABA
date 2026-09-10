@@ -157,7 +157,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
   return (
     <div className="fixed inset-0 z-[99999] bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center">
       <div 
-        className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col border border-[#eef2eb] animate-in fade-in slide-in-from-bottom-6 duration-200" 
+        className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col border border-[#EAF0E8] animate-in fade-in slide-in-from-bottom-6 duration-200" 
         style={{ 
           height: 'min(92vh, 720px)',
           maxHeight: 'calc(100dvh - env(safe-area-inset-top, 20px) - 10px)'
@@ -167,7 +167,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
         {/* Header fijo */}
         <div className="p-4 pb-3 border-b border-neutral-100 flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-xl bg-[#e5f2e6] text-[#3b7c42] flex items-center justify-center">
+            <div className="w-7 h-7 rounded-xl bg-[#DCF4D7] text-[#3BB578] flex items-center justify-center">
               <Sparkles className="w-4 h-4" />
             </div>
             <h3 className="text-sm sm:text-base font-bold text-neutral-800">
@@ -201,7 +201,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
                   onClick={() => setCategory("materia_prima")}
                   className={`flex-1 py-1.5 text-xs font-semibold rounded-xl transition ${
                     category === "materia_prima"
-                      ? "bg-white text-[#306236] shadow-xs"
+                      ? "bg-white text-[#1F7A4C] shadow-xs"
                       : "text-neutral-500 hover:text-neutral-800"
                   }`}
                 >
@@ -212,7 +212,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
                   onClick={() => setCategory("packaging")}
                   className={`flex-1 py-1.5 text-xs font-semibold rounded-xl transition ${
                     category === "packaging"
-                      ? "bg-white text-[#306236] shadow-xs"
+                      ? "bg-white text-[#1F7A4C] shadow-xs"
                       : "text-neutral-500 hover:text-neutral-800"
                   }`}
                 >
@@ -230,7 +230,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
                 onChange={(e) => setName(e.target.value)}
                 placeholder={category === "packaging" ? "Ej: Caja 15x15, Sobre Kraft..." : "Ej: Cera de Soja, Tela, Cartón..."}
                 required
-                className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#4f9856] outline-none transition"
+                className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none transition"
               />
             </div>
 
@@ -240,7 +240,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
               <select
                 value={selectedPresetId}
                 onChange={(e) => handlePresetChange(e.target.value)}
-                className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#4f9856] outline-none transition"
+                className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none transition"
               >
                 {UNIT_PRESETS.map((preset) => (
                   <option key={preset.id} value={preset.id}>
@@ -261,7 +261,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
                   value={purchaseQuantity}
                   onChange={(e) => setPurchaseQuantity(parseFloat(e.target.value) || 0)}
                   required
-                  className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#4f9856] outline-none"
+                  className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none"
                 />
               </div>
               <div className="space-y-1">
@@ -272,7 +272,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
                   onChange={(e) => setPurchaseUnit(e.target.value)}
                   placeholder="kg, metro, pack..."
                   required
-                  className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#4f9856] outline-none"
+                  className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none"
                 />
               </div>
             </div>
@@ -283,7 +283,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
                 <label className="text-[11px] font-semibold text-neutral-700">
                   Precio Actual de Reposición ($ ARS)
                 </label>
-                <span className="text-[9.5px] text-[#306236] bg-[#e5f2e6] px-1.5 py-0.5 rounded-md font-medium">
+                <span className="text-[9.5px] text-[#1F7A4C] bg-[#DCF4D7] px-1.5 py-0.5 rounded-md font-medium">
                   Al día de hoy
                 </span>
               </div>
@@ -299,7 +299,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
                   onChange={(e) => setCurrentPrice(e.target.value)}
                   placeholder="0.00"
                   required
-                  className="w-full pl-7 pr-3 py-2 text-xs font-semibold text-neutral-800 bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#4f9856] outline-none transition"
+                  className="w-full pl-7 pr-3 py-2 text-xs font-semibold text-neutral-800 bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none transition"
                 />
               </div>
             </div>
@@ -334,21 +334,21 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
             </div>
 
             {/* Tarjeta de Cálculo en Vivo */}
-            <div className="bg-[#e5f2e6] border border-[#cce5ce] p-3 rounded-2xl flex items-center justify-between">
+            <div className="bg-[#DCF4D7] border border-[#C3EBC0] p-3 rounded-2xl flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Calculator className="w-4 h-4 text-[#306236]" />
+                <Calculator className="w-4 h-4 text-[#1F7A4C]" />
                 <div>
-                  <p className="text-[10.5px] font-bold text-[#2a4f2f]">Costo Unitario de Uso:</p>
-                  <p className="text-[10px] text-[#3b7c42]">
+                  <p className="text-[10.5px] font-bold text-[#1F7A4C]">Costo Unitario de Uso:</p>
+                  <p className="text-[10px] text-[#3BB578]">
                     1 {useUnit} = {formatCurrency(unitCost)}
                   </p>
                 </div>
               </div>
               <div className="text-right">
-                <span className="text-sm font-black text-[#244228]">
+                <span className="text-sm font-black text-[#1F7A4C]">
                   {formatCurrency(unitCost)}
                 </span>
-                <span className="text-[9.5px] block text-[#306236]">por {useUnit}</span>
+                <span className="text-[9.5px] block text-[#1F7A4C]">por {useUnit}</span>
               </div>
             </div>
           </div>
@@ -370,7 +370,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
             <button
               type="submit"
               disabled={loading}
-              className="flex-1 py-2.5 px-3 bg-[#3b7c42] hover:bg-[#326b38] text-white rounded-2xl text-xs font-bold transition shadow-sm disabled:opacity-60"
+              className="flex-1 py-2.5 px-3 bg-[#3BB578] hover:bg-[#2E9E65] text-white rounded-2xl text-xs font-bold transition shadow-sm disabled:opacity-60"
             >
               {loading ? "Guardando..." : initialSupply ? "Actualizar Insumo" : "Guardar Insumo"}
             </button>

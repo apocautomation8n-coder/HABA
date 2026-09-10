@@ -145,7 +145,7 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="bg-white w-full max-w-sm rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl max-h-[85vh] overflow-y-auto border border-[#eef2eb] animate-in slide-in-from-bottom-6 duration-200">
+      <div className="bg-white w-full max-w-sm rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl max-h-[85vh] overflow-y-auto border border-[#EAF0E8] animate-in slide-in-from-bottom-6 duration-200">
         {/* Header */}
         <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
           <div className="flex items-center gap-2">
@@ -171,16 +171,16 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
 
         {/* Permiso de Notificaciones Push del Celular */}
         {notificationPermission !== "granted" && (
-          <div className="mt-3 p-3 bg-[#e5f2e6] border border-[#cce5ce] rounded-2xl flex items-center justify-between gap-2">
+          <div className="mt-3 p-3 bg-[#DCF4D7] border border-[#C3EBC0] rounded-2xl flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <Smartphone className="w-4 h-4 text-[#306236] flex-shrink-0" />
-              <p className="text-[11px] text-[#2a4f2f] font-medium leading-tight">
+              <Smartphone className="w-4 h-4 text-[#1F7A4C] flex-shrink-0" />
+              <p className="text-[11px] text-[#1F7A4C] font-medium leading-tight">
                 ¿Querés recibir avisos directos en tu celu?
               </p>
             </div>
             <button
               onClick={requestNativeNotification}
-              className="py-1 px-2.5 bg-[#3b7c42] hover:bg-[#326b38] text-white text-[10px] font-bold rounded-xl flex-shrink-0 transition"
+              className="py-1 px-2.5 bg-[#3BB578] hover:bg-[#2E9E65] text-white text-[10px] font-bold rounded-xl flex-shrink-0 transition"
             >
               Activar
             </button>
@@ -210,7 +210,7 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
                     ) : item.type === "stock_alert" ? (
                       <AlertTriangle className="w-4 h-4 text-amber-600" />
                     ) : (
-                      <CheckCircle className="w-4 h-4 text-[#3b7c42]" />
+                      <CheckCircle className="w-4 h-4 text-[#3BB578]" />
                     )}
                   </div>
                   <div className="flex-1 min-w-0">

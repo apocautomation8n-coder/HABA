@@ -157,12 +157,12 @@ export default function PresupuestosPage() {
           <title>Presupuesto ${quote.quote_number}</title>
           <style>
             body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; padding: 30px; color: #333; max-width: 600px; margin: auto; }
-            .header { border-bottom: 2px solid #3b7c42; padding-bottom: 15px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-end; }
-            h1 { margin: 0; font-size: 24px; color: #244228; }
+            .header { border-bottom: 2px solid #3BB578; padding-bottom: 15px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-end; }
+            h1 { margin: 0; font-size: 24px; color: #1F7A4C; }
             table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-            th { background: #e5f2e6; color: #244228; padding: 8px; text-align: left; font-size: 12px; }
+            th { background: #DCF4D7; color: #1F7A4C; padding: 8px; text-align: left; font-size: 12px; }
             .totals { margin-top: 20px; text-align: right; }
-            .total-line { font-size: 18px; font-weight: bold; color: #244228; margin-top: 5px; }
+            .total-line { font-size: 18px; font-weight: bold; color: #1F7A4C; margin-top: 5px; }
             .footer { margin-top: 30px; font-size: 11px; color: #777; border-top: 1px solid #eee; padding-top: 10px; }
           </style>
         </head>
@@ -234,7 +234,7 @@ export default function PresupuestosPage() {
         <div>
           <h2 className="text-xl font-bold text-neutral-800 flex items-center gap-2">
             <span>Presupuestos</span>
-            <span className="text-xs bg-[#e5f2e6] text-[#306236] font-semibold px-2 py-0.5 rounded-full">
+            <span className="text-xs bg-[#DCF4D7] text-[#1F7A4C] font-semibold px-2 py-0.5 rounded-full">
               {quotes.length}
             </span>
           </h2>
@@ -242,7 +242,7 @@ export default function PresupuestosPage() {
         </div>
         <Link
           href="/presupuestos/nuevo"
-          className="p-2.5 bg-[#3b7c42] hover:bg-[#326b38] text-white rounded-2xl shadow-sm transition flex items-center gap-1.5 text-xs font-bold active:scale-[0.98]"
+          className="p-2.5 bg-[#3BB578] hover:bg-[#2E9E65] text-white rounded-2xl shadow-sm transition flex items-center gap-1.5 text-xs font-bold active:scale-[0.98]"
         >
           <Plus className="w-4 h-4" />
           <span>Nuevo</span>
@@ -259,7 +259,7 @@ export default function PresupuestosPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Buscar por cliente o número..."
-          className="w-full pl-10 pr-4 py-2.5 text-xs bg-white border border-neutral-200 rounded-2xl focus:border-[#4f9856] focus:ring-2 focus:ring-[#e5f2e6] outline-none shadow-sm transition"
+          className="w-full pl-10 pr-4 py-2.5 text-xs bg-white border border-neutral-200 rounded-2xl focus:border-[#3BB578] focus:ring-2 focus:ring-[#DCF4D7] outline-none shadow-sm transition"
         />
       </div>
 
@@ -269,7 +269,7 @@ export default function PresupuestosPage() {
           Cargando tus presupuestos...
         </div>
       ) : filteredQuotes.length === 0 ? (
-        <div className="bg-white rounded-3xl p-8 border border-[#eef2eb] shadow-sm flex flex-col items-center text-center space-y-3">
+        <div className="bg-white rounded-3xl p-8 border border-[#EAF0E8] shadow-sm flex flex-col items-center text-center space-y-3">
           <HabaMascot size={80} />
           <div>
             <h3 className="text-sm font-bold text-neutral-700">
@@ -299,13 +299,13 @@ export default function PresupuestosPage() {
             return (
               <div
                 key={quote.id}
-                className="bg-white rounded-3xl p-4 border border-[#eef2eb] shadow-sm flex flex-col space-y-3 transition hover:border-[#cce5ce]"
+                className="bg-white rounded-3xl p-4 border border-[#EAF0E8] shadow-sm flex flex-col space-y-3 transition hover:border-[#C3EBC0]"
               >
                 {/* Cabecera del presupuesto */}
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-[10px] font-bold text-[#306236] bg-[#e5f2e6] px-2 py-0.5 rounded-full">
+                      <span className="text-[10px] font-bold text-[#1F7A4C] bg-[#DCF4D7] px-2 py-0.5 rounded-full">
                         {quote.quote_number}
                       </span>
                       <span className="text-[10px] text-neutral-400">
@@ -323,7 +323,7 @@ export default function PresupuestosPage() {
                   </div>
 
                   <div className="text-right">
-                    <span className="text-base font-black text-[#244228] block">
+                    <span className="text-base font-black text-[#1F7A4C] block">
                       {formatCurrency(quote.total)}
                     </span>
                     <span className="text-[10px] text-neutral-400 block">
@@ -397,7 +397,7 @@ export default function PresupuestosPage() {
                               Canal: {item.channel_name} | Unit: {formatCurrency(item.unit_price)}
                             </span>
                           </div>
-                          <span className="font-extrabold text-[#244228]">
+                          <span className="font-extrabold text-[#1F7A4C]">
                             {formatCurrency(item.subtotal)}
                           </span>
                         </div>

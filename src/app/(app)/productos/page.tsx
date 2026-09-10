@@ -112,7 +112,7 @@ export default function ProductosPage() {
         <div>
           <h2 className="text-xl font-bold text-neutral-800 flex items-center gap-2">
             <span>Mis Productos</span>
-            <span className="text-xs bg-[#e5f2e6] text-[#306236] font-semibold px-2 py-0.5 rounded-full">
+            <span className="text-xs bg-[#DCF4D7] text-[#1F7A4C] font-semibold px-2 py-0.5 rounded-full">
               {products.length}
             </span>
           </h2>
@@ -120,7 +120,7 @@ export default function ProductosPage() {
         </div>
         <Link
           href="/productos/nuevo"
-          className="p-2.5 bg-[#3b7c42] hover:bg-[#326b38] text-white rounded-2xl shadow-sm transition flex items-center gap-1.5 text-xs font-bold active:scale-[0.98]"
+          className="p-2.5 bg-[#3BB578] hover:bg-[#2E9E65] text-white rounded-2xl shadow-sm transition flex items-center gap-1.5 text-xs font-bold active:scale-[0.98]"
         >
           <Plus className="w-4 h-4" />
           <span>Crear</span>
@@ -137,7 +137,7 @@ export default function ProductosPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Buscar por nombre o detalle..."
-          className="w-full pl-10 pr-4 py-2.5 text-xs bg-white border border-neutral-200 rounded-2xl focus:border-[#4f9856] focus:ring-2 focus:ring-[#e5f2e6] outline-none shadow-sm transition"
+          className="w-full pl-10 pr-4 py-2.5 text-xs bg-white border border-neutral-200 rounded-2xl focus:border-[#3BB578] focus:ring-2 focus:ring-[#DCF4D7] outline-none shadow-sm transition"
         />
       </div>
 
@@ -147,7 +147,7 @@ export default function ProductosPage() {
           Cargando tu catálogo de productos...
         </div>
       ) : filteredProducts.length === 0 ? (
-        <div className="bg-white rounded-3xl p-8 border border-[#eef2eb] shadow-sm flex flex-col items-center text-center space-y-3">
+        <div className="bg-white rounded-3xl p-8 border border-[#EAF0E8] shadow-sm flex flex-col items-center text-center space-y-3">
           <HabaMascot size={80} />
           <div>
             <h3 className="text-sm font-bold text-neutral-700">
@@ -180,7 +180,7 @@ export default function ProductosPage() {
             return (
               <div
                 key={product.id}
-                className="bg-white rounded-3xl p-4 border border-[#eef2eb] shadow-sm flex flex-col space-y-3 transition hover:border-[#cce5ce]"
+                className="bg-white rounded-3xl p-4 border border-[#EAF0E8] shadow-sm flex flex-col space-y-3 transition hover:border-[#C3EBC0]"
               >
                 {/* Cabecera de la tarjeta del producto */}
                 <div className="flex items-start justify-between gap-2">
@@ -227,11 +227,11 @@ export default function ProductosPage() {
 
                 {/* Métricas Principales */}
                 <div className="grid grid-cols-2 gap-2 pt-1 border-t border-neutral-100">
-                  <div className="bg-[#f6f9f6] p-2.5 rounded-2xl border border-[#eef2eb]">
+                  <div className="bg-[#f6f9f6] p-2.5 rounded-2xl border border-[#EAF0E8]">
                     <span className="text-[10px] font-semibold text-neutral-500 block">
                       Costo Total
                     </span>
-                    <span className="text-sm font-black text-[#244228]">
+                    <span className="text-sm font-black text-[#1F7A4C]">
                       {formatCurrency(product.total_cost)}
                     </span>
                     <span className="text-[9px] block text-neutral-400 mt-0.5">
@@ -241,15 +241,15 @@ export default function ProductosPage() {
                     </span>
                   </div>
 
-                  <div className="bg-[#e5f2e6] p-2.5 rounded-2xl border border-[#cce5ce]">
-                    <span className="text-[10px] font-bold text-[#306236] block">
+                  <div className="bg-[#DCF4D7] p-2.5 rounded-2xl border border-[#C3EBC0]">
+                    <span className="text-[10px] font-bold text-[#1F7A4C] block">
                       {retailPrice ? retailPrice.channel_name.split("(")[0].trim() : "Precio"}
                     </span>
-                    <span className="text-sm font-black text-[#244228]">
+                    <span className="text-sm font-black text-[#1F7A4C]">
                       {retailPrice ? formatCurrency(retailPrice.selling_price) : "-"}
                     </span>
                     {retailPrice && (
-                      <span className="text-[9px] block text-[#306236] mt-0.5 font-semibold">
+                      <span className="text-[9px] block text-[#1F7A4C] mt-0.5 font-semibold">
                         Margen: {retailPrice.profit_margin_percent}%
                       </span>
                     )}
@@ -299,11 +299,11 @@ export default function ProductosPage() {
                                 <span className="font-bold text-neutral-800 block">
                                   {price.channel_name}
                                 </span>
-                                <span className="text-[10px] text-[#306236] font-semibold">
+                                <span className="text-[10px] text-[#1F7A4C] font-semibold">
                                   Margen {price.profit_margin_percent}% (+{formatCurrency(profit)})
                                 </span>
                               </div>
-                              <span className="font-extrabold text-[#244228] text-sm">
+                              <span className="font-extrabold text-[#1F7A4C] text-sm">
                                 {formatCurrency(price.selling_price)}
                               </span>
                             </div>

@@ -46,29 +46,29 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
 
   return (
     <>
-      <header className="w-full flex items-center justify-between pb-2 pt-1 border-b border-[#eef2eb] mb-2">
+      <header className="w-full flex items-center justify-between pb-2 pt-1 border-b border-[#EAF0E8] mb-2">
         <Link href="/dashboard" className="flex items-center gap-2.5">
           <HabaMascot size={36} />
           <div>
-            <h1 className="text-base font-extrabold text-neutral-800 leading-tight flex items-center gap-1.5">
-              <span className="text-[#3b7c42]">HABA</span>
+            <h1 className="text-base font-extrabold text-[#2B2B2B] leading-tight flex items-center gap-1.5 font-display">
+              <span className="text-[#3BB578]">HABA</span>
               {businessName && (
-                <span className="text-xs font-normal text-neutral-400">
+                <span className="text-xs font-normal text-[#7A7A7A] font-body">
                   · {businessName}
                 </span>
               )}
             </h1>
-            <p className="text-[11px] text-neutral-400 font-medium">
+            <p className="text-[11px] text-[#7A7A7A] font-medium font-body">
               {subtitle || "Costos, precios y presupuestos"}
             </p>
           </div>
         </Link>
 
         <div className="flex items-center gap-2">
-          {/* Botón de Notificaciones de Stock y Precios */}
+          {/* Botón de Notificaciones */}
           <button
             onClick={() => setIsNotificationsOpen(true)}
-            className="relative p-2 text-neutral-500 hover:text-neutral-800 hover:bg-[#e5f2e6]/60 rounded-xl transition"
+            className="relative p-2 text-[#7A7A7A] hover:text-[#2B2B2B] hover:bg-[#DCF4D7]/60 rounded-xl transition"
             title="Notificaciones de stock y precios"
           >
             <Bell className="w-4 h-4" />
@@ -77,7 +77,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
             )}
           </button>
 
-          <span className="text-[10px] bg-[#e5f2e6] text-[#306236] font-semibold px-2 py-0.5 rounded-full border border-[#cce5ce]">
+          <span className="text-[10px] bg-[#DCF4D7] text-[#1F7A4C] font-semibold px-2 py-0.5 rounded-full border border-[#C3EBC0] font-body">
             Amaoto
           </span>
         </div>
@@ -94,4 +94,3 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
     </>
   );
 };
-

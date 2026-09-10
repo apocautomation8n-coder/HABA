@@ -255,28 +255,28 @@ export default function NuevoPresupuestoPage() {
       )}
 
       {/* Tarjeta de Resumen Total */}
-      <div className="bg-[#e5f2e6] border border-[#cce5ce] p-4 rounded-3xl flex items-center justify-between shadow-sm">
+      <div className="bg-[#DCF4D7] border border-[#C3EBC0] p-4 rounded-3xl flex items-center justify-between shadow-sm">
         <div>
-          <span className="text-[10px] font-bold uppercase tracking-wider text-[#306236] block">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-[#1F7A4C] block">
             Total Presupuestado
           </span>
-          <span className="text-xs text-[#2a4f2f]">
+          <span className="text-xs text-[#1F7A4C]">
             Subtotal: {formatCurrency(subtotal)}
             {discountPercent > 0 && ` | Dcto: -${discountPercent}%`}
           </span>
         </div>
         <div className="text-right">
-          <span className="text-2xl font-black text-[#244228]">
+          <span className="text-2xl font-black text-[#1F7A4C]">
             {formatCurrency(total)}
           </span>
-          <span className="text-[9px] block text-[#306236]">Valor final congelado</span>
+          <span className="text-[9px] block text-[#1F7A4C]">Valor final congelado</span>
         </div>
       </div>
 
       {/* Formulario: Datos del Cliente */}
-      <div className="bg-white p-5 rounded-3xl border border-[#eef2eb] shadow-sm space-y-4">
+      <div className="bg-white p-5 rounded-3xl border border-[#EAF0E8] shadow-sm space-y-4">
         <div className="flex items-center gap-2 border-b border-neutral-100 pb-3">
-          <User className="w-5 h-5 text-[#3b7c42]" />
+          <User className="w-5 h-5 text-[#3BB578]" />
           <h3 className="text-sm font-bold text-neutral-800">1. Datos del Cliente</h3>
         </div>
 
@@ -290,7 +290,7 @@ export default function NuevoPresupuestoPage() {
               value={clientName}
               onChange={(e) => setClientName(e.target.value)}
               placeholder="Ej: Laura Gómez, Tienda Creaciones..."
-              className="w-full px-3.5 py-2.5 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#4f9856] outline-none"
+              className="w-full px-3.5 py-2.5 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none"
             />
           </div>
 
@@ -305,7 +305,7 @@ export default function NuevoPresupuestoPage() {
                 value={clientContact}
                 onChange={(e) => setClientContact(e.target.value)}
                 placeholder="Ej: +54 9 11 1234-5678"
-                className="w-full px-3.5 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#4f9856] outline-none"
+                className="w-full px-3.5 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none"
               />
             </div>
 
@@ -318,7 +318,7 @@ export default function NuevoPresupuestoPage() {
                 type="date"
                 value={deliveryDate}
                 onChange={(e) => setDeliveryDate(e.target.value)}
-                className="w-full px-3.5 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#4f9856] outline-none"
+                className="w-full px-3.5 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none"
               />
             </div>
           </div>
@@ -326,10 +326,10 @@ export default function NuevoPresupuestoPage() {
       </div>
 
       {/* Formulario: Productos a Cotizar */}
-      <div className="bg-white p-5 rounded-3xl border border-[#eef2eb] shadow-sm space-y-4">
+      <div className="bg-white p-5 rounded-3xl border border-[#EAF0E8] shadow-sm space-y-4">
         <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
           <div className="flex items-center gap-2">
-            <ShoppingBag className="w-5 h-5 text-[#3b7c42]" />
+            <ShoppingBag className="w-5 h-5 text-[#3BB578]" />
             <div>
               <h3 className="text-sm font-bold text-neutral-800">2. Productos a Presupuestar</h3>
               <p className="text-[11px] text-neutral-400">
@@ -339,7 +339,7 @@ export default function NuevoPresupuestoPage() {
           </div>
           <button
             onClick={() => setIsProductPickerOpen(true)}
-            className="py-1.5 px-3 bg-[#e5f2e6] hover:bg-[#cce5ce] text-[#306236] rounded-2xl text-xs font-bold flex items-center gap-1 transition"
+            className="py-1.5 px-3 bg-[#DCF4D7] hover:bg-[#C3EBC0] text-[#1F7A4C] rounded-2xl text-xs font-bold flex items-center gap-1 transition"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>Agregar</span>
@@ -354,7 +354,7 @@ export default function NuevoPresupuestoPage() {
             </p>
             <button
               onClick={() => setIsProductPickerOpen(true)}
-              className="py-2 px-4 bg-[#3b7c42] text-white text-xs font-bold rounded-2xl shadow-sm"
+              className="py-2 px-4 bg-[#3BB578] text-white text-xs font-bold rounded-2xl shadow-sm"
             >
               Elegir del Catálogo
             </button>
@@ -374,7 +374,7 @@ export default function NuevoPresupuestoPage() {
                       <span className="text-xs font-bold text-neutral-800 block">
                         {item.productName}
                       </span>
-                      <span className="text-[10px] text-[#306236] bg-[#e5f2e6] px-1.5 py-0.5 rounded-md font-semibold inline-block mt-0.5">
+                      <span className="text-[10px] text-[#1F7A4C] bg-[#DCF4D7] px-1.5 py-0.5 rounded-md font-semibold inline-block mt-0.5">
                         Canal: {item.channelName}
                       </span>
                     </div>
@@ -396,7 +396,7 @@ export default function NuevoPresupuestoPage() {
                         onChange={(e) =>
                           handleUpdateItemQty(idx, parseInt(e.target.value) || 1)
                         }
-                        className="w-16 px-2 py-1 text-xs bg-white border border-neutral-200 rounded-xl text-center font-bold outline-none focus:border-[#4f9856]"
+                        className="w-16 px-2 py-1 text-xs bg-white border border-neutral-200 rounded-xl text-center font-bold outline-none focus:border-[#3BB578]"
                       />
                     </div>
 
@@ -409,14 +409,14 @@ export default function NuevoPresupuestoPage() {
                         onChange={(e) =>
                           handleUpdateItemPrice(idx, parseFloat(e.target.value) || 0)
                         }
-                        className="w-24 px-2 py-1 text-xs bg-white border border-neutral-200 rounded-xl text-right font-bold outline-none focus:border-[#4f9856]"
+                        className="w-24 px-2 py-1 text-xs bg-white border border-neutral-200 rounded-xl text-right font-bold outline-none focus:border-[#3BB578]"
                       />
                     </div>
                   </div>
 
                   <div className="text-right pt-1 border-t border-neutral-200/40">
                     <span className="text-[11px] text-neutral-400 mr-1">Subtotal ítem:</span>
-                    <span className="text-xs font-black text-[#244228]">
+                    <span className="text-xs font-black text-[#1F7A4C]">
                       {formatCurrency(lineTotal)}
                     </span>
                   </div>
@@ -440,7 +440,7 @@ export default function NuevoPresupuestoPage() {
                 max="100"
                 value={discountPercent}
                 onChange={(e) => setDiscountPercent(parseFloat(e.target.value) || 0)}
-                className="w-20 px-2.5 py-1 text-xs bg-neutral-50 border border-neutral-200 rounded-xl text-center font-bold outline-none focus:border-[#4f9856]"
+                className="w-20 px-2.5 py-1 text-xs bg-neutral-50 border border-neutral-200 rounded-xl text-center font-bold outline-none focus:border-[#3BB578]"
               />
               <span className="absolute right-2.5 top-1 text-xs text-neutral-400 font-bold">
                 %
@@ -458,7 +458,7 @@ export default function NuevoPresupuestoPage() {
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Ej: Seña del 50% al encargar. Validez de presupuesto: 7 días corridos..."
-              className="w-full px-3.5 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#4f9856] outline-none resize-none"
+              className="w-full px-3.5 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none resize-none"
             />
           </div>
         </div>
@@ -467,7 +467,7 @@ export default function NuevoPresupuestoPage() {
           <button
             onClick={handleSaveQuote}
             disabled={loading || items.length === 0}
-            className="w-full py-3.5 bg-[#3b7c42] hover:bg-[#326b38] disabled:opacity-60 text-white rounded-2xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-md"
+            className="w-full py-3.5 bg-[#3BB578] hover:bg-[#2E9E65] disabled:opacity-60 text-white rounded-2xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-md"
           >
             {loading ? (
               <span>Generando Presupuesto...</span>
@@ -485,7 +485,7 @@ export default function NuevoPresupuestoPage() {
       {isProductPickerOpen && (
         <div className="fixed inset-0 z-[99999] bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center">
           <div 
-            className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl border border-[#eef2eb] flex flex-col animate-in slide-in-from-bottom-6"
+            className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl border border-[#EAF0E8] flex flex-col animate-in slide-in-from-bottom-6"
             style={{
               height: 'min(88vh, 650px)',
               maxHeight: 'calc(100dvh - env(safe-area-inset-top, 20px) - 10px)'
@@ -522,12 +522,12 @@ export default function NuevoPresupuestoPage() {
                           <button
                             key={price.id}
                             onClick={() => handleAddProduct(prod, price)}
-                            className="w-full p-2.5 bg-white hover:bg-[#e5f2e6] border border-neutral-200 hover:border-[#3b7c42] rounded-xl flex items-center justify-between text-xs transition"
+                            className="w-full p-2.5 bg-white hover:bg-[#DCF4D7] border border-neutral-200 hover:border-[#3BB578] rounded-xl flex items-center justify-between text-xs transition"
                           >
                             <span className="font-semibold text-neutral-700">
                               {price.channel_name}
                             </span>
-                            <span className="font-extrabold text-[#244228]">
+                            <span className="font-extrabold text-[#1F7A4C]">
                               {formatCurrency(price.selling_price)}
                             </span>
                           </button>
@@ -542,10 +542,10 @@ export default function NuevoPresupuestoPage() {
                               selling_price: prod.total_cost,
                             })
                           }
-                          className="w-full p-2.5 bg-white hover:bg-[#e5f2e6] border border-neutral-200 rounded-xl flex items-center justify-between text-xs"
+                          className="w-full p-2.5 bg-white hover:bg-[#DCF4D7] border border-neutral-200 rounded-xl flex items-center justify-between text-xs"
                         >
                           <span className="font-semibold text-neutral-700">Precio Base</span>
-                          <span className="font-extrabold text-[#244228]">
+                          <span className="font-extrabold text-[#1F7A4C]">
                             {formatCurrency(prod.total_cost)}
                           </span>
                         </button>

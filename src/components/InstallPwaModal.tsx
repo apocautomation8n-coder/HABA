@@ -120,15 +120,15 @@ export const InstallPwaModal: React.FC = () => {
 
       {/* Banner de Instalación PWA (si no está ya instalada) */}
       {!isStandalone && !dismissedInstall && (
-        <div className="w-full bg-[#e5f2e6] border border-[#cce5ce] rounded-3xl p-3.5 shadow-sm flex items-center justify-between gap-3">
+        <div className="w-full bg-[#DCF4D7] border border-[#C3EBC0] rounded-3xl p-3.5 shadow-sm flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5 min-w-0">
             <HabaMascot size={42} className="flex-shrink-0" />
             <div className="min-w-0">
-              <h4 className="text-xs font-bold text-[#2a4f2f] flex items-center gap-1 truncate">
+              <h4 className="text-xs font-bold text-[#1F7A4C] flex items-center gap-1 truncate">
                 <span>Descargar App HABA</span>
                 <Sparkles className="w-3 h-3 text-amber-500 flex-shrink-0" />
               </h4>
-              <p className="text-[11px] text-[#3b7c42] truncate">
+              <p className="text-[11px] text-[#3BB578] truncate">
                 Instálala directamente en tu pantalla de inicio
               </p>
             </div>
@@ -137,7 +137,7 @@ export const InstallPwaModal: React.FC = () => {
           <div className="flex items-center gap-1.5 flex-shrink-0">
             <button
               onClick={handleInstallClick}
-              className="py-1.5 px-3.5 bg-[#3b7c42] hover:bg-[#326b38] text-white text-xs font-bold rounded-xl shadow-sm transition flex items-center gap-1.5"
+              className="py-1.5 px-3.5 bg-[#3BB578] hover:bg-[#2E9E65] text-white text-xs font-bold rounded-xl shadow-sm transition flex items-center gap-1.5"
             >
               <Download className="w-3.5 h-3.5" />
               <span>Instalar</span>
@@ -156,7 +156,7 @@ export const InstallPwaModal: React.FC = () => {
       {/* Modal Guía Directa para iPhone / Safari */}
       {showIosGuide && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
-          <div className="bg-white w-full max-w-sm rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl border border-[#eef2eb] animate-in slide-in-from-bottom-6">
+          <div className="bg-white w-full max-w-sm rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl border border-[#EAF0E8] animate-in slide-in-from-bottom-6">
             <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
               <div className="flex items-center gap-2">
                 <HabaMascot size={36} />
@@ -206,7 +206,7 @@ export const InstallPwaModal: React.FC = () => {
 
             <button
               onClick={() => setShowIosGuide(false)}
-              className="w-full py-3 bg-[#3b7c42] hover:bg-[#326b38] text-white text-xs font-bold rounded-2xl transition shadow-sm"
+              className="w-full py-3 bg-[#3BB578] hover:bg-[#2E9E65] text-white text-xs font-bold rounded-2xl transition shadow-sm"
             >
               ¡Entendido, gracias!
             </button>

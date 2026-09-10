@@ -242,7 +242,7 @@ export default function AdminPage() {
 
         <button
           onClick={() => setIsCreateModalOpen(true)}
-          className="py-2.5 px-3.5 bg-[#3b7c42] hover:bg-[#326b38] text-white rounded-2xl shadow-sm transition flex items-center gap-1.5 text-xs font-bold active:scale-[0.98]"
+          className="py-2.5 px-3.5 bg-[#3BB578] hover:bg-[#2E9E65] text-white rounded-2xl shadow-sm transition flex items-center gap-1.5 text-xs font-bold active:scale-[0.98]"
         >
           <UserPlus className="w-4 h-4" />
           <span>Alta Usuaria</span>
@@ -259,14 +259,14 @@ export default function AdminPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Buscar por email, nombre o emprendimiento..."
-          className="w-full pl-10 pr-4 py-2.5 text-xs bg-white border border-neutral-200 rounded-2xl focus:border-[#4f9856] outline-none shadow-sm"
+          className="w-full pl-10 pr-4 py-2.5 text-xs bg-white border border-neutral-200 rounded-2xl focus:border-[#3BB578] outline-none shadow-sm"
         />
       </div>
 
       {/* Lista de Usuarias */}
       <div className="space-y-3">
         {filteredUsers.length === 0 ? (
-          <div className="bg-white rounded-3xl p-6 border border-[#eef2eb] text-center text-xs text-neutral-400">
+          <div className="bg-white rounded-3xl p-6 border border-[#EAF0E8] text-center text-xs text-neutral-400">
             No se encontraron clientas registradas.
           </div>
         ) : (
@@ -274,7 +274,7 @@ export default function AdminPage() {
             <div
               key={u.id}
               className={`bg-white rounded-3xl p-4 border shadow-sm transition flex flex-col space-y-3 ${
-                u.is_active ? "border-[#eef2eb]" : "border-rose-200 bg-rose-50/20"
+                u.is_active ? "border-[#EAF0E8]" : "border-rose-200 bg-rose-50/20"
               }`}
             >
               <div className="flex items-start justify-between gap-2">
@@ -338,7 +338,7 @@ export default function AdminPage() {
       {/* Modal para Crear Usuaria */}
       {isCreateModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="bg-white w-full max-w-sm rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl border border-[#eef2eb] animate-in slide-in-from-bottom-6">
+          <div className="bg-white w-full max-w-sm rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl border border-[#EAF0E8] animate-in slide-in-from-bottom-6">
             <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
               <h3 className="text-sm font-bold text-neutral-800">Alta de Nueva Clienta</h3>
               <button
@@ -365,7 +365,7 @@ export default function AdminPage() {
                   onChange={(e) => setNewEmail(e.target.value)}
                   placeholder="clienta@correo.com"
                   required
-                  className="w-full px-3.5 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#4f9856] outline-none"
+                  className="w-full px-3.5 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none"
                 />
               </div>
 
@@ -377,7 +377,7 @@ export default function AdminPage() {
                   onChange={(e) => setNewPassword(e.target.value)}
                   placeholder="Mínimo 6 caracteres"
                   required
-                  className="w-full px-3.5 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#4f9856] outline-none"
+                  className="w-full px-3.5 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none"
                 />
               </div>
 
@@ -388,7 +388,7 @@ export default function AdminPage() {
                   value={newFullName}
                   onChange={(e) => setNewFullName(e.target.value)}
                   placeholder="Ej: Laura Pérez"
-                  className="w-full px-3.5 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#4f9856] outline-none"
+                  className="w-full px-3.5 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none"
                 />
               </div>
 
@@ -399,7 +399,7 @@ export default function AdminPage() {
                   value={newBusinessName}
                   onChange={(e) => setNewBusinessName(e.target.value)}
                   placeholder="Ej: Creaciones Laura"
-                  className="w-full px-3.5 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#4f9856] outline-none"
+                  className="w-full px-3.5 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none"
                 />
               </div>
 
@@ -414,7 +414,7 @@ export default function AdminPage() {
                 <button
                   type="submit"
                   disabled={creatingUser}
-                  className="flex-1 py-2 px-3 bg-[#3b7c42] hover:bg-[#326b38] text-white rounded-2xl text-xs font-bold shadow-sm disabled:opacity-60"
+                  className="flex-1 py-2 px-3 bg-[#3BB578] hover:bg-[#2E9E65] text-white rounded-2xl text-xs font-bold shadow-sm disabled:opacity-60"
                 >
                   {creatingUser ? "Creando..." : "Crear Usuaria"}
                 </button>

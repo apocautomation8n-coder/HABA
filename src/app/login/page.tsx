@@ -72,7 +72,7 @@ export default function LoginPage() {
       {/* Header & Mascota */}
       <div className="flex flex-col items-center text-center mb-6">
         <HabaMascot size={110} className="mb-2" />
-        <h1 className="text-3xl font-extrabold text-[#3b7c42] tracking-tight">
+        <h1 className="text-3xl font-extrabold text-[#3BB578] tracking-tight">
           HABA
         </h1>
         <h2 className="text-xl font-bold text-neutral-700 mt-2">
@@ -84,7 +84,7 @@ export default function LoginPage() {
       </div>
 
       {/* Form Card */}
-      <div className="w-full bg-white rounded-3xl p-6 shadow-sm border border-[#eef2eb]">
+      <div className="w-full bg-white rounded-3xl p-6 shadow-sm border border-[#EAF0E8]">
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Mensaje de Error */}
           {errorMessage && (
@@ -109,7 +109,7 @@ export default function LoginPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="ejemplo@email.com"
                 required
-                className="w-full pl-10 pr-4 py-2.5 text-sm bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#4f9856] focus:ring-2 focus:ring-[#e5f2e6] outline-none transition"
+                className="w-full pl-10 pr-4 py-2.5 text-sm bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] focus:ring-2 focus:ring-[#DCF4D7] outline-none transition"
               />
             </div>
           </div>
@@ -129,7 +129,7 @@ export default function LoginPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
                 required
-                className="w-full pl-10 pr-10 py-2.5 text-sm bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#4f9856] focus:ring-2 focus:ring-[#e5f2e6] outline-none transition"
+                className="w-full pl-10 pr-10 py-2.5 text-sm bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] focus:ring-2 focus:ring-[#DCF4D7] outline-none transition"
               />
               <button
                 type="button"
@@ -152,7 +152,7 @@ export default function LoginPage() {
                 type="checkbox"
                 checked={rememberMe}
                 onChange={(e) => setRememberMe(e.target.checked)}
-                className="w-4 h-4 rounded text-[#3b7c42] focus:ring-[#3b7c42] accent-[#3b7c42]"
+                className="w-4 h-4 rounded text-[#3BB578] focus:ring-[#3BB578] accent-[#3BB578]"
               />
               <span>Recordarme</span>
             </label>
@@ -161,7 +161,7 @@ export default function LoginPage() {
               onClick={() =>
                 alert("Contactate con Gio de Amaoto Craft para restablecer tu acceso.")
               }
-              className="text-[#3b7c42] hover:underline font-medium"
+              className="text-[#3BB578] hover:underline font-medium"
             >
               ¿Olvidaste tu contraseña?
             </button>
@@ -171,7 +171,7 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full mt-2 py-3 px-4 bg-[#3b7c42] hover:bg-[#326b38] active:scale-[0.99] text-white font-semibold rounded-2xl shadow-sm hover:shadow transition flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
+            className="w-full mt-2 py-3 px-4 bg-[#3BB578] hover:bg-[#2E9E65] active:scale-[0.99] text-white font-semibold rounded-2xl shadow-sm hover:shadow transition flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
           >
             {loading ? (
               <span className="flex items-center gap-2 text-sm">
@@ -207,7 +207,7 @@ export default function LoginPage() {
           <p className="text-xs text-neutral-500">
             ¿Primera vez en HABA?
           </p>
-          <p className="text-xs text-[#3b7c42] font-semibold mt-0.5 flex items-center justify-center gap-1">
+          <p className="text-xs text-[#3BB578] font-semibold mt-0.5 flex items-center justify-center gap-1">
             <Sparkles className="w-3.5 h-3.5" />
             Las altas se activan con tu suscripción a Amaoto Craft
           </p>

@@ -191,7 +191,7 @@ export default function InsumosPage() {
         <div>
           <h2 className="text-xl font-bold text-neutral-800 flex items-center gap-2">
             <span>Insumos</span>
-            <span className="text-xs bg-[#e5f2e6] text-[#306236] font-semibold px-2 py-0.5 rounded-full">
+            <span className="text-xs bg-[#DCF4D7] text-[#1F7A4C] font-semibold px-2 py-0.5 rounded-full">
               {supplies.length}
             </span>
           </h2>
@@ -202,7 +202,7 @@ export default function InsumosPage() {
             setEditingSupply(null);
             setIsModalOpen(true);
           }}
-          className="py-2 px-3.5 bg-[#3b7c42] hover:bg-[#326b38] active:scale-[0.98] text-white rounded-2xl shadow-sm transition flex items-center gap-1.5 text-xs font-bold"
+          className="py-2 px-3.5 bg-[#3BB578] hover:bg-[#2E9E65] active:scale-[0.98] text-white rounded-2xl shadow-sm transition flex items-center gap-1.5 text-xs font-bold"
         >
           <Plus className="w-4 h-4" />
           <span>Agregar</span>
@@ -219,7 +219,7 @@ export default function InsumosPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Buscar insumo (ej: harina, caja, tela...)"
-          className="w-full pl-10 pr-4 py-2.5 text-xs bg-white border border-neutral-200 rounded-2xl focus:border-[#4f9856] focus:ring-2 focus:ring-[#e5f2e6] outline-none shadow-sm transition"
+          className="w-full pl-10 pr-4 py-2.5 text-xs bg-white border border-neutral-200 rounded-2xl focus:border-[#3BB578] focus:ring-2 focus:ring-[#DCF4D7] outline-none shadow-sm transition"
         />
       </div>
 
@@ -237,7 +237,7 @@ export default function InsumosPage() {
             onClick={() => setFilter(tab.key)}
             className={`flex-1 py-1.5 text-[11px] font-semibold rounded-xl transition ${
               filter === tab.key
-                ? "bg-white text-[#306236] shadow-sm"
+                ? "bg-white text-[#1F7A4C] shadow-sm"
                 : "text-neutral-500 hover:text-neutral-800"
             }`}
           >
@@ -253,7 +253,7 @@ export default function InsumosPage() {
           <p className="text-xs text-neutral-400">Cargando tus insumos...</p>
         </div>
       ) : filteredSupplies.length === 0 ? (
-        <div className="bg-white rounded-3xl p-8 border border-[#eef2eb] shadow-sm flex flex-col items-center text-center space-y-3">
+        <div className="bg-white rounded-3xl p-8 border border-[#EAF0E8] shadow-sm flex flex-col items-center text-center space-y-3">
           <HabaMascot size={75} />
           <div>
             <h3 className="text-sm font-bold text-neutral-700">
@@ -270,7 +270,7 @@ export default function InsumosPage() {
               setEditingSupply(null);
               setIsModalOpen(true);
             }}
-            className="mt-2 py-2.5 px-4 bg-[#e5f2e6] hover:bg-[#cce5ce] text-[#306236] text-xs font-bold rounded-2xl transition flex items-center gap-1.5 shadow-sm"
+            className="mt-2 py-2.5 px-4 bg-[#DCF4D7] hover:bg-[#C3EBC0] text-[#1F7A4C] text-xs font-bold rounded-2xl transition flex items-center gap-1.5 shadow-sm"
           >
             <Sparkles className="w-4 h-4" />
             <span>Cargar mi primer insumo</span>
@@ -288,7 +288,7 @@ export default function InsumosPage() {
             return (
               <div
                 key={supply.id}
-                className="bg-white rounded-3xl p-4 border border-[#eef2eb] shadow-sm hover:shadow-md transition flex flex-col space-y-3"
+                className="bg-white rounded-3xl p-4 border border-[#EAF0E8] shadow-sm hover:shadow-md transition flex flex-col space-y-3"
               >
                 {/* Header Card */}
                 <div className="flex items-start justify-between">
@@ -297,7 +297,7 @@ export default function InsumosPage() {
                       className={`w-9 h-9 rounded-2xl flex items-center justify-center flex-shrink-0 ${
                         supply.category === "packaging"
                           ? "bg-amber-50 text-amber-600"
-                          : "bg-[#e5f2e6] text-[#3b7c42]"
+                          : "bg-[#DCF4D7] text-[#3BB578]"
                       }`}
                     >
                       {supply.category === "packaging" ? (
@@ -315,7 +315,7 @@ export default function InsumosPage() {
                           className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
                             supply.category === "packaging"
                               ? "bg-amber-100/70 text-amber-800"
-                              : "bg-[#e5f2e6] text-[#306236]"
+                              : "bg-[#DCF4D7] text-[#1F7A4C]"
                           }`}
                         >
                           {supply.category === "packaging" ? "Packaging" : "Materia Prima"}
@@ -341,7 +341,7 @@ export default function InsumosPage() {
                         setEditingSupply(supply);
                         setIsModalOpen(true);
                       }}
-                      className="p-1.5 text-neutral-400 hover:text-[#3b7c42] hover:bg-[#e5f2e6] rounded-xl transition"
+                      className="p-1.5 text-neutral-400 hover:text-[#3BB578] hover:bg-[#DCF4D7] rounded-xl transition"
                       title="Editar insumo"
                     >
                       <Edit2 className="w-4 h-4" />
@@ -372,10 +372,10 @@ export default function InsumosPage() {
 
                   <div className="flex items-center gap-2">
                     <div className="text-right">
-                      <span className="text-[10px] text-[#306236] block font-semibold">
+                      <span className="text-[10px] text-[#1F7A4C] block font-semibold">
                         Costo por {supply.use_unit}
                       </span>
-                      <span className="text-sm font-black text-[#244228]">
+                      <span className="text-sm font-black text-[#1F7A4C]">
                         {formatCurrency(unitCost)}
                         <span className="text-[10px] font-normal text-neutral-400">
                           /{supply.use_unit}
