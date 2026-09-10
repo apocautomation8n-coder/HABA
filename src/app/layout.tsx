@@ -38,7 +38,7 @@ export default function RootLayout({
   return (
     <html lang="es">
       <body className="min-h-screen bg-[#fbfaf6] text-neutral-800 antialiased flex flex-col items-center">
-        <main className="w-full max-w-md min-h-screen flex flex-col px-4 pt-[max(env(safe-area-inset-top),16px)] pb-4 sm:px-6">
+        <main className="w-full max-w-md min-h-screen flex flex-col px-4 pt-[env(safe-area-inset-top,4px)] pb-4 sm:px-6">
           {children}
         </main>
       </body>

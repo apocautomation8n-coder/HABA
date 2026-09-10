@@ -155,8 +155,8 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl max-h-[85vh] flex flex-col border border-[#eef2eb] animate-in fade-in slide-in-from-bottom-6 duration-200">
+    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-end justify-center">
+      <div className="bg-white w-full max-w-md rounded-t-3xl shadow-2xl flex flex-col border border-[#eef2eb] animate-in fade-in slide-in-from-bottom-6 duration-200" style={{ maxHeight: 'calc(100vh - env(safe-area-inset-top, 20px) - 20px)' }}>
         
         {/* Header fijo */}
         <div className="p-4 pb-3 border-b border-neutral-100 flex items-center justify-between flex-shrink-0">
@@ -348,7 +348,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
           </div>
 
           {/* Footer Fijo: Botones SIEMPRE visibles y bien acomodados en mobile */}
-          <div className="p-3.5 border-t border-neutral-100 bg-white flex gap-2 flex-shrink-0 safe-area-bottom">
+          <div className="p-3.5 border-t border-neutral-100 bg-white flex gap-2 flex-shrink-0 rounded-b-3xl" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 8px) + 14px)' }}>
             <button
               type="button"
               onClick={onClose}

@@ -46,7 +46,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
 
   return (
     <>
-      <header className="w-full flex items-center justify-between pb-3 pt-1 border-b border-[#eef2eb] mb-4">
+      <header className="w-full flex items-center justify-between pb-2 pt-1 border-b border-[#eef2eb] mb-2">
         <Link href="/dashboard" className="flex items-center gap-2.5">
           <HabaMascot size={36} />
           <div>
