@@ -6,6 +6,9 @@ import { PlusCircle, ShoppingBag, Receipt, Sparkles, LogOut } from "lucide-react
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
 
+import Link from "next/link";
+import { BottomNav } from "@/components/BottomNav";
+
 export default function DashboardPage() {
   const router = useRouter();
   const supabase = createClient();
@@ -27,7 +30,7 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="w-full flex flex-col py-4 space-y-5">
+    <div className="w-full flex flex-col py-4 pb-24 space-y-5">
       {/* Top Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -59,34 +62,39 @@ export default function DashboardPage() {
 
       {/* Accesos directos principales */}
       <div className="grid grid-cols-2 gap-3.5">
-        <div className="bg-white p-4 rounded-3xl border border-[#eef2eb] shadow-sm flex flex-col items-center text-center space-y-2">
+        <Link
+          href="/insumos"
+          className="bg-white p-4 rounded-3xl border border-[#eef2eb] shadow-sm flex flex-col items-center text-center space-y-2 hover:border-[#cce5ce] active:scale-[0.98] transition cursor-pointer"
+        >
           <div className="w-10 h-10 rounded-2xl bg-[#e5f2e6] text-[#3b7c42] flex items-center justify-center">
             <PlusCircle className="w-5 h-5" />
           </div>
-          <span className="text-xs font-bold text-neutral-700">Agregar Insumo</span>
-        </div>
+          <span className="text-xs font-bold text-neutral-700">Insumos y Precios</span>
+        </Link>
 
-        <div className="bg-white p-4 rounded-3xl border border-[#eef2eb] shadow-sm flex flex-col items-center text-center space-y-2">
+        <div className="bg-white p-4 rounded-3xl border border-[#eef2eb] shadow-sm flex flex-col items-center text-center space-y-2 opacity-75">
           <div className="w-10 h-10 rounded-2xl bg-rose-50 text-rose-500 flex items-center justify-center">
             <ShoppingBag className="w-5 h-5" />
           </div>
           <span className="text-xs font-bold text-neutral-700">Crear Producto</span>
         </div>
 
-        <div className="bg-white p-4 rounded-3xl border border-[#eef2eb] shadow-sm flex flex-col items-center text-center space-y-2">
+        <div className="bg-white p-4 rounded-3xl border border-[#eef2eb] shadow-sm flex flex-col items-center text-center space-y-2 opacity-75">
           <div className="w-10 h-10 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center">
             <Receipt className="w-5 h-5" />
           </div>
           <span className="text-xs font-bold text-neutral-700">Presupuestos</span>
         </div>
 
-        <div className="bg-white p-4 rounded-3xl border border-[#eef2eb] shadow-sm flex flex-col items-center text-center space-y-2">
+        <div className="bg-white p-4 rounded-3xl border border-[#eef2eb] shadow-sm flex flex-col items-center text-center space-y-2 opacity-75">
           <div className="w-10 h-10 rounded-2xl bg-sky-50 text-sky-600 flex items-center justify-center">
             <Sparkles className="w-5 h-5" />
           </div>
           <span className="text-xs font-bold text-neutral-700">Mis Productos</span>
         </div>
       </div>
+
+      <BottomNav />
     </div>
   );
 }
