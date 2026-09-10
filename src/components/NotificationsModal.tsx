@@ -38,12 +38,17 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
     async function loadAlerts() {
       try {
         setLoading(true);
+
+        // Leer preferencia de días desde localStorage (default 15)
+        const savedDays = localStorage.getItem("haba_price_review_days");
+        const reviewDays = savedDays ? parseInt(savedDays, 10) || 15 : 15;
+
         // Traer insumos
         const { data: supplies } = await supabase
           .from("supplies")
           .select("id, name, current_price, updated_at")
           .order("updated_at", { ascending: false })
-          .limit(10);
+          .limit(50);
 
         // Traer historial de precios reciente para ver aumentos
         const { data: priceHistory } = await supabase
@@ -54,6 +59,7 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
 
         const items: NotificationItem[] = [];
 
+        // 1. Alertas de aumento de precio
         if (priceHistory && supplies) {
           priceHistory.forEach((hist) => {
             const currentSupply = supplies.find((s) => s.id === hist.supply_id);
@@ -71,13 +77,37 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
           });
         }
 
-        // Si no hay alertas de precio, agregar mensaje informativo de bienvenida
+        // 2. Alertas de insumos desactualizados (más de X días sin actualizar)
+        if (supplies) {
+          const now = new Date();
+          const thresholdMs = reviewDays * 24 * 60 * 60 * 1000;
+          supplies.forEach((supply) => {
+            const updatedAt = new Date(supply.updated_at);
+            const diffMs = now.getTime() - updatedAt.getTime();
+            if (diffMs > thresholdMs) {
+              const daysAgo = Math.floor(diffMs / (24 * 60 * 60 * 1000));
+              // No duplicar si ya hay alerta de precio para este insumo
+              if (!items.find((i) => i.id.includes(supply.id))) {
+                items.push({
+                  id: `stale-${supply.id}`,
+                  type: "stock_alert",
+                  title: `Revisá: ${supply.name}`,
+                  description: `Hace ${daysAgo} días que no actualizás el precio (último: ${formatCurrency(supply.current_price)}). ¿Sigue vigente?`,
+                  date: supply.updated_at,
+                  isRead: false,
+                });
+              }
+            }
+          });
+        }
+
+        // Si no hay alertas, mensaje informativo
         if (items.length === 0) {
           items.push({
             id: "system-welcome",
             type: "system",
-            title: "Control de Stock e Insumos Activo",
-            description: "HABA te notificará automáticamente cuando un insumo aumente de precio o cuando tus productos necesiten actualización de costos.",
+            title: "¡Todo al día! 🌱",
+            description: `Tus insumos están actualizados dentro de los últimos ${reviewDays} días. HABA te avisará cuando necesiten revisión.`,
             date: new Date().toISOString(),
             isRead: true,
           });
@@ -168,6 +198,8 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
                 className={`p-3 rounded-2xl border transition ${
                   item.type === "price_increase"
                     ? "bg-rose-50/70 border-rose-200"
+                    : item.type === "stock_alert"
+                    ? "bg-amber-50/70 border-amber-200"
                     : "bg-neutral-50 border-neutral-100"
                 }`}
               >
@@ -175,6 +207,8 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
                   <div className="mt-0.5">
                     {item.type === "price_increase" ? (
                       <TrendingUp className="w-4 h-4 text-rose-600" />
+                    ) : item.type === "stock_alert" ? (
+                      <AlertTriangle className="w-4 h-4 text-amber-600" />
                     ) : (
                       <CheckCircle className="w-4 h-4 text-[#3b7c42]" />
                     )}

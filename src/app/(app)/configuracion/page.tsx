@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { User, Store, Mail, ShieldCheck, LogOut, Check, Sparkles, Smartphone } from "lucide-react";
+import { User, Store, Mail, ShieldCheck, LogOut, Check, Sparkles, Smartphone, Bell, Clock, RefreshCw } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
 
@@ -18,6 +18,9 @@ export default function SettingsPage() {
   const [fullName, setFullName] = useState<string>("");
   const [businessName, setBusinessName] = useState<string>("");
   const [role, setRole] = useState<string>("user");
+  const [priceReviewDays, setPriceReviewDays] = useState<number>(15);
+  const [savedNotifSuccess, setSavedNotifSuccess] = useState(false);
+  const [updating, setUpdating] = useState(false);
 
   useEffect(() => {
     async function loadUser() {
@@ -50,6 +53,10 @@ export default function SettingsPage() {
       }
     }
     loadUser();
+
+    // Cargar preferencias de notificaciones desde localStorage
+    const savedDays = localStorage.getItem("haba_price_review_days");
+    if (savedDays) setPriceReviewDays(parseInt(savedDays, 10) || 15);
   }, [supabase]);
 
   const handleSave = async (e: React.FormEvent) => {
@@ -176,6 +183,70 @@ export default function SettingsPage() {
         </form>
       </div>
 
+      {/* Preferencias de Notificaciones */}
+      <div className="bg-white p-5 rounded-3xl border border-[#eef2eb] shadow-sm">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-400 mb-3.5">
+          Preferencias de Notificaciones
+        </h3>
+
+        <div className="space-y-4">
+          {/* Recordatorio de precios */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+                <Clock className="w-4 h-4" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-neutral-800">Recordatorio de precios</p>
+                <p className="text-[10px] text-neutral-400">
+                  Te aviso si un insumo no se actualiza hace más de...
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 bg-neutral-50 p-3 rounded-2xl border border-neutral-200/60">
+              <input
+                type="range"
+                min={5}
+                max={60}
+                step={5}
+                value={priceReviewDays}
+                onChange={(e) => setPriceReviewDays(parseInt(e.target.value, 10))}
+                className="flex-1 accent-[#3b7c42] h-1.5"
+              />
+              <div className="flex items-center gap-1 bg-white border border-neutral-200 rounded-xl px-2.5 py-1.5 min-w-[70px] justify-center">
+                <span className="text-sm font-bold text-[#306236]">{priceReviewDays}</span>
+                <span className="text-[10px] text-neutral-500">días</span>
+              </div>
+            </div>
+
+            <p className="text-[10px] text-neutral-400 leading-snug">
+              💡 Si hace más de <strong className="text-neutral-600">{priceReviewDays} días</strong> que no actualizás el precio de un insumo, te lo vamos a marcar en las notificaciones para que revises.
+            </p>
+          </div>
+
+          {/* Botón guardar preferencias */}
+          <button
+            type="button"
+            onClick={() => {
+              localStorage.setItem("haba_price_review_days", priceReviewDays.toString());
+              setSavedNotifSuccess(true);
+              setTimeout(() => setSavedNotifSuccess(false), 3000);
+            }}
+            className="w-full py-2.5 px-4 bg-amber-500 hover:bg-amber-600 text-white font-semibold rounded-2xl text-xs transition flex items-center justify-center gap-1.5 shadow-sm"
+          >
+            {savedNotifSuccess ? (
+              <span className="flex items-center gap-1">
+                <Check className="w-4 h-4" /> ¡Preferencias guardadas!
+              </span>
+            ) : (
+              <span className="flex items-center gap-1">
+                <Bell className="w-3.5 h-3.5" /> Guardar preferencias de alerta
+              </span>
+            )}
+          </button>
+        </div>
+      </div>
       {/* Enlace al panel de administración si es Admin */}
       {role === "admin" && (
         <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-3xl flex items-center justify-between">
@@ -220,6 +291,50 @@ export default function SettingsPage() {
           className="px-3 py-1.5 bg-[#3b7c42] hover:bg-[#326b38] text-white font-semibold rounded-xl text-xs transition"
         >
           Instalar
+        </button>
+      </div>
+
+      {/* Actualizar Sistema */}
+      <div className="bg-white border border-blue-200 p-4 rounded-3xl flex items-center justify-between shadow-sm">
+        <div className="flex items-center gap-2.5">
+          <div className="w-9 h-9 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center">
+            <RefreshCw className={`w-5 h-5 ${updating ? "animate-spin" : ""}`} />
+          </div>
+          <div>
+            <p className="text-xs font-bold text-neutral-800">Actualizar Sistema</p>
+            <p className="text-[11px] text-neutral-500">Descargá la última versión de HABA</p>
+          </div>
+        </div>
+        <button
+          disabled={updating}
+          onClick={async () => {
+            setUpdating(true);
+            try {
+              // 1. Desregistrar todos los service workers
+              if ("serviceWorker" in navigator) {
+                const registrations = await navigator.serviceWorker.getRegistrations();
+                for (const reg of registrations) {
+                  await reg.unregister();
+                }
+              }
+              // 2. Limpiar todos los caches del navegador
+              if ("caches" in window) {
+                const cacheNames = await caches.keys();
+                for (const name of cacheNames) {
+                  await caches.delete(name);
+                }
+              }
+              // 3. Esperar un momento y hacer hard reload
+              await new Promise((r) => setTimeout(r, 500));
+              window.location.reload();
+            } catch (err) {
+              console.error("Error al actualizar:", err);
+              window.location.reload();
+            }
+          }}
+          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl text-xs transition disabled:opacity-60"
+        >
+          {updating ? "Actualizando..." : "Actualizar"}
         </button>
       </div>
 
