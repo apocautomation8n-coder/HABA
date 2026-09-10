@@ -4,13 +4,30 @@ interface HabaMascotProps {
   className?: string;
   size?: number;
   mood?: "happy" | "waving" | "calculating";
+  useImage?: boolean;
 }
 
 export const HabaMascot: React.FC<HabaMascotProps> = ({
   className = "",
   size = 100,
   mood = "happy",
+  useImage = true,
 }) => {
+  if (useImage) {
+    return (
+      <div
+        className={`relative flex items-center justify-center flex-shrink-0 ${className}`}
+        style={{ width: size, height: size }}
+      >
+        <img
+          src="/icon-192.png"
+          alt="Mascota HABA"
+          className="w-full h-full object-contain drop-shadow-sm rounded-2xl transition-transform hover:scale-105"
+        />
+      </div>
+    );
+  }
+
   return (
     <div className={`relative flex items-center justify-center ${className}`} style={{ width: size, height: size }}>
       <svg
