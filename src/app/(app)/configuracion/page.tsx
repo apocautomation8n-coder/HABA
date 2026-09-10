@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { User, Store, Mail, ShieldCheck, LogOut, Check, Sparkles, Smartphone, Bell, Clock } from "lucide-react";
+import { User, Store, Mail, ShieldCheck, LogOut, Check, Sparkles, Smartphone, Bell, Clock, RefreshCw } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
 
@@ -20,6 +20,7 @@ export default function SettingsPage() {
   const [role, setRole] = useState<string>("user");
   const [priceReviewDays, setPriceReviewDays] = useState<number>(15);
   const [savedNotifSuccess, setSavedNotifSuccess] = useState(false);
+  const [updating, setUpdating] = useState(false);
 
   useEffect(() => {
     async function loadUser() {
@@ -290,6 +291,50 @@ export default function SettingsPage() {
           className="px-3 py-1.5 bg-[#3b7c42] hover:bg-[#326b38] text-white font-semibold rounded-xl text-xs transition"
         >
           Instalar
+        </button>
+      </div>
+
+      {/* Actualizar Sistema */}
+      <div className="bg-white border border-blue-200 p-4 rounded-3xl flex items-center justify-between shadow-sm">
+        <div className="flex items-center gap-2.5">
+          <div className="w-9 h-9 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center">
+            <RefreshCw className={`w-5 h-5 ${updating ? "animate-spin" : ""}`} />
+          </div>
+          <div>
+            <p className="text-xs font-bold text-neutral-800">Actualizar Sistema</p>
+            <p className="text-[11px] text-neutral-500">Descargá la última versión de HABA</p>
+          </div>
+        </div>
+        <button
+          disabled={updating}
+          onClick={async () => {
+            setUpdating(true);
+            try {
+              // 1. Desregistrar todos los service workers
+              if ("serviceWorker" in navigator) {
+                const registrations = await navigator.serviceWorker.getRegistrations();
+                for (const reg of registrations) {
+                  await reg.unregister();
+                }
+              }
+              // 2. Limpiar todos los caches del navegador
+              if ("caches" in window) {
+                const cacheNames = await caches.keys();
+                for (const name of cacheNames) {
+                  await caches.delete(name);
+                }
+              }
+              // 3. Esperar un momento y hacer hard reload
+              await new Promise((r) => setTimeout(r, 500));
+              window.location.reload();
+            } catch (err) {
+              console.error("Error al actualizar:", err);
+              window.location.reload();
+            }
+          }}
+          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl text-xs transition disabled:opacity-60"
+        >
+          {updating ? "Actualizando..." : "Actualizar"}
         </button>
       </div>
 
