@@ -171,17 +171,22 @@ export default function NuevoPresupuestoPage() {
 
       if (!user) throw new Error("Sesión no válida");
 
-      // Generar número correlativo o de referencia: PRES-YYYYMMDD-XXXX
-      const datePart = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-      const randomSuffix = Math.floor(1000 + Math.random() * 9000);
-      const quoteNumber = `PRES-${datePart}-${randomSuffix}`;
+      // Obtener el último quote_number para generar el correlativo entero siguiente
+      const { data: latestQuote } = await supabase
+        .from("quotes")
+        .select("quote_number")
+        .order("quote_number", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const nextQuoteNumber = latestQuote?.quote_number ? Number(latestQuote.quote_number) + 1 : 1;
 
       // 1. Insertar en tabla quotes
       const { data: quoteData, error: quoteError } = await supabase
         .from("quotes")
         .insert({
           user_id: user.id,
-          quote_number: quoteNumber,
+          quote_number: nextQuoteNumber,
           client_name: clientName.trim(),
           client_contact: clientContact.trim() || null,
           delivery_date: deliveryDate ? new Date(deliveryDate).toISOString() : null,
@@ -478,9 +483,15 @@ export default function NuevoPresupuestoPage() {
 
       {/* MODAL SELECTOR DE PRODUCTOS Y PRECIOS */}
       {isProductPickerOpen && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl border border-[#eef2eb] max-h-[85vh] flex flex-col animate-in slide-in-from-bottom-6">
-            <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
+        <div className="fixed inset-0 z-[99999] bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center">
+          <div 
+            className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl border border-[#eef2eb] flex flex-col animate-in slide-in-from-bottom-6"
+            style={{
+              height: 'min(88vh, 650px)',
+              maxHeight: 'calc(100dvh - env(safe-area-inset-top, 20px) - 10px)'
+            }}
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-neutral-100 flex-shrink-0">
               <h3 className="text-sm font-bold text-neutral-800">Agregar Producto del Catálogo</h3>
               <button
                 onClick={() => setIsProductPickerOpen(false)}
@@ -490,7 +501,7 @@ export default function NuevoPresupuestoPage() {
               </button>
             </div>
 
-            <div className="overflow-y-auto flex-1 my-3 space-y-3 pr-1">
+            <div className="overflow-y-auto flex-1 min-h-0 my-3 space-y-3 pr-1 overscroll-contain">
               {products.length === 0 ? (
                 <div className="p-4 text-center text-xs text-neutral-500">
                   No tenés productos cargados en tu catálogo. Creá uno en Productos primero.
@@ -511,7 +522,7 @@ export default function NuevoPresupuestoPage() {
                           <button
                             key={price.id}
                             onClick={() => handleAddProduct(prod, price)}
-                            className="w-full p-2 bg-white hover:bg-[#e5f2e6] border border-neutral-200 hover:border-[#3b7c42] rounded-xl flex items-center justify-between text-xs transition"
+                            className="w-full p-2.5 bg-white hover:bg-[#e5f2e6] border border-neutral-200 hover:border-[#3b7c42] rounded-xl flex items-center justify-between text-xs transition"
                           >
                             <span className="font-semibold text-neutral-700">
                               {price.channel_name}
@@ -531,7 +542,7 @@ export default function NuevoPresupuestoPage() {
                               selling_price: prod.total_cost,
                             })
                           }
-                          className="w-full p-2 bg-white hover:bg-[#e5f2e6] border border-neutral-200 rounded-xl flex items-center justify-between text-xs"
+                          className="w-full p-2.5 bg-white hover:bg-[#e5f2e6] border border-neutral-200 rounded-xl flex items-center justify-between text-xs"
                         >
                           <span className="font-semibold text-neutral-700">Precio Base</span>
                           <span className="font-extrabold text-[#244228]">
@@ -545,12 +556,17 @@ export default function NuevoPresupuestoPage() {
               )}
             </div>
 
-            <button
-              onClick={() => setIsProductPickerOpen(false)}
-              className="w-full py-2.5 bg-neutral-100 text-neutral-700 text-xs font-semibold rounded-2xl"
+            <div 
+              className="pt-2 border-t border-neutral-100 flex-shrink-0"
+              style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 12px), 16px)' }}
             >
-              Cerrar
-            </button>
+              <button
+                onClick={() => setIsProductPickerOpen(false)}
+                className="w-full py-2.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-xs font-semibold rounded-2xl transition"
+              >
+                Cerrar
+              </button>
+            </div>
           </div>
         </div>
       )}

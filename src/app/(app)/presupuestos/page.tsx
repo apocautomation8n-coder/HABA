@@ -33,7 +33,7 @@ interface QuoteItem {
 
 interface Quote {
   id: string;
-  quote_number: string;
+  quote_number: string | number;
   client_name: string;
   client_contact?: string;
   delivery_date?: string;
@@ -223,7 +223,7 @@ export default function PresupuestosPage() {
     return quotes.filter(
       (q) =>
         q.client_name.toLowerCase().includes(search.toLowerCase()) ||
-        q.quote_number.toLowerCase().includes(search.toLowerCase())
+        String(q.quote_number).toLowerCase().includes(search.toLowerCase())
     );
   }, [quotes, search]);
 

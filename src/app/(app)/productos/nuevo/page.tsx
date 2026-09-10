@@ -768,9 +768,15 @@ export default function NuevoProductoPage() {
 
       {/* MODAL SELECCIONADOR DE INSUMOS */}
       {supplyPickerOpen && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="bg-white w-full max-w-sm rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl border border-[#eef2eb] max-h-[85vh] flex flex-col animate-in slide-in-from-bottom-6">
-            <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
+        <div className="fixed inset-0 z-[99999] bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center">
+          <div
+            className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl border border-[#eef2eb] flex flex-col animate-in slide-in-from-bottom-6"
+            style={{
+              height: 'min(88vh, 600px)',
+              maxHeight: 'calc(100dvh - env(safe-area-inset-top, 20px) - 10px)'
+            }}
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-neutral-100 flex-shrink-0">
               <h3 className="text-sm font-bold text-neutral-800">Elegir Insumo o Packaging</h3>
               <button
                 onClick={() => setSupplyPickerOpen(false)}
@@ -780,7 +786,7 @@ export default function NuevoProductoPage() {
               </button>
             </div>
 
-            <div className="overflow-y-auto flex-1 my-3 space-y-2 pr-1">
+            <div className="overflow-y-auto flex-1 min-h-0 my-3 space-y-2 pr-1 overscroll-contain">
               {availableSupplies.length === 0 ? (
                 <div className="p-4 text-center text-xs text-neutral-500">
                   No tenés insumos cargados. Creá uno en el módulo Insumos primero.
@@ -827,12 +833,17 @@ export default function NuevoProductoPage() {
               )}
             </div>
 
-            <button
-              onClick={() => setSupplyPickerOpen(false)}
-              className="w-full py-2.5 bg-neutral-100 text-neutral-700 text-xs font-semibold rounded-2xl"
+            <div
+              className="pt-2 border-t border-neutral-100 flex-shrink-0"
+              style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 12px), 16px)' }}
             >
-              Cerrar
-            </button>
+              <button
+                onClick={() => setSupplyPickerOpen(false)}
+                className="w-full py-2.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-xs font-semibold rounded-2xl transition"
+              >
+                Cerrar
+              </button>
+            </div>
           </div>
         </div>
       )}
