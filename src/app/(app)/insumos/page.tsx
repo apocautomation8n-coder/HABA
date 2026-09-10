@@ -1,20 +1,17 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import Link from "next/link";
 import {
-  ChevronLeft,
   Plus,
   Search,
   ChevronRight,
   TrendingUp,
   Clock,
   Sparkles,
-  PackageCheck,
 } from "lucide-react";
 import { Insumo, PriceRecord } from "@/types/insumo";
 import { PriceHistoryDrawer } from "@/components/insumos/PriceHistoryDrawer";
-import { BottomNav } from "@/components/BottomNav";
+import { HabaMascot } from "@/components/HabaMascot";
 
 // Datos iniciales de insumos basados en los mockups oficiales de HABA
 const INITIAL_INSUMOS: Insumo[] = [
@@ -108,7 +105,7 @@ const INITIAL_INSUMOS: Insumo[] = [
     updated_at: "2026-09-02",
     history: [
       { id: "p6-1", price: 250, date: "2026-04-20", note: "Pack x 100 kraft" },
-      { id: "p6-2", price: 290, date: "2026-06-10", note: "Fabrica de cajas" },
+      { id: "p6-2", price: 290, date: "2026-06-10", note: "Fábrica de cajas" },
       { id: "p6-3", price: 320, date: "2026-08-15", note: "Aumento papel" },
       { id: "p6-4", price: 350, date: "2026-09-02", note: "Último pedido" },
     ],
@@ -135,7 +132,7 @@ export default function InsumosPage() {
         }
       }
     } catch {
-      // Usar estado inicial si falla
+      // Usar datos iniciales si no hay localStorage
     }
   }, []);
 
@@ -145,7 +142,7 @@ export default function InsumosPage() {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(newList));
     } catch {
-      // Ignorar errores en modo incógnito/storage lleno
+      // Ignorar errores
     }
   };
 
@@ -161,7 +158,10 @@ export default function InsumosPage() {
   };
 
   // Agregar un nuevo registro de precio desde el Drawer
-  const handleAddPriceRecord = (insumoId: string, newRecordData: Omit<PriceRecord, "id">) => {
+  const handleAddPriceRecord = (
+    insumoId: string,
+    newRecordData: Omit<PriceRecord, "id">
+  ) => {
     const newRecord: PriceRecord = {
       ...newRecordData,
       id: "rec-" + Date.now(),
@@ -193,13 +193,21 @@ export default function InsumosPage() {
     saveInsumos(updated);
   };
 
-  // Filtros
-  const categories = ["Todos", "Alimentos", "Packaging", "Otros"];
+  // Filtros de categorías compatibles con la vista de Eze y los mockups
+  const filterTabs = [
+    { key: "Todos", label: "Todos" },
+    { key: "Alimentos", label: "Materia Prima" },
+    { key: "Packaging", label: "Packaging" },
+    { key: "Otros", label: "Otros" },
+  ];
 
   const filteredInsumos = insumos.filter((item) => {
-    const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase().trim());
+    const matchesSearch = item.name
+      .toLowerCase()
+      .includes(searchTerm.toLowerCase().trim());
     const matchesCategory =
-      selectedCategory === "Todos" || item.category.toLowerCase() === selectedCategory.toLowerCase();
+      selectedCategory === "Todos" ||
+      item.category.toLowerCase() === selectedCategory.toLowerCase();
     return matchesSearch && matchesCategory;
   });
 
@@ -224,31 +232,26 @@ export default function InsumosPage() {
   };
 
   return (
-    <div className="w-full flex flex-col pb-24 pt-2 space-y-4">
-      {/* Barra superior con navegación */}
+    <div className="w-full flex flex-col space-y-4">
+      {/* Encabezado del Módulo */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Link
-            href="/dashboard"
-            className="w-9 h-9 rounded-full bg-white border border-[#eef2eb] flex items-center justify-center text-neutral-600 hover:text-neutral-900 transition shadow-xs"
-          >
-            <ChevronLeft className="w-5 h-5" />
-          </Link>
-          <h1 className="text-xl font-extrabold text-neutral-800 tracking-tight">
-            Mis insumos
-          </h1>
+        <div>
+          <h2 className="text-xl font-bold text-neutral-800">Mis Insumos</h2>
+          <p className="text-xs text-neutral-500">
+            Materia prima y packaging con historial de reposición
+          </p>
         </div>
-
         <button
           onClick={() => {
             if (filteredInsumos.length > 0) {
               handleOpenDrawer(filteredInsumos[0]);
             }
           }}
-          className="w-9 h-9 rounded-full bg-[#3b7c42] hover:bg-[#326b38] text-white flex items-center justify-center shadow-xs transition active:scale-95"
+          className="p-2.5 bg-[#3b7c42] hover:bg-[#326b38] active:scale-95 text-white rounded-2xl shadow-sm transition flex items-center gap-1.5 text-xs font-semibold"
           title="Ver historial o agregar"
         >
-          <Plus className="w-5 h-5" />
+          <Plus className="w-4 h-4" />
+          <span>Nuevo precio</span>
         </button>
       </div>
 
@@ -261,40 +264,40 @@ export default function InsumosPage() {
           type="text"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          placeholder="Buscar insumo..."
-          className="w-full pl-10 pr-4 py-2.5 text-xs sm:text-sm bg-white border border-[#e2e8df] rounded-2xl focus:border-[#4f9856] focus:ring-2 focus:ring-[#e5f2e6] outline-none transition shadow-xs"
+          placeholder="Buscar harina, azúcar, caja, manteca..."
+          className="w-full pl-10 pr-4 py-2 text-xs bg-white border border-neutral-200 rounded-2xl focus:border-[#4f9856] focus:ring-2 focus:ring-[#e5f2e6] outline-none shadow-sm transition"
         />
       </div>
 
-      {/* Categorías (Pills) */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
-        {categories.map((cat) => (
+      {/* Filtros por pestaña */}
+      <div className="flex bg-neutral-100 p-1 rounded-2xl gap-1">
+        {filterTabs.map((tab) => (
           <button
-            key={cat}
-            onClick={() => setSelectedCategory(cat)}
-            className={`px-3.5 py-1.5 rounded-2xl text-xs font-semibold whitespace-nowrap transition-all ${
-              selectedCategory === cat
-                ? "bg-[#3b7c42] text-white shadow-xs"
-                : "bg-white text-neutral-600 border border-[#eef2eb] hover:bg-neutral-50"
+            key={tab.key}
+            onClick={() => setSelectedCategory(tab.key)}
+            className={`flex-1 py-1.5 text-xs font-semibold rounded-xl transition ${
+              selectedCategory === tab.key
+                ? "bg-white text-[#306236] shadow-sm"
+                : "text-neutral-500 hover:text-neutral-800"
             }`}
           >
-            {cat}
+            {tab.label}
           </button>
         ))}
       </div>
 
       {/* Banner explicativo del historial cronológico */}
-      <div className="bg-[#eaf4ea] border border-[#cbe3cc] rounded-3xl p-3.5 flex items-center justify-between gap-3">
+      <div className="bg-[#eaf4ea] border border-[#cbe3cc] rounded-3xl p-3 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-white text-[#3b7c42] flex items-center justify-center font-bold text-sm shadow-xs">
+          <div className="w-7 h-7 rounded-xl bg-white text-[#3b7c42] flex items-center justify-center font-bold text-sm shadow-xs">
             <TrendingUp className="w-4 h-4" />
           </div>
           <div>
             <p className="text-xs font-bold text-[#2a4f2f]">
-              Historial de precios
+              Historial y Gráfico de Precios
             </p>
             <p className="text-[11px] text-[#3b7c42]">
-              Tocá cualquier insumo para ver su gráfico y evolución cronológica.
+              Tocá cualquier insumo para abrir el panel lateral con su evolución.
             </p>
           </div>
         </div>
@@ -303,58 +306,61 @@ export default function InsumosPage() {
       {/* Lista de Insumos */}
       <div className="space-y-2.5">
         {filteredInsumos.length === 0 ? (
-          <div className="bg-white rounded-3xl p-8 text-center border border-[#eef2eb] space-y-2">
-            <p className="text-sm font-semibold text-neutral-600">
-              No se encontraron insumos
-            </p>
-            <p className="text-xs text-neutral-400">
-              Probá con otro término de búsqueda o categoría.
-            </p>
+          <div className="bg-white rounded-3xl p-8 border border-[#eef2eb] shadow-sm flex flex-col items-center text-center space-y-3">
+            <HabaMascot size={70} />
+            <div>
+              <h3 className="text-sm font-bold text-neutral-700">
+                No se encontraron insumos
+              </h3>
+              <p className="text-xs text-neutral-500 max-w-[240px] mt-1">
+                Probá con otro término de búsqueda o seleccioná otra categoría.
+              </p>
+            </div>
           </div>
         ) : (
           filteredInsumos.map((insumo) => (
             <div
               key={insumo.id}
               onClick={() => handleOpenDrawer(insumo)}
-              className="group bg-white hover:bg-[#fafcfa] active:scale-[0.99] border border-[#edf2ea] hover:border-[#cde3ce] rounded-3xl p-3.5 sm:p-4 transition-all shadow-xs cursor-pointer flex items-center justify-between"
+              className="group bg-white hover:bg-[#fafcfa] active:scale-[0.99] border border-[#edf2ea] hover:border-[#cde3ce] rounded-3xl p-3.5 transition-all shadow-xs cursor-pointer flex items-center justify-between"
             >
-              <div className="flex items-center gap-3.5">
+              <div className="flex items-center gap-3">
                 {/* Icono de Insumo kawaii */}
-                <div className="w-11 h-11 rounded-2xl bg-[#f4f8f3] group-hover:bg-[#e5f2e6] border border-[#e2ebd8] flex items-center justify-center text-lg transition-colors">
+                <div className="w-10 h-10 rounded-2xl bg-[#f4f8f3] group-hover:bg-[#e5f2e6] border border-[#e2ebd8] flex items-center justify-center text-lg transition-colors">
                   {insumo.category === "Packaging" ? "📦" : "🌾"}
                 </div>
 
                 <div>
                   <div className="flex items-center gap-2">
-                    <h3 className="text-sm font-bold text-neutral-800 group-hover:text-[#2a4f2f] transition-colors">
+                    <h3 className="text-xs sm:text-sm font-bold text-neutral-800 group-hover:text-[#2a4f2f] transition-colors">
                       {insumo.name}
                     </h3>
-                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-600">
+                    <span className="text-[9.5px] font-semibold px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-600">
                       {insumo.category}
                     </span>
                   </div>
 
                   <div className="flex items-baseline gap-1 mt-0.5">
-                    <span className="text-sm font-extrabold text-[#3b7c42]">
+                    <span className="text-xs sm:text-sm font-extrabold text-[#3b7c42]">
                       {formatCurrency(insumo.current_price)}
                     </span>
-                    <span className="text-xs text-neutral-400 font-medium">
+                    <span className="text-[11px] text-neutral-400 font-medium">
                       / {insumo.purchase_unit}
                     </span>
                   </div>
 
-                  <div className="flex items-center gap-1 text-[11px] text-neutral-400 mt-1">
+                  <div className="flex items-center gap-1 text-[10.5px] text-neutral-400 mt-0.5">
                     <Clock className="w-3 h-3" />
                     <span>{getDaysAgoText(insumo.updated_at)}</span>
                     <span className="mx-1">•</span>
-                    <span>{insumo.history.length} registros</span>
+                    <span>{insumo.history.length} precios</span>
                   </div>
                 </div>
               </div>
 
-              {/* Botón trigger para el Drawer */}
-              <div className="flex items-center gap-1.5 text-neutral-400 group-hover:text-[#3b7c42] transition-colors">
-                <span className="hidden sm:inline text-xs font-semibold">
+              {/* Trigger lateral */}
+              <div className="flex items-center gap-1 text-neutral-400 group-hover:text-[#3b7c42] transition-colors">
+                <span className="hidden sm:inline text-xs font-medium">
                   Ver gráfico
                 </span>
                 <ChevronRight className="w-5 h-5 transition-transform group-hover:translate-x-0.5" />
@@ -364,16 +370,13 @@ export default function InsumosPage() {
         )}
       </div>
 
-      {/* Drawer lateral de historial cronológico */}
+      {/* Drawer lateral de historial cronológico de precios */}
       <PriceHistoryDrawer
         isOpen={isDrawerOpen}
         onClose={handleCloseDrawer}
         insumo={selectedInsumo}
         onAddPriceRecord={handleAddPriceRecord}
       />
-
-      {/* Barra de navegación inferior */}
-      <BottomNav />
     </div>
   );
 }

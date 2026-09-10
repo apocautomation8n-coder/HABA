@@ -72,11 +72,8 @@ export default function LoginPage() {
       {/* Header & Mascota */}
       <div className="flex flex-col items-center text-center mb-6">
         <HabaMascot size={110} className="mb-2" />
-        <h1 className="text-3xl font-extrabold text-neutral-800 tracking-tight flex items-center gap-1.5">
-          <span className="text-[#3b7c42]">HABA</span>
-          <span className="text-xs bg-[#e5f2e6] text-[#306236] font-semibold px-2 py-0.5 rounded-full">
-            Beta
-          </span>
+        <h1 className="text-3xl font-extrabold text-[#3b7c42] tracking-tight">
+          HABA
         </h1>
         <h2 className="text-xl font-bold text-neutral-700 mt-2">
           ¡Qué bueno verte!
