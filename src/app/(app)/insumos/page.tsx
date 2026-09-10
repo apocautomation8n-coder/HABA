@@ -20,6 +20,7 @@ import { createClient } from "@/lib/supabase/client";
 import { formatCurrency, calculateUnitCost } from "@/lib/units";
 import { SupplyModal, SupplyItem } from "@/components/SupplyModal";
 import { PriceHistoryDrawer } from "@/components/insumos/PriceHistoryDrawer";
+import { DeleteSupplyModal } from "@/components/insumos/DeleteSupplyModal";
 import { Insumo, PriceRecord } from "@/types/insumo";
 
 export default function InsumosPage() {
@@ -33,6 +34,11 @@ export default function InsumosPage() {
   // Modales
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSupply, setEditingSupply] = useState<SupplyItem | null>(null);
+
+  // Modal de Eliminación con Validación de Integridad
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [supplyToDelete, setSupplyToDelete] = useState<SupplyItem | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Rolan's Price History Drawer integration
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -60,23 +66,17 @@ export default function InsumosPage() {
     loadSupplies();
   }, []);
 
-  const handleDelete = async (supply: SupplyItem) => {
-    if (!supply.id) return;
-    const confirmDelete = window.confirm(
-      `¿Estás segura de eliminar "${supply.name}"? Esta acción no se puede deshacer.`
-    );
-    if (!confirmDelete) return;
+  const handleRequestDelete = (supply: SupplyItem) => {
+    setSupplyToDelete(supply);
+    setIsDeleteModalOpen(true);
+  };
 
-    try {
-      const { error } = await supabase.from("supplies").delete().eq("id", supply.id);
-      if (!error) {
-        setSupplies((prev) => prev.filter((s) => s.id !== supply.id));
-      } else {
-        alert("No se pudo eliminar el insumo: " + error.message);
-      }
-    } catch (err: any) {
-      alert("Error al eliminar el insumo: " + err.message);
-    }
+  const handleSupplyDeleted = (deletedId: string) => {
+    setSupplies((prev) => prev.filter((s) => s.id !== deletedId));
+    setToastMessage("Insumo eliminado de tu catálogo con éxito.");
+    setTimeout(() => {
+      setToastMessage(null);
+    }, 3500);
   };
 
   // Abrir Drawer de Rolan cargando el histórico real desde Supabase
@@ -347,7 +347,7 @@ export default function InsumosPage() {
                       <Edit2 className="w-4 h-4" />
                     </button>
                     <button
-                      onClick={() => handleDelete(supply)}
+                      onClick={() => handleRequestDelete(supply)}
                       className="p-1.5 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition"
                       title="Eliminar insumo"
                     >
@@ -391,6 +391,14 @@ export default function InsumosPage() {
         </div>
       )}
 
+      {/* Notificación flotante de confirmación (Toast Kawaii) */}
+      {toastMessage && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-[#244228] text-white px-4 py-2.5 rounded-2xl shadow-xl flex items-center gap-2 text-xs font-semibold animate-in fade-in slide-in-from-bottom-3 duration-200">
+          <Sparkles className="w-4 h-4 text-emerald-300" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
       {/* Modal de Crear / Editar Insumo */}
       <SupplyModal
         isOpen={isModalOpen}
@@ -400,6 +408,17 @@ export default function InsumosPage() {
         }}
         onSuccess={loadSupplies}
         initialSupply={editingSupply}
+      />
+
+      {/* Modal de Eliminación con Validación de Integridad Referencial */}
+      <DeleteSupplyModal
+        isOpen={isDeleteModalOpen}
+        supply={supplyToDelete}
+        onClose={() => {
+          setIsDeleteModalOpen(false);
+          setSupplyToDelete(null);
+        }}
+        onSuccess={handleSupplyDeleted}
       />
 
       {/* Drawer Lateral de Historial y Gráfico de Precios (Rolan integration) */}
