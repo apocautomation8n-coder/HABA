@@ -428,7 +428,7 @@ export default function NuevoProductoPage() {
         </div>
       )}
 
-      {/* PASO 2: Receta de Insumos & Packaging */}
+      {/* PASO 2: Insumos & Packaging del Producto */}
       {currentStep === 2 && (
         <div className="bg-white p-5 rounded-3xl border border-[#EAF0E8] shadow-sm space-y-4">
           <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
@@ -451,14 +451,19 @@ export default function NuevoProductoPage() {
           </div>
 
           {selectedSupplies.length === 0 ? (
-            <div className="py-8 text-center space-y-3 bg-neutral-50 rounded-2xl border border-dashed border-neutral-200">
-              <Package className="w-8 h-8 text-neutral-300 mx-auto" />
-              <p className="text-xs text-neutral-500 max-w-[200px] mx-auto">
-                Aún no agregaste insumos ni packaging a esta receta.
-              </p>
+            <div className="space-y-3">
+              <div className="bg-neutral-50 rounded-2xl p-6 border border-dashed border-neutral-200 text-center">
+                <Boxes className="w-8 h-8 text-neutral-300 mx-auto mb-2" />
+                <p className="text-xs font-semibold text-neutral-600">
+                  Aún no agregaste insumos ni packaging a este producto.
+                </p>
+                <p className="text-[11px] text-neutral-400 mt-0.5">
+                  Tocá el botón de abajo para sumar los materiales que utilizás para fabricarlo.
+                </p>
+              </div>
               <button
                 onClick={() => setSupplyPickerOpen(true)}
-                className="py-2 px-4 bg-[#3BB578] text-white text-xs font-bold rounded-2xl shadow-sm"
+                className="w-full py-2.5 px-4 bg-[#3BB578] hover:bg-[#2E9E65] text-white text-xs font-bold rounded-2xl shadow-sm transition"
               >
                 Elegir insumo
               </button>

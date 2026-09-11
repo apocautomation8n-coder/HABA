@@ -26,7 +26,7 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "HABA — Tu aliado en cada receta y presupuesto",
+  title: "HABA — Tu aliado en cada producto y presupuesto",
   description: "App de costeo, precios multicanal y presupuestos para emprendedoras.",
   manifest: "/manifest.webmanifest",
   appleWebApp: {

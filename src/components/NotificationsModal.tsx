@@ -69,7 +69,7 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
                 id: `price-${hist.supply_id}-${hist.changed_at}`,
                 type: "price_increase",
                 title: `Aumento en: ${currentSupply.name}`,
-                description: `Subió ${formatCurrency(diff)} (Nuevo precio: ${formatCurrency(currentSupply.current_price)}). Revisá el costo de tus recetas.`,
+                description: `Subió ${formatCurrency(diff)} (Nuevo precio: ${formatCurrency(currentSupply.current_price)}). Revisá el costo de tus productos.`,
                 date: hist.changed_at,
                 isRead: false,
               });

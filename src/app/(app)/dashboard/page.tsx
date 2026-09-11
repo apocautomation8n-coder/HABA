@@ -96,7 +96,7 @@ export default function DashboardPage() {
           <div>
             <span className="block text-xs font-bold text-[#2B2B2B] font-body">Productos</span>
             <span className="text-[10px] text-[#7A7A7A] font-body">
-              {counts.products} receta{counts.products === 1 ? "" : "s"}
+              {counts.products} producto{counts.products === 1 ? "" : "s"}
             </span>
           </div>
         </Link>
@@ -132,28 +132,33 @@ export default function DashboardPage() {
         </Link>
       </div>
 
-      {/* Banner tip inferior */}
-      <div className="bg-white rounded-3xl p-3.5 border border-[#EAF0E8] shadow-xs flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-xl bg-[#FFF2CE] text-amber-600 flex items-center justify-center flex-shrink-0">
-            <Sparkles className="w-3.5 h-3.5" />
+      {/* Tarjeta Destacada: ¿Por dónde empezar? */}
+      <Link
+        href="/insumos"
+        className="relative overflow-hidden bg-gradient-to-r from-[#DCF4D7] via-white to-[#DCF4D7]/60 rounded-3xl p-4 border-2 border-[#3BB578]/50 shadow-sm hover:shadow-md hover:border-[#3BB578] transition-all group flex items-center justify-between"
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-2xl bg-[#3BB578] text-white flex items-center justify-center flex-shrink-0 shadow-xs group-hover:scale-110 transition-transform">
+            <Sparkles className="w-5 h-5" />
           </div>
           <div>
-            <p className="text-xs font-bold text-[#2B2B2B] font-body">
-              ¿Por dónde empezar?
-            </p>
-            <p className="text-[10.5px] text-[#7A7A7A] font-body">
-              Cargá tus insumos para luego armar tus recetas y precios.
+            <div className="flex items-center gap-1.5">
+              <span className="text-[9.5px] uppercase tracking-wider font-bold bg-[#3BB578] text-white px-2 py-0.5 rounded-full font-body">
+                Comenzá acá
+              </span>
+              <p className="text-xs sm:text-sm font-bold text-[#1F7A4C] font-display">
+                ¿Por dónde empezar?
+              </p>
+            </div>
+            <p className="text-[11px] text-[#2B2B2B] mt-1 font-body leading-snug">
+              Cargá tus <strong>insumos y packaging</strong> para luego armar tus productos y calcular tus precios.
             </p>
           </div>
         </div>
-        <Link
-          href="/insumos"
-          className="p-1.5 text-[#3BB578] hover:bg-[#DCF4D7] rounded-xl transition"
-        >
+        <div className="w-8 h-8 rounded-full bg-[#3BB578] text-white flex items-center justify-center flex-shrink-0 group-hover:translate-x-1 transition-transform ml-2">
           <ArrowRight className="w-4 h-4" />
-        </Link>
-      </div>
+        </div>
+      </Link>
     </div>
   );
 }

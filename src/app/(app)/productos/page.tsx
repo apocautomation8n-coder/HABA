@@ -116,7 +116,7 @@ export default function ProductosPage() {
               {products.length}
             </span>
           </h2>
-          <p className="text-xs text-neutral-500">Recetas, costos reales y precios multicanal</p>
+          <p className="text-xs text-neutral-500">Catálogo, costos reales y precios multicanal</p>
         </div>
         <Link
           href="/productos/nuevo"

@@ -283,7 +283,7 @@ export const SupplyHistoryModal: React.FC<SupplyHistoryModalProps> = ({
                 </span>
               </div>
               <p className="text-[10px] text-[#7A7A7A] mt-1">
-                Base para cálculo de recetas
+                Base para costeo de productos
               </p>
             </div>
 

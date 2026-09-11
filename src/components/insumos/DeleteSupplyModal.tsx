@@ -158,7 +158,7 @@ export const DeleteSupplyModal: React.FC<DeleteSupplyModalProps> = ({
             <HabaMascot size={68} className="animate-bounce" />
             <div>
               <h3 className="text-sm font-bold text-neutral-800">
-                Comprobando recetas...
+                Comprobando productos...
               </h3>
               <p className="text-xs text-neutral-500 mt-1 max-w-[240px]">
                 Verificando que &ldquo;{supply.name}&rdquo; no esté en uso en tus
@@ -172,7 +172,7 @@ export const DeleteSupplyModal: React.FC<DeleteSupplyModalProps> = ({
           </div>
         )}
 
-        {/* ESTADO 2: BLOQUEO POR DEPENDENCIAS EN RECETAS ACTIVAS */}
+        {/* ESTADO 2: BLOQUEO POR DEPENDENCIAS EN PRODUCTOS ACTIVOS */}
         {status === "has_dependencies" && (
           <div className="flex flex-col text-center space-y-3 pt-1">
             <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto border border-amber-100 shadow-2xs">
@@ -190,7 +190,7 @@ export const DeleteSupplyModal: React.FC<DeleteSupplyModalProps> = ({
                 <span className="font-semibold text-neutral-800">
                   {supply.name}
                 </span>{" "}
-                está asignado en la receta de{" "}
+                está asignado en la composición de{" "}
                 {blockingProducts.length === 1
                   ? "este producto activo"
                   : "los siguientes productos activos"}
@@ -220,7 +220,7 @@ export const DeleteSupplyModal: React.FC<DeleteSupplyModalProps> = ({
               <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
               <p className="text-[11px] text-amber-800 leading-tight">
                 Para eliminarlo, primero entrá a cada producto y reemplazalo o
-                quitalo de su receta de ingredientes.
+                quitalo de su lista de insumos.
               </p>
             </div>
 

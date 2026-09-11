@@ -349,9 +349,9 @@ export default function SettingsPage() {
         </button>
       </div>
 
-      {/* Pie de versión */}
-      <div className="text-center pt-2 text-[10px] text-neutral-400">
-        HABA v0.1 · Tu aliado en cada receta y presupuesto 🌱
+      {/* Footer versión */}
+      <div className="text-center pt-2 pb-6 text-[11px] text-neutral-400">
+        HABA v0.1 · Tu aliado en cada producto y presupuesto 🌱
       </div>
     </div>
   );

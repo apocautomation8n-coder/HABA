@@ -334,7 +334,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
             <div className="space-y-2 bg-[#F6F7F2] p-3 rounded-2xl border border-[#EAF0E8]">
               <div className="grid grid-cols-2 gap-2.5">
                 <div className="space-y-1">
-                  <label className="text-[10.5px] font-semibold text-[#7A7A7A]">Unidad en Receta *</label>
+                  <label className="text-[10.5px] font-semibold text-[#7A7A7A]">Unidad de Uso *</label>
                   <input
                     type="text"
                     value={useUnit}
@@ -368,7 +368,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
 
               {/* Explicación didáctica del rendimiento */}
               <div className="text-[10.5px] text-[#7A7A7A] pt-1 border-t border-neutral-200/50">
-                📦 Comprás <strong className="text-[#2B2B2B]">{purchaseQuantity} {purchaseUnit}</strong> = Tenés <strong className="text-[#1F7A4C]">{totalRecipeUnits} {useUnit}</strong> disponibles para usar en recetas.
+                📦 Comprás <strong className="text-[#2B2B2B]">{purchaseQuantity} {purchaseUnit}</strong> = Tenés <strong className="text-[#1F7A4C]">{totalRecipeUnits} {useUnit}</strong> disponibles para armar tus productos.
               </div>
             </div>
 
