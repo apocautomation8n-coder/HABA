@@ -22,6 +22,8 @@ import {
   ExternalLink,
   DollarSign,
   Package,
+  Copy,
+  Loader2,
 } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
@@ -63,6 +65,8 @@ export default function ProductosPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
+  const [successToast, setSuccessToast] = useState<string | null>(null);
 
   // Filtros
   const [search, setSearch] = useState("");
@@ -160,6 +164,112 @@ export default function ProductosPage() {
       }
     } catch (err: any) {
       alert("Error al eliminar: " + err.message);
+    }
+  };
+
+  // Duplicar producto (clonar receta, precios y datos base)
+  const handleDuplicate = async (product: Product) => {
+    if (duplicatingId) return;
+    try {
+      setDuplicatingId(product.id);
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) throw new Error("Sesión no válida");
+
+      // 1. Obtener los insumos de la receta original
+      const { data: originalSupplies, error: suppliesFetchErr } = await supabase
+        .from("product_supplies")
+        .select("supply_id, quantity")
+        .eq("product_id", product.id);
+
+      if (suppliesFetchErr) {
+        console.error("Error al obtener insumos:", suppliesFetchErr);
+      }
+
+      // 2. Obtener los precios de canales originales
+      const { data: originalPrices, error: pricesFetchErr } = await supabase
+        .from("product_prices")
+        .select("channel_name, profit_margin_percent, selling_price")
+        .eq("product_id", product.id);
+
+      if (pricesFetchErr) {
+        console.error("Error al obtener precios:", pricesFetchErr);
+      }
+
+      const clonedName = `${product.name} (copia)`;
+
+      // 3. Insertar el nuevo producto en la tabla products
+      const { data: newProduct, error: productError } = await supabase
+        .from("products")
+        .insert({
+          user_id: user.id,
+          name: clonedName,
+          description: product.description,
+          work_time_minutes: product.work_time_minutes,
+          include_labor: product.include_labor,
+          direct_cost: product.direct_cost,
+          labor_cost: product.labor_cost,
+          indirect_cost: product.indirect_cost,
+          total_cost: product.total_cost,
+          needs_price_review: false,
+        })
+        .select()
+        .single();
+
+      if (productError || !newProduct) {
+        throw new Error(productError?.message || "No se pudo duplicar el producto");
+      }
+
+      // 4. Insertar la receta de insumos si existe
+      if (originalSupplies && originalSupplies.length > 0) {
+        const suppliesToInsert = originalSupplies.map((s) => ({
+          product_id: newProduct.id,
+          supply_id: s.supply_id,
+          quantity: s.quantity,
+        }));
+        const { error: insSuppErr } = await supabase
+          .from("product_supplies")
+          .insert(suppliesToInsert);
+
+        if (insSuppErr) {
+          console.error("Error al duplicar insumos:", insSuppErr);
+        }
+      }
+
+      // 5. Insertar los precios por canal si existen
+      if (originalPrices && originalPrices.length > 0) {
+        const pricesToInsert = originalPrices.map((p) => ({
+          product_id: newProduct.id,
+          channel_name: p.channel_name,
+          profit_margin_percent: p.profit_margin_percent,
+          selling_price: p.selling_price,
+        }));
+        const { error: insPriceErr } = await supabase
+          .from("product_prices")
+          .insert(pricesToInsert);
+
+        if (insPriceErr) {
+          console.error("Error al duplicar precios:", insPriceErr);
+        }
+      }
+
+      // 6. Recargar el listado
+      await loadProducts();
+
+      // 7. Expandir el nuevo producto y mostrar notificación
+      setExpandedProductId(newProduct.id);
+      setSuccessToast(`¡Producto duplicado como "${clonedName}"!`);
+      setTimeout(() => {
+        setSuccessToast(null);
+      }, 4000);
+    } catch (err: any) {
+      console.error("Error al duplicar producto:", err);
+      alert("Error al duplicar el producto: " + (err.message || "Error desconocido"));
+    } finally {
+      setDuplicatingId(null);
     }
   };
 
@@ -640,6 +750,20 @@ export default function ProductosPage() {
                       <Power className="w-4 h-4" />
                     </button>
 
+                    {/* Botón de duplicar producto */}
+                    <button
+                      onClick={() => handleDuplicate(product)}
+                      disabled={duplicatingId === product.id}
+                      className="p-1.5 text-neutral-400 hover:text-[#1F7A4C] hover:bg-[#DCF4D7] rounded-xl transition disabled:opacity-50"
+                      title="Duplicar producto (receta y precios)"
+                    >
+                      {duplicatingId === product.id ? (
+                        <Loader2 className="w-4 h-4 animate-spin text-[#3BB578]" />
+                      ) : (
+                        <Copy className="w-4 h-4" />
+                      )}
+                    </button>
+
                     {/* Botón de eliminar */}
                     <button
                       onClick={() => handleDelete(product)}
@@ -787,11 +911,44 @@ export default function ProductosPage() {
                         )}
                       </div>
                     </div>
+
+                    {/* Botón de acción rápida en vista desplegada: Duplicar */}
+                    <div className="pt-2 border-t border-neutral-200/60 flex items-center justify-between text-xs">
+                      <span className="text-[10px] text-neutral-400">
+                        ¿Querés crear una variación con otra receta o precio?
+                      </span>
+                      <button
+                        onClick={() => handleDuplicate(product)}
+                        disabled={duplicatingId === product.id}
+                        className="px-3 py-1.5 bg-[#DCF4D7] hover:bg-[#C3EBC0] text-[#1F7A4C] rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-2xs active:scale-95 disabled:opacity-50"
+                      >
+                        {duplicatingId === product.id ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Copy className="w-3.5 h-3.5" />
+                        )}
+                        <span>Duplicar Producto</span>
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Toast de Notificación Kawaii */}
+      {successToast && (
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 bg-[#1F7A4C] text-white px-4 py-2.5 rounded-2xl shadow-xl flex items-center gap-2 text-xs font-bold border border-emerald-400/30 animate-in fade-in slide-in-from-bottom-3 duration-200">
+          <Sparkles className="w-4 h-4 text-emerald-200 flex-shrink-0" />
+          <span>{successToast}</span>
+          <button
+            onClick={() => setSuccessToast(null)}
+            className="ml-2 text-emerald-200 hover:text-white p-0.5 rounded-lg transition"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
     </div>
