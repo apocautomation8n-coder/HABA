@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient as createServerClient } from "@/lib/supabase/server";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+import { checkIsAdmin } from "@/lib/auth-helpers";
 
 function getAdminClient() {
-  return createClient(
+  return createSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     {
@@ -14,9 +16,53 @@ function getAdminClient() {
   );
 }
 
-// GET: Listar todas las usuarias del sistema
-export async function GET() {
+async function verifyAdminCaller(request: Request) {
   try {
+    const supabase = await createServerClient();
+    let { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      const authHeader = request.headers.get("Authorization");
+      if (authHeader?.startsWith("Bearer ")) {
+        const token = authHeader.substring(7);
+        const admin = getAdminClient();
+        const { data } = await admin.auth.getUser(token);
+        user = data.user;
+      }
+    }
+
+    if (!user) {
+      return {
+        authorized: false as const,
+        response: NextResponse.json({ error: "No autenticado" }, { status: 401 }),
+      };
+    }
+
+    if (!checkIsAdmin(user)) {
+      return {
+        authorized: false as const,
+        response: NextResponse.json(
+          { error: "Acceso denegado: solo administradora (Gio)" },
+          { status: 403 }
+        ),
+      };
+    }
+
+    return { authorized: true as const, user };
+  } catch (err: any) {
+    return {
+      authorized: false as const,
+      response: NextResponse.json({ error: "Error de autenticación: " + err.message }, { status: 500 }),
+    };
+  }
+}
+
+// GET: Listar todas las usuarias del sistema
+export async function GET(request: Request) {
+  try {
+    const auth = await verifyAdminCaller(request);
+    if (!auth.authorized) return auth.response;
+
     const supabaseAdmin = getAdminClient();
     const { data: profiles, error } = await supabaseAdmin
       .from("profiles")
@@ -36,6 +82,9 @@ export async function GET() {
 // POST: Alta de nueva usuaria
 export async function POST(request: Request) {
   try {
+    const auth = await verifyAdminCaller(request);
+    if (!auth.authorized) return auth.response;
+
     const supabaseAdmin = getAdminClient();
     const body = await request.json();
     const { email, password, fullName, businessName } = body;
@@ -93,6 +142,9 @@ export async function POST(request: Request) {
 // PATCH: Cambiar estado (active / suspended) o actualizar datos
 export async function PATCH(request: Request) {
   try {
+    const auth = await verifyAdminCaller(request);
+    if (!auth.authorized) return auth.response;
+
     const supabaseAdmin = getAdminClient();
     const body = await request.json();
     const { userId, status, password } = body;
@@ -134,6 +186,9 @@ export async function PATCH(request: Request) {
 // DELETE: Eliminar usuaria definitivamente
 export async function DELETE(request: Request) {
   try {
+    const auth = await verifyAdminCaller(request);
+    if (!auth.authorized) return auth.response;
+
     const supabaseAdmin = getAdminClient();
     const body = await request.json();
     const { userId } = body;
