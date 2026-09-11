@@ -1,7 +1,6 @@
 "use client";
-
 import React, { useEffect, useState, useMemo } from "react";
-import { DollarSign, Clock, Plus, Trash2, Edit2, Calendar, AlertCircle, Check, Sparkles, X, Calculator, HelpCircle, Loader2 } from "lucide-react";
+import { DollarSign, Clock, Plus, Trash2, Edit2, Calendar, AlertCircle, Check, Sparkles, X, Calculator, HelpCircle, Loader2, Info } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/units";
@@ -38,6 +37,7 @@ export default function GastosPage() {
   const [laborSavedSuccess, setLaborSavedSuccess] = useState(false);
   const [laborError, setLaborError] = useState<string | null>(null);
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
+  const [showLaborInfo, setShowLaborInfo] = useState(false);
 
   // Cargar datos
   const loadData = async () => {
@@ -342,9 +342,63 @@ export default function GastosPage() {
                 <p className="text-[11px] text-[#2E9E65] mt-0.5 leading-snug font-body">
                   Definí tu sueldo deseado y tus horas reales de producción para que cada producto sume el valor exacto de tus minutos dedicados.
                 </p>
+                <button
+                  type="button"
+                  onClick={() => setShowLaborInfo(!showLaborInfo)}
+                  className="mt-2 text-[10.5px] font-bold text-[#1F7A4C] bg-white hover:bg-neutral-50 px-2.5 py-1 rounded-xl inline-flex items-center gap-1 transition shadow-xs cursor-pointer"
+                >
+                  <Info className="w-3.5 h-3.5 text-[#3BB578]" />
+                  <span>{showLaborInfo ? "Ocultar explicación" : "¿Cómo se calcula paso a paso?"}</span>
+                </button>
               </div>
             </div>
           </div>
+
+          {/* Guía Explicativa Didáctica Desplegable */}
+          {showLaborInfo && (
+            <div className="bg-[#F0FAF4] border border-[#C3EBC0] rounded-3xl p-4 space-y-2.5 text-xs text-[#2B2B2B] animate-in fade-in duration-200 shadow-xs">
+              <div className="flex items-center justify-between font-bold text-[#1F7A4C] border-b border-[#DCF4D7] pb-1.5">
+                <span className="flex items-center gap-1.5 font-display">
+                  <Calculator className="w-4 h-4 text-[#3BB578]" />
+                  Fórmula de Mano de Obra en Vivo:
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowLaborInfo(false)}
+                  className="text-[#7A7A7A] hover:text-[#2B2B2B] text-xs font-semibold"
+                >
+                  Cerrar ✕
+                </button>
+              </div>
+
+              <div className="space-y-1.5 text-[11px] leading-relaxed">
+                <p>
+                  1️⃣ <strong>Horas mensuales de trabajo:</strong> Multiplicás tus días trabajados por tus horas diarias dedicadas a producción:
+                </p>
+                <div className="bg-white p-2 rounded-xl border border-[#DCF4D7] font-mono text-[10.5px] text-[#1F7A4C]">
+                  {daysPerMonth} días × {hoursPerDay} hs/día = <strong>{totalHoursPerMonth} horas al mes</strong>
+                </div>
+
+                <p>
+                  2️⃣ <strong>Valor por Hora:</strong> Dividís tu sueldo pretendido por el total de horas mensuales:
+                </p>
+                <div className="bg-white p-2 rounded-xl border border-[#DCF4D7] font-mono text-[10.5px] text-[#1F7A4C]">
+                  {formatCurrency(parsedSalary)} ÷ {totalHoursPerMonth} hs = <strong>{formatCurrency(calculatedHourlyRate)} por hora</strong>
+                </div>
+
+                <p>
+                  3️⃣ <strong>Valor por Minuto:</strong> Dividís el valor hora entre los 60 minutos de la hora:
+                </p>
+                <div className="bg-white p-2 rounded-xl border border-[#DCF4D7] font-mono text-[10.5px] text-[#1F7A4C]">
+                  {formatCurrency(calculatedHourlyRate)} ÷ 60 min = <strong>{formatCurrency(calculatedMinuteRate)} por minuto</strong>
+                </div>
+
+                <p className="text-[10.5px] text-[#2E9E65] pt-1.5 border-t border-[#DCF4D7] font-medium">
+                  💡 <strong>¿Dónde se usa?</strong> Cuando crees un producto y cargues cuántos minutos te lleva fabricar 1 unidad, HABA multiplicará esos minutos por tu valor por minuto para asegurar tu sueldo en el precio final.
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Banner de error si falla la persistencia */}
           {laborError && (

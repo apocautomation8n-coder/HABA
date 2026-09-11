@@ -21,6 +21,7 @@ import {
   ChevronRight,
   Package,
   Tag,
+  Info,
 } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
@@ -85,6 +86,7 @@ export default function NuevoProductoPage() {
   // Paso 3: Mano de Obra (Opcional)
   const [includeLabor, setIncludeLabor] = useState(true);
   const [workTimeMinutes, setWorkTimeMinutes] = useState<number>(30);
+  const [showLaborInfo, setShowLaborInfo] = useState(false);
 
   // Paso 4: Gastos Indirectos / Fijos (Opcional prorrateo sugerido)
   const [indirectCost, setIndirectCost] = useState<number>(0);
@@ -786,11 +788,21 @@ export default function NuevoProductoPage() {
                 <span className="text-xs font-bold text-neutral-800 block">
                   ¿Incluir tu tiempo de confección?
                 </span>
-                <span className="text-[10px] text-neutral-400">
-                  {laborMinuteRate > 0
-                    ? `Tu valor configurado: ${formatCurrency(laborMinuteRate)} / minuto`
-                    : "No configuraste tu sueldo aún en Gastos"}
-                </span>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="text-[10px] text-neutral-400">
+                    {laborMinuteRate > 0
+                      ? `Tu valor configurado: ${formatCurrency(laborMinuteRate)} / minuto`
+                      : "No configuraste tu sueldo aún en Gastos"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowLaborInfo(!showLaborInfo)}
+                    className="text-[10px] font-bold text-[#1F7A4C] hover:text-[#165837] underline inline-flex items-center gap-0.5 cursor-pointer"
+                  >
+                    <Info className="w-3 h-3 text-[#3BB578]" />
+                    <span>{showLaborInfo ? "Ocultar cálculo" : "¿Cómo se calcula?"}</span>
+                  </button>
+                </div>
               </div>
               <button
                 type="button"
@@ -806,6 +818,42 @@ export default function NuevoProductoPage() {
                 />
               </button>
             </div>
+
+            {/* Explicación didáctica desplegable */}
+            {showLaborInfo && (
+              <div className="p-3 bg-[#F0FAF4] border border-[#C3EBC0] rounded-2xl space-y-2 text-xs text-[#2B2B2B] animate-in fade-in duration-200 shadow-xs">
+                <div className="flex items-center justify-between font-bold text-[#1F7A4C] border-b border-[#DCF4D7] pb-1">
+                  <span className="flex items-center gap-1.5 font-display text-[11.5px]">
+                    <Calculator className="w-3.5 h-3.5 text-[#3BB578]" />
+                    ¿Cómo calcula HABA el costo de tu tiempo?
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowLaborInfo(false)}
+                    className="text-[#7A7A7A] hover:text-[#2B2B2B] text-xs font-semibold"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div className="space-y-1.5 text-[11px] leading-relaxed">
+                  <p>
+                    1️⃣ <strong>Tu costo por minuto:</strong> Se calcula en el módulo <em>Gastos &gt; Mano de Obra</em> dividiendo tu <strong>sueldo mensual pretendido</strong> entre las <strong>horas de taller</strong> que trabajás:
+                  </p>
+                  <div className="bg-white p-2 rounded-xl border border-[#DCF4D7] font-mono text-[10.5px] text-[#1F7A4C]">
+                    Sueldo Mensual ÷ (Días × Horas diarias × 60) = <strong>{formatCurrency(laborMinuteRate)}/minuto</strong>
+                  </div>
+                  <p>
+                    2️⃣ <strong>Para este producto:</strong> Multiplicamos los minutos de elaboración que ingresás abajo por tu valor por minuto:
+                  </p>
+                  <div className="bg-white p-2 rounded-xl border border-[#DCF4D7] font-mono text-[10.5px] text-[#1F7A4C]">
+                    {workTimeMinutes || 0} min × {formatCurrency(laborMinuteRate)}/min = <strong>{formatCurrency(laborCost)}</strong>
+                  </div>
+                  <p className="text-[10px] text-[#2E9E65] pt-0.5 border-t border-[#DCF4D7] font-medium">
+                    💡 <strong>Recordá:</strong> Cobrar tu mano de obra en el costo garantiza tu propio sueldo antes de aplicar el margen de ganancia del negocio.
+                  </p>
+                </div>
+              </div>
+            )}
 
             {includeLabor && (
               <div className="pt-2 border-t border-neutral-200/50 space-y-2">
