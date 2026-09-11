@@ -20,16 +20,14 @@ import {
   Layers,
   ChevronRight,
   Package,
-  Camera,
-  ImagePlus,
   X,
   Tag,
-  ImageIcon,
 } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency, calculateUnitCost } from "@/lib/units";
 import { SupplyItem } from "@/components/SupplyModal";
+import { PRODUCT_CATEGORIES, serializeProductDescription } from "@/lib/products";
 
 interface SelectedSupply {
   supply: SupplyItem;
@@ -41,17 +39,6 @@ interface ChannelPrice {
   profit_margin_percent: number;
   selling_price: number;
 }
-
-const PRODUCT_CATEGORIES = [
-  { id: "papeleria", label: "Papelería & Libretas", icon: "📓" },
-  { id: "marroquineria", label: "Marroquinería & Cuero", icon: "👜" },
-  { id: "textil", label: "Textil & Costura", icon: "🧵" },
-  { id: "velas", label: "Velas & Aromas", icon: "🕯️" },
-  { id: "ceramica", label: "Cerámica & Deco", icon: "🏺" },
-  { id: "gastronomia", label: "Gastronomía / Pastelería", icon: "🧁" },
-  { id: "packaging", label: "Packaging & Cajas", icon: "📦" },
-  { id: "otro", label: "Otro", icon: "✨" },
-];
 
 const DEFAULT_CHANNELS = [
   { name: "Minorista (Precio Regular)", defaultMargin: 100 },
@@ -75,13 +62,11 @@ export default function NuevoProductoPage() {
   // Configuración de Mano de Obra del usuario
   const [laborMinuteRate, setLaborMinuteRate] = useState<number>(0);
 
-  // Datos del Producto - Paso 1: Básicos, Categoría y Foto
+  // Datos del Producto - Paso 1: Básicos y Categoría
   const [name, setName] = useState("");
   const [category, setCategory] = useState("");
   const [customCategory, setCustomCategory] = useState("");
   const [description, setDescription] = useState("");
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [step1Errors, setStep1Errors] = useState<{ name?: string; category?: string }>({});
 
   // Paso 2: Insumos & Packaging (Receta)
@@ -267,34 +252,6 @@ export default function NuevoProductoPage() {
     setCurrentStep(targetStep);
   };
 
-  // Manejo de Fotos del Producto
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (!file.type.startsWith("image/")) {
-      setErrorMsg("El archivo seleccionado debe ser una imagen (PNG, JPG, WEBP).");
-      return;
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      setErrorMsg("La imagen seleccionada supera el límite de 5 MB.");
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setImagePreview(reader.result as string);
-    };
-    reader.readAsDataURL(file);
-    setImageFile(file);
-    setErrorMsg(null);
-  };
-
-  const handleRemoveImage = () => {
-    setImageFile(null);
-    setImagePreview(null);
-  };
-
   // Guardar en Supabase
   const handleSaveProduct = async () => {
     setErrorMsg(null);
@@ -317,44 +274,16 @@ export default function NuevoProductoPage() {
 
       if (!user) throw new Error("Sesión no válida");
 
-      // Si subió foto, subir al bucket 'products' de Supabase Storage
-      let uploadedImageUrl: string | null = null;
-      if (imageFile) {
-        const fileExt = imageFile.name.split(".").pop() || "png";
-        const fileName = `${user.id}/${Date.now()}-${Math.random().toString(36).substring(2, 8)}.${fileExt}`;
-        const { error: uploadError } = await supabase.storage
-          .from("products")
-          .upload(fileName, imageFile, { upsert: true });
-
-        if (uploadError) {
-          console.error("Error al subir la imagen a Supabase Storage:", uploadError);
-        } else {
-          const { data: publicUrlData } = supabase.storage
-            .from("products")
-            .getPublicUrl(fileName);
-          uploadedImageUrl = publicUrlData?.publicUrl || null;
-        }
-      }
-
-      // Concatenar categoría y foto como metadatos en la descripción
+      // Categoría y estado activo serializados
       const effectiveCategory = category === "otro" ? customCategory.trim() : category;
       const categoryLabel =
         PRODUCT_CATEGORIES.find((c) => c.id === effectiveCategory)?.label || effectiveCategory;
 
-      const metaTags: string[] = [];
-      if (categoryLabel) {
-        metaTags.push(`[Categoría: ${categoryLabel}]`);
-      }
-      if (uploadedImageUrl) {
-        metaTags.push(`[Foto: ${uploadedImageUrl}]`);
-      }
-
-      let finalDescription = description.trim();
-      if (metaTags.length > 0) {
-        finalDescription = finalDescription
-          ? `${metaTags.join(" ")}\n\n${finalDescription}`
-          : metaTags.join(" ");
-      }
+      const finalDescription = serializeProductDescription({
+        cleanDescription: description,
+        category: categoryLabel,
+        isActive: true,
+      });
 
       // 1. Insertar en tabla products
       const { data: productData, error: productError } = await supabase
@@ -629,84 +558,6 @@ export default function NuevoProductoPage() {
                 <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
                 <span>{step1Errors.category}</span>
               </p>
-            )}
-          </div>
-
-          {/* Campo: Foto del Producto (Opcional) */}
-          <div className="space-y-2">
-            <label className="text-xs font-semibold text-neutral-700 flex items-center gap-1.5">
-              <Camera className="w-3.5 h-3.5 text-[#3BB578]" />
-              <span>Foto del Producto</span>
-              <span className="text-[10px] text-neutral-400 font-normal">(Opcional)</span>
-            </label>
-
-            {!imagePreview ? (
-              <label className="cursor-pointer border-2 border-dashed border-neutral-200 hover:border-[#3BB578] bg-neutral-50/60 hover:bg-[#DCF4D7]/20 transition-all rounded-3xl p-5 flex flex-col items-center justify-center gap-2 text-center group">
-                <input
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp,image/jpg"
-                  onChange={handleImageChange}
-                  className="hidden"
-                />
-                <div className="w-11 h-11 rounded-2xl bg-white shadow-xs border border-neutral-200 flex items-center justify-center text-neutral-400 group-hover:text-[#3BB578] group-hover:border-[#3BB578] transition">
-                  <ImagePlus className="w-5 h-5" />
-                </div>
-                <div className="space-y-0.5">
-                  <p className="text-xs font-bold text-neutral-700 group-hover:text-[#1F7A4C] transition">
-                    Tocá para cargar una foto de tu producto
-                  </p>
-                  <p className="text-[10px] text-neutral-400">
-                    Formatos JPG, PNG o WebP (hasta 5 MB)
-                  </p>
-                </div>
-              </label>
-            ) : (
-              <div className="p-3 bg-neutral-50 rounded-3xl border border-neutral-200/80 flex items-center gap-4">
-                <div className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-2xl overflow-hidden border border-neutral-200 bg-white shadow-xs flex-shrink-0">
-                  <img
-                    src={imagePreview}
-                    alt="Previsualización del producto"
-                    className="w-full h-full object-cover"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleRemoveImage}
-                    className="absolute top-1.5 right-1.5 p-1 bg-black/60 hover:bg-black/80 text-white rounded-full transition shadow-sm"
-                    title="Eliminar foto"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                </div>
-
-                <div className="flex-1 min-w-0 space-y-1.5">
-                  <div className="flex items-center gap-1.5 text-xs font-bold text-[#1F7A4C]">
-                    <Check className="w-4 h-4" />
-                    <span>Foto lista para el catálogo</span>
-                  </div>
-                  <p className="text-[11px] text-neutral-500 truncate">
-                    {imageFile ? imageFile.name : "Imagen seleccionada"}
-                  </p>
-                  <div className="flex items-center gap-2 pt-0.5">
-                    <label className="cursor-pointer text-[11px] font-bold text-[#3BB578] hover:underline flex items-center gap-1">
-                      <input
-                        type="file"
-                        accept="image/png,image/jpeg,image/webp,image/jpg"
-                        onChange={handleImageChange}
-                        className="hidden"
-                      />
-                      <span>Cambiar foto</span>
-                    </label>
-                    <span className="text-neutral-300">•</span>
-                    <button
-                      type="button"
-                      onClick={handleRemoveImage}
-                      className="text-[11px] font-semibold text-rose-500 hover:underline"
-                    >
-                      Quitar
-                    </button>
-                  </div>
-                </div>
-              </div>
             )}
           </div>
 
