@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { X, Sparkles, AlertCircle, Calculator } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { UNIT_PRESETS, calculateUnitCost, formatCurrency } from "@/lib/units";
@@ -33,6 +34,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
 }) => {
   const supabase = createClient();
 
+  const [mounted, setMounted] = useState(false);
   const [category, setCategory] = useState<"materia_prima" | "packaging">("materia_prima");
   const [name, setName] = useState("");
   const [purchaseUnit, setPurchaseUnit] = useState("kg");
@@ -44,6 +46,34 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Oscurecer status bar nativo en móviles y bloquear scroll del fondo cuando el modal está abierto
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const metaThemeColor = document.querySelector('meta[name="theme-color"]');
+    const originalThemeColor = metaThemeColor?.getAttribute("content") || "#3BB578";
+    if (metaThemeColor) {
+      metaThemeColor.setAttribute("content", "#000000");
+    }
+
+    const originalOverflow = document.body.style.overflow;
+    const originalTouchAction = document.body.style.touchAction;
+    document.body.style.overflow = "hidden";
+    document.body.style.touchAction = "none";
+
+    return () => {
+      if (metaThemeColor) {
+        metaThemeColor.setAttribute("content", originalThemeColor);
+      }
+      document.body.style.overflow = originalOverflow;
+      document.body.style.touchAction = originalTouchAction;
+    };
+  }, [isOpen]);
 
   useEffect(() => {
     if (initialSupply) {
@@ -68,7 +98,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
     }
   }, [initialSupply, isOpen]);
 
-  if (!isOpen) return null;
+  if (!isOpen || !mounted) return null;
 
   const handlePresetChange = (presetId: string) => {
     setSelectedPresetId(presetId);
@@ -154,14 +184,22 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-[99999] bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center">
+  const modalContent = (
+    <div
+      className="fixed -top-40 -bottom-40 -left-20 -right-20 z-[99999] bg-black/65 backdrop-blur-xs flex items-end sm:items-center justify-center pt-40 pb-40 px-20 animate-in fade-in duration-200"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+    >
       <div 
-        className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col border border-[#EAF0E8] animate-in fade-in slide-in-from-bottom-6 duration-200" 
+        className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col border border-[#EAF0E8] animate-in slide-in-from-bottom-6 duration-200 overflow-hidden" 
         style={{ 
           height: 'min(92vh, 720px)',
           maxHeight: 'calc(100dvh - env(safe-area-inset-top, 20px) - 10px)'
         }}
+        onClick={(e) => e.stopPropagation()}
       >
         
         {/* Header fijo */}
@@ -379,4 +417,6 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
       </div>
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 };
