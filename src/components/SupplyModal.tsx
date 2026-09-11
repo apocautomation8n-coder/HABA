@@ -169,7 +169,18 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[99999] bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center">
+    <div 
+      className="fixed inset-0 z-[99999] bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center"
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        width: '100vw',
+        height: '100dvh',
+      }}
+    >
       <div 
         className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col border border-[#EAF0E8] animate-in fade-in slide-in-from-bottom-6 duration-200" 
         style={{ 
