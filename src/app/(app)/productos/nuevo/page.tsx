@@ -20,6 +20,11 @@ import {
   Layers,
   ChevronRight,
   Package,
+  Camera,
+  ImagePlus,
+  X,
+  Tag,
+  ImageIcon,
 } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
@@ -36,6 +41,17 @@ interface ChannelPrice {
   profit_margin_percent: number;
   selling_price: number;
 }
+
+export const PRODUCT_CATEGORIES = [
+  { id: "papeleria", label: "Papelería & Libretas", icon: "📓" },
+  { id: "marroquineria", label: "Marroquinería & Cuero", icon: "👜" },
+  { id: "textil", label: "Textil & Costura", icon: "🧵" },
+  { id: "velas", label: "Velas & Aromas", icon: "🕯️" },
+  { id: "ceramica", label: "Cerámica & Deco", icon: "🏺" },
+  { id: "gastronomia", label: "Gastronomía / Pastelería", icon: "🧁" },
+  { id: "packaging", label: "Packaging & Cajas", icon: "📦" },
+  { id: "otro", label: "Otro", icon: "✨" },
+];
 
 const DEFAULT_CHANNELS = [
   { name: "Minorista (Precio Regular)", defaultMargin: 100 },
@@ -59,9 +75,14 @@ export default function NuevoProductoPage() {
   // Configuración de Mano de Obra del usuario
   const [laborMinuteRate, setLaborMinuteRate] = useState<number>(0);
 
-  // Datos del Producto - Paso 1: Básicos
+  // Datos del Producto - Paso 1: Básicos, Categoría y Foto
   const [name, setName] = useState("");
+  const [category, setCategory] = useState("");
+  const [customCategory, setCustomCategory] = useState("");
   const [description, setDescription] = useState("");
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [step1Errors, setStep1Errors] = useState<{ name?: string; category?: string }>({});
 
   // Paso 2: Insumos & Packaging (Receta)
   const [selectedSupplies, setSelectedSupplies] = useState<SelectedSupply[]>([]);
@@ -213,16 +234,77 @@ export default function NuevoProductoPage() {
     setSelectedSupplies((prev) => prev.filter((_, i) => i !== index));
   };
 
+  // Validación de Paso 1
+  const validateStep1 = (): boolean => {
+    const errors: { name?: string; category?: string } = {};
+    if (!name.trim()) {
+      errors.name = "El nombre del producto es obligatorio.";
+    }
+    if (!category) {
+      errors.category = "Seleccioná una categoría para tu producto.";
+    } else if (category === "otro" && !customCategory.trim()) {
+      errors.category = "Por favor especificá el rubro artesanal de tu producto.";
+    }
+    setStep1Errors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleNextFromStep1 = () => {
+    if (validateStep1()) {
+      setErrorMsg(null);
+      setCurrentStep(2);
+    } else {
+      setErrorMsg("Completá los campos obligatorios para continuar.");
+    }
+  };
+
+  const handleStepClick = (targetStep: number) => {
+    if (targetStep > 1 && !validateStep1()) {
+      setErrorMsg("Completá el nombre y la categoría en el Paso 1 antes de avanzar.");
+      return;
+    }
+    setErrorMsg(null);
+    setCurrentStep(targetStep);
+  };
+
+  // Manejo de Fotos del Producto
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      setErrorMsg("El archivo seleccionado debe ser una imagen (PNG, JPG, WEBP).");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setErrorMsg("La imagen seleccionada supera el límite de 5 MB.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setImagePreview(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+    setImageFile(file);
+    setErrorMsg(null);
+  };
+
+  const handleRemoveImage = () => {
+    setImageFile(null);
+    setImagePreview(null);
+  };
+
   // Guardar en Supabase
   const handleSaveProduct = async () => {
     setErrorMsg(null);
-    if (!name.trim()) {
-      setErrorMsg("El nombre del producto es obligatorio");
+    if (!validateStep1()) {
+      setErrorMsg("El nombre y la categoría del producto son obligatorios");
       setCurrentStep(1);
       return;
     }
     if (selectedSupplies.length === 0) {
-      setErrorMsg("Debes agregar al menos un insumo o packaging");
+      setErrorMsg("Debes agregar al menos un insumo o packaging a la receta");
       setCurrentStep(2);
       return;
     }
@@ -235,13 +317,52 @@ export default function NuevoProductoPage() {
 
       if (!user) throw new Error("Sesión no válida");
 
+      // Si subió foto, subir al bucket 'products' de Supabase Storage
+      let uploadedImageUrl: string | null = null;
+      if (imageFile) {
+        const fileExt = imageFile.name.split(".").pop() || "png";
+        const fileName = `${user.id}/${Date.now()}-${Math.random().toString(36).substring(2, 8)}.${fileExt}`;
+        const { error: uploadError } = await supabase.storage
+          .from("products")
+          .upload(fileName, imageFile, { upsert: true });
+
+        if (uploadError) {
+          console.error("Error al subir la imagen a Supabase Storage:", uploadError);
+        } else {
+          const { data: publicUrlData } = supabase.storage
+            .from("products")
+            .getPublicUrl(fileName);
+          uploadedImageUrl = publicUrlData?.publicUrl || null;
+        }
+      }
+
+      // Concatenar categoría y foto como metadatos en la descripción
+      const effectiveCategory = category === "otro" ? customCategory.trim() : category;
+      const categoryLabel =
+        PRODUCT_CATEGORIES.find((c) => c.id === effectiveCategory)?.label || effectiveCategory;
+
+      const metaTags: string[] = [];
+      if (categoryLabel) {
+        metaTags.push(`[Categoría: ${categoryLabel}]`);
+      }
+      if (uploadedImageUrl) {
+        metaTags.push(`[Foto: ${uploadedImageUrl}]`);
+      }
+
+      let finalDescription = description.trim();
+      if (metaTags.length > 0) {
+        finalDescription = finalDescription
+          ? `${metaTags.join(" ")}\n\n${finalDescription}`
+          : metaTags.join(" ");
+      }
+
       // 1. Insertar en tabla products
       const { data: productData, error: productError } = await supabase
         .from("products")
         .insert({
           user_id: user.id,
           name: name.trim(),
-          description: description.trim() || null,
+          description: finalDescription || null,
           work_time_minutes: includeLabor ? workTimeMinutes : 0,
           include_labor: includeLabor,
           direct_cost: directCost,
@@ -327,7 +448,8 @@ export default function NuevoProductoPage() {
         ].map((item) => (
           <button
             key={item.step}
-            onClick={() => setCurrentStep(item.step)}
+            type="button"
+            onClick={() => handleStepClick(item.step)}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-2xl font-bold transition ${
               currentStep === item.step
                 ? "bg-[#3BB578] text-white shadow-sm"
@@ -383,43 +505,219 @@ export default function NuevoProductoPage() {
 
       {/* PASO 1: Datos Básicos */}
       {currentStep === 1 && (
-        <div className="bg-white p-5 rounded-3xl border border-[#EAF0E8] shadow-sm space-y-4">
-          <div className="flex items-center gap-2 border-b border-neutral-100 pb-3">
-            <ShoppingBag className="w-5 h-5 text-[#3BB578]" />
-            <h3 className="text-sm font-bold text-neutral-800">1. Datos del Producto</h3>
+        <div className="bg-white p-5 rounded-3xl border border-[#EAF0E8] shadow-sm space-y-5">
+          {/* Encabezado del paso */}
+          <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+            <div className="flex items-center gap-2">
+              <ShoppingBag className="w-5 h-5 text-[#3BB578]" />
+              <div>
+                <h3 className="text-sm font-bold text-neutral-800">1. Datos Básicos del Producto</h3>
+                <p className="text-[11px] text-neutral-400">
+                  Definí el nombre, la categoría artesanal y la foto de tu creación
+                </p>
+              </div>
+            </div>
+            <span className="px-2.5 py-1 bg-[#DCF4D7] text-[#1F7A4C] text-[10px] font-bold rounded-full">
+              Paso 1 de 4
+            </span>
           </div>
 
-          <div className="space-y-1">
-            <label className="text-xs font-semibold text-neutral-700">
-              Nombre del Producto <span className="text-rose-500">*</span>
+          {/* Campo: Nombre del Producto */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-neutral-700 flex items-center justify-between">
+              <span>
+                Nombre del Producto <span className="text-rose-500">*</span>
+              </span>
+              <span className="text-[10px] text-neutral-400 font-normal">Obligatorio</span>
             </label>
             <input
               type="text"
               value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Ej: Libreta A5 Cuero Artesanal, Vela de Soja 200g..."
-              className="w-full px-3.5 py-2.5 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] focus:ring-2 focus:ring-[#DCF4D7] outline-none"
+              onChange={(e) => {
+                setName(e.target.value);
+                if (step1Errors.name) {
+                  setStep1Errors((prev) => ({ ...prev, name: undefined }));
+                }
+              }}
+              placeholder="Ej: Libreta A5 Cuero Artesanal, Vela de Soja 200g, Bolso Tote..."
+              className={`w-full px-3.5 py-2.5 text-xs bg-neutral-50 border rounded-2xl outline-none transition focus:bg-white ${
+                step1Errors.name
+                  ? "border-rose-300 bg-rose-50/40 focus:border-rose-400 focus:ring-2 focus:ring-rose-100"
+                  : "border-neutral-200 focus:border-[#3BB578] focus:ring-2 focus:ring-[#DCF4D7]"
+              }`}
             />
+            {step1Errors.name && (
+              <p className="text-[11px] text-rose-500 flex items-center gap-1 mt-1 font-medium">
+                <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                <span>{step1Errors.name}</span>
+              </p>
+            )}
           </div>
 
-          <div className="space-y-1">
-            <label className="text-xs font-semibold text-neutral-700">
-              Descripción o Detalles (opcional)
+          {/* Campo: Categoría del Producto */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold text-neutral-700 flex items-center gap-1.5">
+                <Tag className="w-3.5 h-3.5 text-[#3BB578]" />
+                <span>
+                  Categoría del Producto <span className="text-rose-500">*</span>
+                </span>
+              </label>
+              <span className="text-[10px] text-neutral-400 font-normal">Seleccioná un rubro</span>
+            </div>
+
+            {/* Grid de Chips de Categorías */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {PRODUCT_CATEGORIES.map((cat) => {
+                const isSelected = category === cat.id;
+                return (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => {
+                      setCategory(cat.id);
+                      if (step1Errors.category) {
+                        setStep1Errors((prev) => ({ ...prev, category: undefined }));
+                      }
+                    }}
+                    className={`flex items-center gap-2 p-2.5 rounded-2xl border text-xs font-semibold text-left transition-all ${
+                      isSelected
+                        ? "bg-[#DCF4D7] border-[#3BB578] text-[#1F7A4C] shadow-sm ring-1 ring-[#3BB578] scale-[1.01]"
+                        : "bg-neutral-50 hover:bg-neutral-100/80 border-neutral-200 text-neutral-600 hover:text-neutral-900"
+                    }`}
+                  >
+                    <span className="text-base flex-shrink-0">{cat.icon}</span>
+                    <span className="truncate">{cat.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Input complementario si seleccionó 'otro' */}
+            {category === "otro" && (
+              <div className="pt-1.5 animate-fadeIn">
+                <input
+                  type="text"
+                  value={customCategory}
+                  onChange={(e) => {
+                    setCustomCategory(e.target.value);
+                    if (step1Errors.category) {
+                      setStep1Errors((prev) => ({ ...prev, category: undefined }));
+                    }
+                  }}
+                  placeholder="Especificá tu categoría (Ej: Cosmética natural, Resina epoxi, Joyería...)"
+                  className="w-full px-3.5 py-2 text-xs bg-white border border-[#3BB578] rounded-2xl outline-none focus:ring-2 focus:ring-[#DCF4D7]"
+                />
+              </div>
+            )}
+
+            {step1Errors.category && (
+              <p className="text-[11px] text-rose-500 flex items-center gap-1 mt-1 font-medium">
+                <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                <span>{step1Errors.category}</span>
+              </p>
+            )}
+          </div>
+
+          {/* Campo: Foto del Producto (Opcional) */}
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-neutral-700 flex items-center gap-1.5">
+              <Camera className="w-3.5 h-3.5 text-[#3BB578]" />
+              <span>Foto del Producto</span>
+              <span className="text-[10px] text-neutral-400 font-normal">(Opcional)</span>
+            </label>
+
+            {!imagePreview ? (
+              <label className="cursor-pointer border-2 border-dashed border-neutral-200 hover:border-[#3BB578] bg-neutral-50/60 hover:bg-[#DCF4D7]/20 transition-all rounded-3xl p-5 flex flex-col items-center justify-center gap-2 text-center group">
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/jpg"
+                  onChange={handleImageChange}
+                  className="hidden"
+                />
+                <div className="w-11 h-11 rounded-2xl bg-white shadow-xs border border-neutral-200 flex items-center justify-center text-neutral-400 group-hover:text-[#3BB578] group-hover:border-[#3BB578] transition">
+                  <ImagePlus className="w-5 h-5" />
+                </div>
+                <div className="space-y-0.5">
+                  <p className="text-xs font-bold text-neutral-700 group-hover:text-[#1F7A4C] transition">
+                    Tocá para cargar una foto de tu producto
+                  </p>
+                  <p className="text-[10px] text-neutral-400">
+                    Formatos JPG, PNG o WebP (hasta 5 MB)
+                  </p>
+                </div>
+              </label>
+            ) : (
+              <div className="p-3 bg-neutral-50 rounded-3xl border border-neutral-200/80 flex items-center gap-4">
+                <div className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-2xl overflow-hidden border border-neutral-200 bg-white shadow-xs flex-shrink-0">
+                  <img
+                    src={imagePreview}
+                    alt="Previsualización del producto"
+                    className="w-full h-full object-cover"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleRemoveImage}
+                    className="absolute top-1.5 right-1.5 p-1 bg-black/60 hover:bg-black/80 text-white rounded-full transition shadow-sm"
+                    title="Eliminar foto"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+
+                <div className="flex-1 min-w-0 space-y-1.5">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-[#1F7A4C]">
+                    <Check className="w-4 h-4" />
+                    <span>Foto lista para el catálogo</span>
+                  </div>
+                  <p className="text-[11px] text-neutral-500 truncate">
+                    {imageFile ? imageFile.name : "Imagen seleccionada"}
+                  </p>
+                  <div className="flex items-center gap-2 pt-0.5">
+                    <label className="cursor-pointer text-[11px] font-bold text-[#3BB578] hover:underline flex items-center gap-1">
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/jpg"
+                        onChange={handleImageChange}
+                        className="hidden"
+                      />
+                      <span>Cambiar foto</span>
+                    </label>
+                    <span className="text-neutral-300">•</span>
+                    <button
+                      type="button"
+                      onClick={handleRemoveImage}
+                      className="text-[11px] font-semibold text-rose-500 hover:underline"
+                    >
+                      Quitar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Campo: Descripción o Notas */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-neutral-700 flex items-center justify-between">
+              <span>Descripción o Detalles</span>
+              <span className="text-[10px] text-neutral-400 font-normal">(Opcional)</span>
             </label>
             <textarea
               rows={3}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Medidas, tipo de papel, encuadernación, aromas o notas para la producción..."
-              className="w-full px-3.5 py-2.5 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none resize-none"
+              className="w-full px-3.5 py-2.5 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none resize-none transition"
             />
           </div>
 
+          {/* Botón de Avance */}
           <div className="pt-2 flex justify-end">
             <button
-              onClick={() => setCurrentStep(2)}
-              disabled={!name.trim()}
-              className="py-2.5 px-5 bg-[#3BB578] hover:bg-[#2E9E65] disabled:opacity-50 text-white rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+              type="button"
+              onClick={handleNextFromStep1}
+              className="py-2.5 px-6 bg-[#3BB578] hover:bg-[#2E9E65] text-white rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm active:scale-95"
             >
               <span>Siguiente: Insumos</span>
               <ChevronRight className="w-4 h-4" />
