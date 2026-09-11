@@ -111,9 +111,12 @@ export default function PresupuestoPreviewPage() {
     loadQuoteAndProfile();
   }, [id, supabase]);
 
-  // Compartir por WhatsApp
-  const handleShareWhatsApp = () => {
+  // Compartir por WhatsApp / Web Share API
+  const handleShareWhatsApp = async () => {
     if (!quote) return;
+
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    const previewUrl = `${origin}/presupuestos/${quote.id}`;
 
     const itemsText = (quote.quote_items || [])
       .map(
@@ -122,29 +125,54 @@ export default function PresupuestoPreviewPage() {
             item.subtotal
           )}`
       )
-      .join("%0A");
+      .join("\n");
 
     const discountText =
       quote.discount_percent > 0
-        ? `%0A🏷️ Descuento (${quote.discount_percent}%): -${formatCurrency(
+        ? `\n🏷️ Descuento (${quote.discount_percent}%): -${formatCurrency(
             (quote.subtotal * quote.discount_percent) / 100
           )}`
         : "";
 
     const notesText = quote.notes
-      ? `%0A%0A📝 *Condiciones / Entrega:*%0A${encodeURIComponent(quote.notes)}`
+      ? `\n\n📝 *Condiciones / Entrega:*\n${quote.notes}`
       : "";
 
-    const text = `*PRESUPUESTO #${quote.quote_number}* 🌸%0A%0A*Cliente:* ${encodeURIComponent(
-      quote.client_name
-    )}%0A*Emisión:* ${new Date(quote.created_at).toLocaleDateString("es-AR")}%0A%0A*Detalle de Productos:*%0A${itemsText}%0A%0A*Subtotal:* ${formatCurrency(
-      quote.subtotal
-    )}${discountText}%0A*TOTAL FINAL:* ${formatCurrency(quote.total)}${notesText}%0A%0A⏳ *Vigencia:* 15 días corridos con precios congelados.%0A¡Muchas gracias por tu consulta!`;
+    const fullMessage =
+      `*PRESUPUESTO #${quote.quote_number}* 🌸\n\n` +
+      `*Cliente:* ${quote.client_name}\n` +
+      `*Emisión:* ${new Date(quote.created_at).toLocaleDateString("es-AR")}\n\n` +
+      `*Detalle de Productos:*\n${itemsText}\n\n` +
+      `*Subtotal:* ${formatCurrency(quote.subtotal)}${discountText}\n` +
+      `*TOTAL FINAL:* ${formatCurrency(quote.total)}${notesText}\n\n` +
+      `⏳ *Vigencia:* 15 días corridos con precios congelados.\n` +
+      `📄 *Ver y descargar presupuesto oficial:*\n${previewUrl}\n\n` +
+      `¡Muchas gracias por tu consulta!`;
 
+    // 1. Intentar con Web Share API primero si el navegador lo soporta
+    if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+      try {
+        await navigator.share({
+          title: `Presupuesto #${quote.quote_number} - ${quote.client_name}`,
+          text: fullMessage,
+          url: previewUrl,
+        });
+        return;
+      } catch (err: any) {
+        // Si el usuario canceló la acción (AbortError), no forzamos abrir WhatsApp
+        if (err.name === "AbortError") {
+          return;
+        }
+        console.warn("Web Share API no disponible o rechazada, usando fallback de WhatsApp:", err);
+      }
+    }
+
+    // 2. Fallback directo a WhatsApp Web / App
     const phoneClean = quote.client_contact?.replace(/[^0-9]/g, "") || "";
+    const encodedText = encodeURIComponent(fullMessage);
     const waUrl = phoneClean
-      ? `https://wa.me/${phoneClean}?text=${text}`
-      : `https://wa.me/?text=${text}`;
+      ? `https://wa.me/${phoneClean}?text=${encodedText}`
+      : `https://wa.me/?text=${encodedText}`;
 
     window.open(waUrl, "_blank");
   };
