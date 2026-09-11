@@ -18,6 +18,7 @@ import {
   FileText,
   Printer,
   Edit2,
+  Eye,
 } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
@@ -335,7 +336,16 @@ export default function PresupuestosPage() {
 
                 {/* Acciones Rápidas: WhatsApp, PDF, Desplegar */}
                 <div className="pt-2 border-t border-neutral-100 flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <Link
+                      href={`/presupuestos/${quote.id}`}
+                      className="py-1.5 px-3 bg-[#3BB578] hover:bg-[#2E9E65] text-white rounded-xl text-xs font-bold transition flex items-center gap-1 shadow-2xs active:scale-95"
+                      title="Ver vista previa oficial del presupuesto"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>Vista Previa</span>
+                    </Link>
+
                     <button
                       onClick={() => shareViaWhatsApp(quote)}
                       className="py-1.5 px-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl text-xs font-bold transition flex items-center gap-1"

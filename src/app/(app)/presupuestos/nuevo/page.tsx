@@ -289,7 +289,7 @@ function NuevoPresupuestoContent() {
         }));
         await supabase.from("quote_items").insert(quoteItemsToInsert);
 
-        router.push("/presupuestos");
+        router.push(`/presupuestos/${editId}`);
         return;
       }
 
@@ -342,8 +342,8 @@ function NuevoPresupuestoContent() {
         console.error("Error inserting quote items:", itemsError);
       }
 
-      // Redirigir a listado de presupuestos
-      router.push("/presupuestos");
+      // Redirigir a la vista previa oficial del presupuesto recién creado
+      router.push(`/presupuestos/${quoteData.id}`);
     } catch (err: any) {
       setErrorMsg(err.message || "Error al generar el presupuesto");
     } finally {
