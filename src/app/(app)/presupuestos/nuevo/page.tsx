@@ -352,7 +352,7 @@ function NuevoPresupuestoContent() {
   };
 
   return (
-    <div className="w-full flex flex-col space-y-4 pb-12">
+    <div className="w-full flex flex-col space-y-4 pb-36">
       {/* Encabezado con Volver */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -623,6 +623,50 @@ function NuevoPresupuestoContent() {
               </>
             )}
           </button>
+        </div>
+      </div>
+
+      {/* Panel Sticky Inferior: Resumen en Tiempo Real */}
+      <div className="sticky bottom-[62px] sm:bottom-[68px] z-40 -mx-1 mt-2">
+        <div className="bg-white/95 backdrop-blur-md p-3 sm:p-3.5 rounded-3xl border border-[#C3EBC0] shadow-[0_-4px_25px_rgba(31,122,76,0.14)] flex items-center justify-between gap-3 transition-all duration-300">
+          {/* Lado Izquierdo: Subtotal, Descuento e Ítems */}
+          <div className="flex-1 min-w-0 space-y-0.5">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[#1F7A4C] flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#3BB578] animate-pulse"></span>
+                Resumen en vivo
+              </span>
+              <span className="text-[9px] bg-[#DCF4D7] text-[#1F7A4C] font-bold px-1.5 py-0.2 rounded-full">
+                {items.length} {items.length === 1 ? "ítem" : "ítems"}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2 text-xs flex-wrap">
+              <span className="text-neutral-600 font-medium">
+                Subtotal: <strong className="text-neutral-800">{formatCurrency(subtotal)}</strong>
+              </span>
+
+              {discountPercent > 0 ? (
+                <span className="text-[10px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-1.5 py-0.2 rounded-md">
+                  Dcto: -{discountPercent}% (-{formatCurrency(discountAmount)})
+                </span>
+              ) : (
+                <span className="text-[10px] text-neutral-400">
+                  Sin descuento
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Lado Derecho: Total Final Congelado */}
+          <div className="text-right flex-shrink-0 bg-[#DCF4D7] border border-[#C3EBC0] px-3.5 py-1.5 rounded-2xl">
+            <span className="text-[9px] font-extrabold uppercase tracking-wider text-[#1F7A4C] block leading-none">
+              Total Final
+            </span>
+            <span className="text-base sm:text-lg font-black text-[#1F7A4C] leading-tight block">
+              {formatCurrency(total)}
+            </span>
+          </div>
         </div>
       </div>
 
