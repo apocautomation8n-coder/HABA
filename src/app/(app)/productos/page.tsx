@@ -24,6 +24,7 @@ import {
   Package,
   Copy,
   Loader2,
+  Receipt,
 } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
@@ -764,6 +765,15 @@ export default function ProductosPage() {
                       )}
                     </button>
 
+                    {/* Botón de crear presupuesto desde producto */}
+                    <Link
+                      href={`/presupuestos/nuevo?productId=${product.id}`}
+                      className="p-1.5 text-neutral-400 hover:text-[#1F7A4C] hover:bg-[#DCF4D7] rounded-xl transition"
+                      title="Crear presupuesto con este producto"
+                    >
+                      <Receipt className="w-4 h-4" />
+                    </Link>
+
                     {/* Botón de eliminar */}
                     <button
                       onClick={() => handleDelete(product)}
@@ -912,23 +922,35 @@ export default function ProductosPage() {
                       </div>
                     </div>
 
-                    {/* Botón de acción rápida en vista desplegada: Duplicar */}
-                    <div className="pt-2 border-t border-neutral-200/60 flex items-center justify-between text-xs">
+                    {/* Botones de acción rápida en vista desplegada */}
+                    <div className="pt-2 border-t border-neutral-200/60 flex items-center justify-between gap-2 flex-wrap text-xs">
                       <span className="text-[10px] text-neutral-400">
-                        ¿Querés crear una variación con otra receta o precio?
+                        Acciones rápidas para este producto:
                       </span>
-                      <button
-                        onClick={() => handleDuplicate(product)}
-                        disabled={duplicatingId === product.id}
-                        className="px-3 py-1.5 bg-[#DCF4D7] hover:bg-[#C3EBC0] text-[#1F7A4C] rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-2xs active:scale-95 disabled:opacity-50"
-                      >
-                        {duplicatingId === product.id ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <Copy className="w-3.5 h-3.5" />
-                        )}
-                        <span>Duplicar Producto</span>
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => handleDuplicate(product)}
+                          disabled={duplicatingId === product.id}
+                          className="px-2.5 py-1.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-xl text-xs font-bold transition flex items-center gap-1 shadow-2xs active:scale-95 disabled:opacity-50"
+                          title="Crear una copia con la misma receta y precios"
+                        >
+                          {duplicatingId === product.id ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-[#3BB578]" />
+                          ) : (
+                            <Copy className="w-3.5 h-3.5" />
+                          )}
+                          <span>Duplicar</span>
+                        </button>
+
+                        <Link
+                          href={`/presupuestos/nuevo?productId=${product.id}`}
+                          className="px-3 py-1.5 bg-[#3BB578] hover:bg-[#2E9E65] text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-2xs active:scale-95"
+                          title="Crear una cotización congelada con este producto"
+                        >
+                          <Receipt className="w-3.5 h-3.5" />
+                          <span>Crear Presupuesto</span>
+                        </Link>
+                      </div>
                     </div>
                   </div>
                 )}

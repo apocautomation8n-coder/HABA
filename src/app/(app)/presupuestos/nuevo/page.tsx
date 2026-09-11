@@ -52,6 +52,7 @@ function NuevoPresupuestoContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const editId = searchParams.get("edit");
+  const productIdParam = searchParams.get("productId");
   const isEditing = Boolean(editId);
 
   const supabase = createClient();
@@ -59,6 +60,7 @@ function NuevoPresupuestoContent() {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [quoteNumber, setQuoteNumber] = useState<string | number | null>(null);
+  const [preselectedProductName, setPreselectedProductName] = useState<string | null>(null);
 
   // Productos disponibles en catálogo
   const [products, setProducts] = useState<Product[]>([]);
@@ -156,6 +158,38 @@ function NuevoPresupuestoContent() {
 
     fetchQuoteToEdit();
   }, [editId, supabase]);
+
+  // Si viene con parámetro ?productId=[id], preseleccionar automáticamente el producto
+  useEffect(() => {
+    if (!productIdParam || isEditing || products.length === 0) return;
+
+    const alreadyAdded = items.some((item) => item.productId === productIdParam);
+    if (alreadyAdded) return;
+
+    const matchedProduct = products.find((p) => p.id === productIdParam);
+    if (matchedProduct) {
+      // Buscar precio minorista o primer precio configurado
+      const defaultPrice =
+        matchedProduct.product_prices?.find((pr) =>
+          pr.channel_name.toLowerCase().includes("minorista")
+        ) || matchedProduct.product_prices?.[0];
+
+      setItems((prev) => {
+        if (prev.some((it) => it.productId === productIdParam)) return prev;
+        return [
+          ...prev,
+          {
+            productId: matchedProduct.id,
+            productName: matchedProduct.name,
+            channelName: defaultPrice ? defaultPrice.channel_name : "General",
+            unitPrice: defaultPrice ? defaultPrice.selling_price : matchedProduct.total_cost || 0,
+            quantity: 1,
+          },
+        ];
+      });
+      setPreselectedProductName(matchedProduct.name);
+    }
+  }, [productIdParam, products, isEditing, items]);
 
   // Agregar producto a la cotización
   const handleAddProduct = (product: Product, price: ProductPrice) => {
@@ -343,6 +377,25 @@ function NuevoPresupuestoContent() {
         <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl text-rose-700 text-xs flex items-center gap-2">
           <AlertCircle className="w-4 h-4 flex-shrink-0" />
           <span>{errorMsg}</span>
+        </div>
+      )}
+
+      {/* Banner de Producto Preseleccionado */}
+      {preselectedProductName && (
+        <div className="p-3 bg-[#F0FAF4] border border-[#C3EBC0] rounded-2xl flex items-center justify-between text-xs text-[#1F7A4C] shadow-2xs animate-in fade-in duration-200">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-[#3BB578] flex-shrink-0" />
+            <span>
+              Producto <strong>"{preselectedProductName}"</strong> preseleccionado desde tu catálogo con su precio de venta sugerido.
+            </span>
+          </div>
+          <button
+            onClick={() => setPreselectedProductName(null)}
+            className="text-neutral-400 hover:text-neutral-600 text-xs px-1.5 py-0.5"
+            title="Cerrar aviso"
+          >
+            ✕
+          </button>
         </div>
       )}
 
