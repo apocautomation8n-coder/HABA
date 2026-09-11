@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -23,6 +24,7 @@ import {
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
 import { checkIsAdmin } from "@/lib/auth-helpers";
+import { useModalThemeColor } from "@/hooks/useModalThemeColor";
 
 interface UserProfile {
   id: string;
@@ -38,6 +40,7 @@ export default function AdminPage() {
   const router = useRouter();
   const supabase = createClient();
 
+  const [mounted, setMounted] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -58,6 +61,29 @@ export default function AdminPage() {
   const [resettingPassword, setResettingPassword] = useState(false);
   const [resetSuccess, setResetSuccess] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Oscurecer la barra de estado superior nativa de iOS al abrir cualquier modal en admin
+  useModalThemeColor(isCreateModalOpen || Boolean(resetModalUser), "#000000");
+
+  // Bloquear scroll de fondo para evitar rebote elástico en móviles
+  useEffect(() => {
+    const isAnyModalOpen = isCreateModalOpen || Boolean(resetModalUser);
+    if (!isAnyModalOpen) return;
+
+    const originalOverflow = document.body.style.overflow;
+    const originalTouchAction = document.body.style.touchAction;
+    document.body.style.overflow = "hidden";
+    document.body.style.touchAction = "none";
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      document.body.style.touchAction = originalTouchAction;
+    };
+  }, [isCreateModalOpen, resetModalUser]);
 
   // Verificar rol de admin y cargar usuarias
   const loadUsers = async () => {
@@ -419,185 +445,203 @@ export default function AdminPage() {
         )}
       </div>
 
-      {/* Modal para Crear Usuaria */}
-      {isCreateModalOpen && (
-        <div className="fixed inset-0 z-[99999] bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center">
+      {/* Modal para Crear Usuaria montado en Portal con cobertura completa de notch / status bar */}
+      {isCreateModalOpen &&
+        mounted &&
+        createPortal(
           <div
-            className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl border border-[#EAF0E8] animate-in slide-in-from-bottom-6 flex flex-col"
-            style={{ maxHeight: "calc(100dvh - env(safe-area-inset-top, 20px) - 10px)" }}
+            className="fixed -top-40 -bottom-40 -left-20 -right-20 z-[99999] bg-black/65 backdrop-blur-xs flex items-end sm:items-center justify-center pt-40 pb-40 px-20 animate-in fade-in duration-200"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setIsCreateModalOpen(false);
+            }}
           >
-            <div className="flex items-center justify-between pb-3 border-b border-neutral-100 flex-shrink-0">
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-xl bg-[#DCF4D7] text-[#3BB578] flex items-center justify-center">
-                  <UserPlus className="w-4 h-4" />
+            <div
+              className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl border border-[#EAF0E8] animate-in slide-in-from-bottom-6 flex flex-col overflow-hidden"
+              style={{ maxHeight: "calc(100dvh - env(safe-area-inset-top, 20px) - 10px)" }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-neutral-100 flex-shrink-0">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-xl bg-[#DCF4D7] text-[#3BB578] flex items-center justify-center">
+                    <UserPlus className="w-4 h-4" />
+                  </div>
+                  <h3 className="text-sm font-bold text-[#2B2B2B] font-display">
+                    Alta de Nueva Usuaria
+                  </h3>
                 </div>
-                <h3 className="text-sm font-bold text-[#2B2B2B] font-display">
-                  Alta de Nueva Usuaria
-                </h3>
-              </div>
-              <button
-                onClick={() => setIsCreateModalOpen(false)}
-                className="p-1.5 text-neutral-400 hover:text-neutral-600 rounded-full"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {createError && (
-              <div className="mt-3 p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                <span>{createError}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleCreateUser} className="mt-3 space-y-3 flex-1 overflow-y-auto">
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-[#2B2B2B]">Email de acceso *</label>
-                <input
-                  type="email"
-                  value={newEmail}
-                  onChange={(e) => setNewEmail(e.target.value)}
-                  placeholder="clienta@correo.com"
-                  required
-                  className="w-full px-3.5 py-2 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B]"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-[#2B2B2B]">Contraseña inicial *</label>
-                <input
-                  type="text"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Mínimo 6 caracteres (ej: haba123)"
-                  required
-                  className="w-full px-3.5 py-2 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B]"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-[#2B2B2B]">Nombre de la usuaria</label>
-                <input
-                  type="text"
-                  value={newFullName}
-                  onChange={(e) => setNewFullName(e.target.value)}
-                  placeholder="Ej: Giulianna Penna"
-                  className="w-full px-3.5 py-2 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B]"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-[#2B2B2B]">Nombre del emprendimiento</label>
-                <input
-                  type="text"
-                  value={newBusinessName}
-                  onChange={(e) => setNewBusinessName(e.target.value)}
-                  placeholder="Ej: Amaoto Craft"
-                  className="w-full px-3.5 py-2 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B]"
-                />
-              </div>
-
-              <div
-                className="pt-2 flex gap-2 flex-shrink-0"
-                style={{ paddingBottom: "max(env(safe-area-inset-bottom, 12px), 16px)" }}
-              >
                 <button
-                  type="button"
                   onClick={() => setIsCreateModalOpen(false)}
-                  className="flex-1 py-2.5 px-3 bg-neutral-100 hover:bg-neutral-200 text-[#7A7A7A] rounded-2xl text-xs font-semibold transition"
+                  className="p-1.5 text-neutral-400 hover:text-neutral-600 rounded-full"
                 >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={creatingUser}
-                  className="flex-1 py-2.5 px-3 bg-[#3BB578] hover:bg-[#2E9E65] text-white rounded-2xl text-xs font-bold shadow-xs disabled:opacity-60 transition"
-                >
-                  {creatingUser ? "Creando..." : "Crear Cuenta"}
+                  <X className="w-4 h-4" />
                 </button>
               </div>
-            </form>
-          </div>
-        </div>
-      )}
 
-      {/* Modal para Resetear Contraseña */}
-      {resetModalUser && (
-        <div className="fixed inset-0 z-[99999] bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center">
-          <div
-            className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl border border-[#EAF0E8] animate-in slide-in-from-bottom-6"
-          >
-            <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
-                  <KeyRound className="w-4 h-4" />
+              {createError && (
+                <div className="mt-3 p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                  <span>{createError}</span>
                 </div>
-                <h3 className="text-sm font-bold text-[#2B2B2B] font-display">
-                  Resetear Contraseña
-                </h3>
-              </div>
-              <button
-                onClick={() => setResetModalUser(null)}
-                className="p-1.5 text-neutral-400 hover:text-neutral-600 rounded-full"
-              >
-                <X className="w-4 h-4" />
-              </button>
+              )}
+
+              <form onSubmit={handleCreateUser} className="mt-3 space-y-3 flex-1 overflow-y-auto">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-[#2B2B2B]">Email de acceso *</label>
+                  <input
+                    type="email"
+                    value={newEmail}
+                    onChange={(e) => setNewEmail(e.target.value)}
+                    placeholder="clienta@correo.com"
+                    required
+                    className="w-full px-3.5 py-2 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B]"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-[#2B2B2B]">Contraseña inicial *</label>
+                  <input
+                    type="text"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="Mínimo 6 caracteres (ej: haba123)"
+                    required
+                    className="w-full px-3.5 py-2 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B]"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-[#2B2B2B]">Nombre de la usuaria</label>
+                  <input
+                    type="text"
+                    value={newFullName}
+                    onChange={(e) => setNewFullName(e.target.value)}
+                    placeholder="Ej: Giulianna Penna"
+                    className="w-full px-3.5 py-2 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B]"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-[#2B2B2B]">Nombre del emprendimiento</label>
+                  <input
+                    type="text"
+                    value={newBusinessName}
+                    onChange={(e) => setNewBusinessName(e.target.value)}
+                    placeholder="Ej: Amaoto Craft"
+                    className="w-full px-3.5 py-2 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B]"
+                  />
+                </div>
+
+                <div
+                  className="pt-2 flex gap-2 flex-shrink-0"
+                  style={{ paddingBottom: "max(env(safe-area-inset-bottom, 12px), 16px)" }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setIsCreateModalOpen(false)}
+                    className="flex-1 py-2.5 px-3 bg-neutral-100 hover:bg-neutral-200 text-[#7A7A7A] rounded-2xl text-xs font-semibold transition"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={creatingUser}
+                    className="flex-1 py-2.5 px-3 bg-[#3BB578] hover:bg-[#2E9E65] text-white rounded-2xl text-xs font-bold shadow-xs disabled:opacity-60 transition"
+                  >
+                    {creatingUser ? "Creando..." : "Crear Cuenta"}
+                  </button>
+                </div>
+              </form>
             </div>
+          </div>,
+          document.body
+        )}
 
-            <p className="text-xs text-[#7A7A7A] mt-2">
-              Asigná una nueva clave para <strong>{resetModalUser.full_name || resetModalUser.email}</strong>.
-            </p>
-
-            {resetError && (
-              <div className="mt-2 p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                <span>{resetError}</span>
-              </div>
-            )}
-
-            {resetSuccess && (
-              <div className="mt-2 p-2.5 bg-[#DCF4D7] border border-[#C3EBC0] rounded-xl text-[#1F7A4C] text-xs flex items-center gap-2 font-bold">
-                <Check className="w-4 h-4 flex-shrink-0" />
-                <span>¡Contraseña actualizada con éxito!</span>
-              </div>
-            )}
-
-            <form onSubmit={handleResetPassword} className="mt-3 space-y-3">
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-[#2B2B2B]">Nueva Contraseña *</label>
-                <input
-                  type="text"
-                  value={resetPassword}
-                  onChange={(e) => setResetPassword(e.target.value)}
-                  placeholder="Mínimo 6 caracteres"
-                  required
-                  className="w-full px-3.5 py-2 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B]"
-                />
-              </div>
-
-              <div
-                className="pt-2 flex gap-2"
-                style={{ paddingBottom: "max(env(safe-area-inset-bottom, 12px), 16px)" }}
-              >
+      {/* Modal para Resetear Contraseña montado en Portal */}
+      {resetModalUser &&
+        mounted &&
+        createPortal(
+          <div
+            className="fixed -top-40 -bottom-40 -left-20 -right-20 z-[99999] bg-black/65 backdrop-blur-xs flex items-end sm:items-center justify-center pt-40 pb-40 px-20 animate-in fade-in duration-200"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setResetModalUser(null);
+            }}
+          >
+            <div
+              className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl border border-[#EAF0E8] animate-in slide-in-from-bottom-6 overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+                    <KeyRound className="w-4 h-4" />
+                  </div>
+                  <h3 className="text-sm font-bold text-[#2B2B2B] font-display">
+                    Resetear Contraseña
+                  </h3>
+                </div>
                 <button
-                  type="button"
                   onClick={() => setResetModalUser(null)}
-                  className="flex-1 py-2.5 px-3 bg-neutral-100 hover:bg-neutral-200 text-[#7A7A7A] rounded-2xl text-xs font-semibold transition"
+                  className="p-1.5 text-neutral-400 hover:text-neutral-600 rounded-full"
                 >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={resettingPassword || resetSuccess}
-                  className="flex-1 py-2.5 px-3 bg-[#3BB578] hover:bg-[#2E9E65] text-white rounded-2xl text-xs font-bold shadow-xs disabled:opacity-60 transition"
-                >
-                  {resettingPassword ? "Guardando..." : "Guardar Contraseña"}
+                  <X className="w-4 h-4" />
                 </button>
               </div>
-            </form>
-          </div>
-        </div>
-      )}
+
+              <p className="text-xs text-[#7A7A7A] mt-2">
+                Asigná una nueva clave para <strong>{resetModalUser.full_name || resetModalUser.email}</strong>.
+              </p>
+
+              {resetError && (
+                <div className="mt-2 p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                  <span>{resetError}</span>
+                </div>
+              )}
+
+              {resetSuccess && (
+                <div className="mt-2 p-2.5 bg-[#DCF4D7] border border-[#C3EBC0] rounded-xl text-[#1F7A4C] text-xs flex items-center gap-2 font-bold">
+                  <Check className="w-4 h-4 flex-shrink-0" />
+                  <span>¡Contraseña actualizada con éxito!</span>
+                </div>
+              )}
+
+              <form onSubmit={handleResetPassword} className="mt-3 space-y-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-[#2B2B2B]">Nueva Contraseña *</label>
+                  <input
+                    type="text"
+                    value={resetPassword}
+                    onChange={(e) => setResetPassword(e.target.value)}
+                    placeholder="Mínimo 6 caracteres"
+                    required
+                    className="w-full px-3.5 py-2 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B]"
+                  />
+                </div>
+
+                <div
+                  className="pt-2 flex gap-2"
+                  style={{ paddingBottom: "max(env(safe-area-inset-bottom, 12px), 16px)" }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setResetModalUser(null)}
+                    className="flex-1 py-2.5 px-3 bg-neutral-100 hover:bg-neutral-200 text-[#7A7A7A] rounded-2xl text-xs font-semibold transition"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={resettingPassword || resetSuccess}
+                    className="flex-1 py-2.5 px-3 bg-[#3BB578] hover:bg-[#2E9E65] text-white rounded-2xl text-xs font-bold shadow-xs disabled:opacity-60 transition"
+                  >
+                    {resettingPassword ? "Guardando..." : "Guardar Contraseña"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
