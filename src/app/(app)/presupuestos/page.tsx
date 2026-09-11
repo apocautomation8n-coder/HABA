@@ -17,6 +17,7 @@ import {
   ChevronUp,
   FileText,
   Printer,
+  Edit2,
 } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
@@ -352,6 +353,15 @@ export default function PresupuestosPage() {
                       <Printer className="w-3.5 h-3.5" />
                       <span>PDF</span>
                     </button>
+
+                    <Link
+                      href={`/presupuestos/nuevo?edit=${quote.id}`}
+                      className="py-1.5 px-3 bg-[#DCF4D7] hover:bg-[#C3EBC0] text-[#1F7A4C] rounded-xl text-xs font-bold transition flex items-center gap-1"
+                      title="Editar este presupuesto"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                      <span>Editar</span>
+                    </Link>
                   </div>
 
                   <div className="flex items-center gap-1">

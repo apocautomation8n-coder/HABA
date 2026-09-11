@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { User, Store, Mail, ShieldCheck, LogOut, Check, Sparkles, Smartphone, Bell, Clock, RefreshCw } from "lucide-react";
+import { User, Store, Mail, ShieldCheck, LogOut, Check, Sparkles, Smartphone, Bell, Clock, RefreshCw, Lock, Eye, EyeOff, KeyRound } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
 import { checkIsAdmin } from "@/lib/auth-helpers";
@@ -19,6 +19,8 @@ export default function SettingsPage() {
   const [email, setEmail] = useState<string>("");
   const [fullName, setFullName] = useState<string>("");
   const [businessName, setBusinessName] = useState<string>("");
+  const [newPassword, setNewPassword] = useState<string>("");
+  const [showPassword, setShowPassword] = useState<boolean>(false);
   const [role, setRole] = useState<string>("user");
   const [priceReviewDays, setPriceReviewDays] = useState<number>(15);
   const [savedNotifSuccess, setSavedNotifSuccess] = useState(false);
@@ -80,18 +82,31 @@ export default function SettingsPage() {
     setSaving(true);
     setSavedSuccess(false);
 
+    if (newPassword.trim() && newPassword.trim().length < 6) {
+      alert("La nueva contraseña debe tener al menos 6 caracteres.");
+      setSaving(false);
+      return;
+    }
+
     try {
+      const payload: Record<string, any> = {
+        fullName: fullName.trim(),
+        businessName: businessName.trim(),
+        email: email.trim(),
+      };
+      if (newPassword.trim()) {
+        payload.password = newPassword.trim();
+      }
+
       const res = await fetch("/api/user/profile", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fullName: fullName.trim(),
-          businessName: businessName.trim(),
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (res.ok) {
         setSavedSuccess(true);
+        setNewPassword("");
         setTimeout(() => setSavedSuccess(false), 3000);
       } else {
         const data = await res.json();
@@ -192,17 +207,48 @@ export default function SettingsPage() {
             />
           </div>
 
-          <div className="space-y-1 opacity-70">
+          <div className="space-y-1">
             <label className="text-xs font-semibold text-neutral-700 flex items-center gap-1.5">
-              <Mail className="w-3.5 h-3.5 text-neutral-400" />
+              <Mail className="w-3.5 h-3.5 text-[#3BB578]" />
               Email de acceso
             </label>
             <input
               type="email"
               value={email}
-              disabled
-              className="w-full px-3.5 py-2.5 text-sm bg-neutral-100 border border-neutral-200 rounded-2xl text-neutral-500 cursor-not-allowed"
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="tu@correo.com"
+              required
+              className="w-full px-3.5 py-2.5 text-sm bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] focus:ring-2 focus:ring-[#DCF4D7] outline-none transition text-neutral-800"
             />
+            <p className="text-[10px] text-neutral-400">
+              Es el correo con el que iniciás sesión en HABA.
+            </p>
+          </div>
+
+          <div className="space-y-1 pt-1">
+            <label className="text-xs font-semibold text-neutral-700 flex items-center gap-1.5">
+              <Lock className="w-3.5 h-3.5 text-[#3BB578]" />
+              Cambiar Contraseña
+            </label>
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="Dejalo en blanco si no querés cambiarla"
+                className="w-full pl-3.5 pr-10 py-2.5 text-sm bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] focus:ring-2 focus:ring-[#DCF4D7] outline-none transition text-neutral-800"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-neutral-400 hover:text-neutral-600"
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            <p className="text-[10px] text-neutral-400">
+              Escribí una nueva clave (mín. 6 caracteres) solo si deseás cambiar tu contraseña.
+            </p>
           </div>
 
           <button

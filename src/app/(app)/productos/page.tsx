@@ -141,6 +141,17 @@ export default function ProductosPage() {
         />
       </div>
 
+      {/* Tip Didáctico HABA */}
+      <div className="bg-[#F0FAF4] border border-[#DCF4D7] p-3 rounded-2xl flex items-start gap-2.5">
+        <div className="w-6 h-6 rounded-xl bg-[#DCF4D7] text-[#1F7A4C] flex items-center justify-center flex-shrink-0 mt-0.5">
+          <Sparkles className="w-3.5 h-3.5" />
+        </div>
+        <div className="text-[11px] leading-snug text-[#2B2B2B]">
+          <span className="font-bold text-[#1F7A4C] block mb-0.5">💡 ¿Cómo se calculan los costos de tus productos?</span>
+          Cada producto suma los insumos que consume para 1 unidad + tu tiempo de mano de obra. Sobre ese costo total, HABA te permite definir diferentes márgenes de ganancia según si vendés minorista, mayorista o por internet.
+        </div>
+      </div>
+
       {/* Listado de Productos o Estado Vacío */}
       {loading ? (
         <div className="py-12 text-center text-xs text-neutral-400 animate-pulse">
