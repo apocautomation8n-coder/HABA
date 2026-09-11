@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useMemo } from "react";
-import { DollarSign, Clock, Plus, Trash2, Edit2, Calendar, AlertCircle, Check, Sparkles, X, Calculator, HelpCircle } from "lucide-react";
+import { DollarSign, Clock, Plus, Trash2, Edit2, Calendar, AlertCircle, Check, Sparkles, X, Calculator, HelpCircle, Loader2 } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/units";
@@ -36,6 +36,8 @@ export default function GastosPage() {
   const [hoursPerDay, setHoursPerDay] = useState<number>(6);
   const [savingLabor, setSavingLabor] = useState(false);
   const [laborSavedSuccess, setLaborSavedSuccess] = useState(false);
+  const [laborError, setLaborError] = useState<string | null>(null);
+  const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
 
   // Cargar datos
   const loadData = async () => {
@@ -53,17 +55,18 @@ export default function GastosPage() {
           .order("created_at", { ascending: false });
         if (expData) setExpenses(expData as FixedExpense[]);
 
-        // Cargar configuración de mano de obra
+        // Cargar configuración de mano de obra (un registro por usuaria)
         const { data: laborData } = await supabase
           .from("labor_settings")
           .select("*")
           .eq("user_id", user.id)
-          .single();
+          .maybeSingle();
 
         if (laborData) {
-          setSalary(laborData.desired_monthly_salary || 0);
-          setDaysPerMonth(laborData.working_days_per_month || 20);
-          setHoursPerDay(laborData.working_hours_per_day || 6);
+          setSalary(laborData.desired_monthly_salary ?? 350000);
+          setDaysPerMonth(laborData.working_days_per_month ?? 20);
+          setHoursPerDay(laborData.working_hours_per_day ?? 6);
+          setLastSavedAt(laborData.updated_at || null);
         }
       }
     } catch (err) {
@@ -128,34 +131,60 @@ export default function GastosPage() {
     showToast("Gasto fijo eliminado de tus costos mensuales.");
   };
 
-  // Guardar configuración de Mano de Obra
+  // Guardar configuración de Mano de Obra (un registro por usuaria en Supabase)
   const handleSaveLabor = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSavingLabor(true);
-    setLaborSavedSuccess(false);
+    setLaborError(null);
+
+    if (parsedSalary < 0) {
+      setLaborError("El sueldo pretendido no puede ser negativo.");
+      return;
+    }
+    if (daysPerMonth < 1 || daysPerMonth > 31) {
+      setLaborError("Los días trabajados al mes deben estar entre 1 y 31.");
+      return;
+    }
+    if (hoursPerDay <= 0 || hoursPerDay > 24) {
+      setLaborError("Las horas diarias de producción deben ser entre 1 y 24.");
+      return;
+    }
 
     try {
+      setSavingLabor(true);
+      setLaborSavedSuccess(false);
+
       const {
         data: { user },
       } = await supabase.auth.getUser();
-      if (!user) return;
 
-      const { error } = await supabase.from("labor_settings").upsert({
-        user_id: user.id,
-        desired_monthly_salary: parsedSalary,
-        working_days_per_month: daysPerMonth,
-        working_hours_per_day: hoursPerDay,
-        hourly_rate: calculatedHourlyRate,
-        minute_rate: calculatedMinuteRate,
-        updated_at: new Date().toISOString(),
-      });
-
-      if (!error) {
-        setLaborSavedSuccess(true);
-        setTimeout(() => setLaborSavedSuccess(false), 3000);
+      if (!user) {
+        throw new Error("No hay una sesión de usuaria activa.");
       }
-    } catch (err) {
-      console.error(err);
+
+      const now = new Date().toISOString();
+
+      const { error: upsertError } = await supabase.from("labor_settings").upsert(
+        {
+          user_id: user.id,
+          desired_monthly_salary: parsedSalary,
+          working_days_per_month: daysPerMonth,
+          working_hours_per_day: hoursPerDay,
+          hourly_rate: calculatedHourlyRate,
+          minute_rate: calculatedMinuteRate,
+          updated_at: now,
+        },
+        { onConflict: "user_id" }
+      );
+
+      if (upsertError) throw upsertError;
+
+      setLastSavedAt(now);
+      setLaborSavedSuccess(true);
+      showToast("Configuración de mano de obra guardada con éxito.");
+      setTimeout(() => setLaborSavedSuccess(false), 3500);
+    } catch (err: any) {
+      console.error("Error al guardar mano de obra:", err);
+      setLaborError(err.message || "Error al guardar la configuración de mano de obra.");
     } finally {
       setSavingLabor(false);
     }
@@ -297,15 +326,36 @@ export default function GastosPage() {
       {activeTab === "mano_de_obra" && (
         <form onSubmit={handleSaveLabor} className="space-y-4">
           {/* Card Mascota Explicativa */}
-          <div className="bg-[#DCF4D7] border border-[#C3EBC0] rounded-3xl p-4 flex items-center gap-3 shadow-sm">
-            <HabaMascot size={55} className="flex-shrink-0" />
-            <div>
-              <p className="text-xs font-bold text-[#1F7A4C]">¿Cuánto vale tu hora de trabajo?</p>
-              <p className="text-[11px] text-[#3BB578] mt-0.5 leading-snug">
-                Definí tu sueldo deseado y tus horas reales de producción para que cada receta sume el valor exacto de tus minutos dedicados.
-              </p>
+          <div className="bg-[#DCF4D7] border border-[#C3EBC0] rounded-3xl p-4 flex items-center justify-between gap-3 shadow-sm">
+            <div className="flex items-center gap-3">
+              <HabaMascot size={55} className="flex-shrink-0" />
+              <div>
+                <div className="flex items-center gap-2">
+                  <p className="text-xs font-bold text-[#1F7A4C]">¿Cuánto vale tu hora de trabajo?</p>
+                  {lastSavedAt ? (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white text-[#1F7A4C] inline-flex items-center gap-1 shadow-2xs">
+                      <Check className="w-3 h-3 text-[#3BB578]" /> Guardado
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-white/80 text-[#1F7A4C]">
+                      Valores de referencia
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-[#3BB578] mt-0.5 leading-snug">
+                  Definí tu sueldo deseado y tus horas reales de producción para que cada receta sume el valor exacto de tus minutos dedicados.
+                </p>
+              </div>
             </div>
           </div>
+
+          {/* Banner de error si falla la persistencia */}
+          {laborError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl text-rose-700 text-xs flex items-center gap-2 animate-in fade-in">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              <span>{laborError}</span>
+            </div>
+          )}
 
           {/* Formulario */}
           <div className="bg-white p-5 rounded-3xl border border-[#EAF0E8] shadow-sm space-y-4">
@@ -396,15 +446,27 @@ export default function GastosPage() {
               className="w-full py-3 px-4 bg-[#3BB578] hover:bg-[#2E9E65] text-white text-xs font-bold rounded-2xl transition flex items-center justify-center gap-1.5 shadow-sm disabled:opacity-60"
             >
               {savingLabor ? (
-                <span>Guardando...</span>
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Guardando en tu cuenta...</span>
+                </>
               ) : laborSavedSuccess ? (
-                <span className="flex items-center gap-1">
+                <span className="flex items-center gap-1 text-white font-bold">
                   <Check className="w-4 h-4" /> ¡Configuración Guardada!
                 </span>
               ) : (
-                <span>Guardar Configuración de Mano de Obra</span>
+                <span className="flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4" />
+                  <span>Guardar Configuración de Mano de Obra</span>
+                </span>
               )}
             </button>
+
+            {lastSavedAt && (
+              <p className="text-[10px] text-center text-neutral-400 pt-0.5">
+                Última actualización: {new Date(lastSavedAt).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })} hs
+              </p>
+            )}
           </div>
         </form>
       )}
