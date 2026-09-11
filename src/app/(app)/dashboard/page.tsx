@@ -6,6 +6,7 @@ import { PlusCircle, ShoppingBag, Receipt, Sparkles, DollarSign, ArrowRight, Shi
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
 import { InstallPwaModal } from "@/components/InstallPwaModal";
+import { checkIsAdmin, getUserDisplayName } from "@/lib/auth-helpers";
 
 export default function DashboardPage() {
   const supabase = createClient();
@@ -20,20 +21,26 @@ export default function DashboardPage() {
       } = await supabase.auth.getUser();
 
       if (user) {
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("full_name, business_name, role")
-          .eq("id", user.id)
-          .single();
-
-        if (profile?.role === "admin") {
+        // 1. Verificación inmediata de Admin
+        if (checkIsAdmin(user)) {
           setIsAdmin(true);
         }
 
-        if (profile?.full_name) {
-          setUserName(profile.full_name.split(" ")[0]);
-        } else if (user.email) {
-          setUserName(user.email.split("@")[0]);
+        const initialName = getUserDisplayName(user).split(" ")[0];
+        setUserName(initialName);
+
+        // 2. Traer perfil extendido de API segura
+        try {
+          const res = await fetch("/api/user/profile");
+          if (res.ok) {
+            const data = await res.json();
+            if (data.isAdmin) setIsAdmin(true);
+            if (data.profile?.full_name) {
+              setUserName(data.profile.full_name.split(" ")[0]);
+            }
+          }
+        } catch {
+          // ignore
         }
 
         // Cargar contadores básicos

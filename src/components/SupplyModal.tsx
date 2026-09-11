@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { X, Sparkles, AlertCircle, Calculator, Info } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { UNIT_PRESETS, calculateUnitCost, formatCurrency } from "@/lib/units";
+import { useModalThemeColor } from "@/hooks/useModalThemeColor";
 
 export interface SupplyItem {
   id?: string;
@@ -32,6 +33,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
   initialSupply,
 }) => {
   const supabase = createClient();
+  useModalThemeColor(isOpen);
 
   const [category, setCategory] = useState<"materia_prima" | "packaging">("materia_prima");
   const [name, setName] = useState("");
@@ -181,6 +183,16 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
         height: '100dvh',
       }}
     >
+      {/* Cobertura total para status bar y notch en iOS Safari */}
+      <div 
+        className="fixed bg-black/60 pointer-events-none"
+        style={{
+          top: '-120px',
+          bottom: '-120px',
+          left: '-50px',
+          right: '-50px',
+        }}
+      />
       <div 
         className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col border border-[#EAF0E8] animate-in fade-in slide-in-from-bottom-6 duration-200" 
         style={{ 

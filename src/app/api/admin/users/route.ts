@@ -14,6 +14,25 @@ function getAdminClient() {
   );
 }
 
+// GET: Listar todas las usuarias del sistema
+export async function GET() {
+  try {
+    const supabaseAdmin = getAdminClient();
+    const { data: profiles, error } = await supabaseAdmin
+      .from("profiles")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
+    return NextResponse.json({ users: profiles || [] });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+}
+
 // POST: Alta de nueva usuaria
 export async function POST(request: Request) {
   try {

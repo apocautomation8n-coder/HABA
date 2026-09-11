@@ -4,6 +4,7 @@ import React, { useEffect, useState, useMemo } from "react";
 import { X, Sparkles, AlertCircle, Loader2, DollarSign, Calendar, Calculator } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/units";
+import { useModalThemeColor } from "@/hooks/useModalThemeColor";
 
 export interface FixedExpense {
   id?: string;
@@ -47,6 +48,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
   initialExpense,
 }) => {
   const supabase = createClient();
+  useModalThemeColor(isOpen);
 
   const [name, setName] = useState("");
   const [amount, setAmount] = useState<number | string>("");
@@ -150,6 +152,16 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-[99999] bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4">
+      {/* Cobertura total para status bar y notch en iOS Safari */}
+      <div 
+        className="fixed bg-black/60 pointer-events-none"
+        style={{
+          top: '-120px',
+          bottom: '-120px',
+          left: '-50px',
+          right: '-50px',
+        }}
+      />
       <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full shadow-2xl border border-[#EAF0E8] p-5 sm:p-6 relative animate-in slide-in-from-bottom-6 duration-200">
         {/* Botón cerrar */}
         <button

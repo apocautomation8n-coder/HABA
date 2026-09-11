@@ -28,16 +28,26 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
         data: { user },
       } = await supabase.auth.getUser();
       if (user) {
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("business_name, full_name")
-          .eq("id", user.id)
-          .single();
+        // Carga inmediata de user_metadata
+        if (user.user_metadata?.business_name) {
+          setBusinessName(user.user_metadata.business_name);
+        } else if (user.user_metadata?.full_name) {
+          setBusinessName(user.user_metadata.full_name);
+        }
 
-        if (profile?.business_name) {
-          setBusinessName(profile.business_name);
-        } else if (profile?.full_name) {
-          setBusinessName(profile.full_name);
+        // Carga complementaria por API segura
+        try {
+          const res = await fetch("/api/user/profile");
+          if (res.ok) {
+            const data = await res.json();
+            if (data.profile?.business_name) {
+              setBusinessName(data.profile.business_name);
+            } else if (data.profile?.full_name) {
+              setBusinessName(data.profile.full_name);
+            }
+          }
+        } catch {
+          // ignore
         }
       }
     }

@@ -6,6 +6,8 @@ import { usePathname } from "next/navigation";
 import { Home, Boxes, ShoppingBag, Receipt, Settings, ShieldCheck } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
+import { checkIsAdmin } from "@/lib/auth-helpers";
+
 interface NavItem {
   label: string;
   href: string;
@@ -33,14 +35,23 @@ export const BottomNav: React.FC = () => {
         } = await supabase.auth.getUser();
 
         if (user) {
-          const { data: profile } = await supabase
-            .from("profiles")
-            .select("role")
-            .eq("id", user.id)
-            .single();
-
-          if (profile?.role === "admin") {
+          // 1. Verificación inmediata por email o metadata de Auth
+          if (checkIsAdmin(user)) {
             setIsAdmin(true);
+            return;
+          }
+
+          // 2. Verificación por endpoint seguro con service role
+          try {
+            const res = await fetch("/api/user/profile");
+            if (res.ok) {
+              const data = await res.json();
+              if (data.isAdmin) {
+                setIsAdmin(true);
+              }
+            }
+          } catch {
+            // Ignorar error de red secundario
           }
         }
       } catch (err) {

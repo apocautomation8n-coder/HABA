@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
+import { checkIsAdmin } from "@/lib/auth-helpers";
 
 interface UserProfile {
   id: string;
@@ -71,14 +72,22 @@ export default function AdminPage() {
         return;
       }
 
-      // Validar rol en profiles
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", user.id)
-        .single();
+      // Validar rol de admin de forma resiliente
+      let hasAdmin = checkIsAdmin(user);
 
-      if (profile?.role !== "admin") {
+      if (!hasAdmin) {
+        try {
+          const resProfile = await fetch("/api/user/profile");
+          if (resProfile.ok) {
+            const profileData = await resProfile.json();
+            if (profileData.isAdmin) hasAdmin = true;
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      if (!hasAdmin) {
         setIsAdmin(false);
         setLoading(false);
         return;
@@ -86,14 +95,13 @@ export default function AdminPage() {
 
       setIsAdmin(true);
 
-      // Cargar perfiles
-      const { data: profilesData, error } = await supabase
-        .from("profiles")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      if (!error && profilesData) {
-        setUsers(profilesData as UserProfile[]);
+      // Cargar perfiles mediante API segura (evita RLS recursivo)
+      const res = await fetch("/api/admin/users");
+      if (res.ok) {
+        const data = await res.json();
+        if (data.users) {
+          setUsers(data.users as UserProfile[]);
+        }
       }
     } catch (err) {
       console.error("Error loading admin data:", err);

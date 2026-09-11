@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Mail, Lock, Eye, EyeOff, AlertCircle, Sparkles } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
+import { checkIsAdmin } from "@/lib/auth-helpers";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -43,19 +44,27 @@ export default function LoginPage() {
       }
 
       if (data?.user) {
-        // Verificar si la cuenta está suspendida ("apagada" por Gio)
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("status, role")
-          .eq("id", data.user.id)
-          .single();
-
-        if (profile?.status === "suspended") {
-          await supabase.auth.signOut();
-          setErrorMessage(
-            "Tu cuenta se encuentra en pausa. Contactate con Gio (Amaoto Craft) para reactivarla."
-          );
+        // Si es Admin, redirigir inmediatamente
+        if (checkIsAdmin(data.user)) {
+          window.location.href = "/dashboard";
           return;
+        }
+
+        // Verificar si la cuenta está suspendida mediante API o metadata
+        try {
+          const res = await fetch("/api/user/profile");
+          if (res.ok) {
+            const prof = await res.json();
+            if (prof.profile?.status === "suspended") {
+              await supabase.auth.signOut();
+              setErrorMessage(
+                "Tu cuenta se encuentra en pausa. Contactate con Gio (Amaoto Craft) para reactivarla."
+              );
+              return;
+            }
+          }
+        } catch {
+          // Si falla la verificación secundaria, permitir acceso
         }
 
         // Redirección completa para sincronizar sesión y cookies con el middleware

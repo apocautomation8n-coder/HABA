@@ -6,6 +6,7 @@ import Link from "next/link";
 import { User, Store, Mail, ShieldCheck, LogOut, Check, Sparkles, Smartphone, Bell, Clock, RefreshCw } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
+import { checkIsAdmin } from "@/lib/auth-helpers";
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -35,16 +36,30 @@ export default function SettingsPage() {
           setUserId(user.id);
           setEmail(user.email || "");
 
-          const { data: profile } = await supabase
-            .from("profiles")
-            .select("full_name, business_name, role")
-            .eq("id", user.id)
-            .single();
+          // 1. Detección inmediata de admin
+          if (checkIsAdmin(user)) {
+            setRole("admin");
+          }
 
-          if (profile) {
-            setFullName(profile.full_name || "");
-            setBusinessName(profile.business_name || "");
-            setRole(profile.role || "user");
+          if (user.user_metadata?.full_name) {
+            setFullName(user.user_metadata.full_name);
+          }
+          if (user.user_metadata?.business_name) {
+            setBusinessName(user.user_metadata.business_name);
+          }
+
+          // 2. Cargar perfil desde API segura (bypasea RLS recursivo)
+          try {
+            const res = await fetch("/api/user/profile");
+            if (res.ok) {
+              const data = await res.json();
+              if (data.isAdmin) setRole("admin");
+              if (data.profile?.full_name) setFullName(data.profile.full_name);
+              if (data.profile?.business_name) setBusinessName(data.profile.business_name);
+              if (data.profile?.role) setRole(data.profile.role);
+            }
+          } catch {
+            // ignore
           }
         }
       } catch (err) {
@@ -66,18 +81,21 @@ export default function SettingsPage() {
     setSavedSuccess(false);
 
     try {
-      const { error } = await supabase
-        .from("profiles")
-        .update({
-          full_name: fullName.trim(),
-          business_name: businessName.trim(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", userId);
+      const res = await fetch("/api/user/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fullName: fullName.trim(),
+          businessName: businessName.trim(),
+        }),
+      });
 
-      if (!error) {
+      if (res.ok) {
         setSavedSuccess(true);
         setTimeout(() => setSavedSuccess(false), 3000);
+      } else {
+        const data = await res.json();
+        alert("Error al guardar perfil: " + (data.error || "Reintentá"));
       }
     } catch (err) {
       console.error("Error saving profile:", err);
