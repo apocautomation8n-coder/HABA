@@ -58,7 +58,8 @@ export default function LoginPage() {
           return;
         }
 
-        router.push("/dashboard");
+        // Redirección completa para sincronizar sesión y cookies con el middleware
+        window.location.href = "/dashboard";
       }
     } catch (err: any) {
       setErrorMessage("Ocurrió un error inesperado al iniciar sesión.");

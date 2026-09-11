@@ -1,19 +1,12 @@
 "use client";
 
 import React, { useEffect, useState, useMemo } from "react";
-import { DollarSign, Clock, Plus, Trash2, Calendar, AlertCircle, Check, Sparkles, X, Calculator, HelpCircle } from "lucide-react";
+import { DollarSign, Clock, Plus, Trash2, Edit2, Calendar, AlertCircle, Check, Sparkles, X, Calculator, HelpCircle } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/units";
-
-interface FixedExpense {
-  id?: string;
-  name: string;
-  amount: number;
-  periodicity: "mensual" | "bimestral" | "trimestral" | "semestral" | "anual";
-  monthly_equivalent: number;
-  created_at?: string;
-}
+import { ExpenseModal, FixedExpense } from "@/components/gastos/ExpenseModal";
+import { DeleteExpenseModal } from "@/components/gastos/DeleteExpenseModal";
 
 interface LaborSettings {
   desired_monthly_salary: number;
@@ -29,14 +22,13 @@ export default function GastosPage() {
   const [activeTab, setActiveTab] = useState<"gastos" | "mano_de_obra">("gastos");
   const [loading, setLoading] = useState(true);
 
-  // Gastos Fijos State
+  // Gastos Fijos State & Modals
   const [expenses, setExpenses] = useState<FixedExpense[]>([]);
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
-  const [expenseName, setExpenseName] = useState("");
-  const [expenseAmount, setExpenseAmount] = useState<number | string>("");
-  const [expensePeriodicity, setExpensePeriodicity] = useState<"mensual" | "bimestral" | "trimestral" | "semestral" | "anual">("mensual");
-  const [savingExpense, setSavingExpense] = useState(false);
-  const [expenseError, setExpenseError] = useState<string | null>(null);
+  const [editingExpense, setEditingExpense] = useState<FixedExpense | null>(null);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [deletingExpense, setDeletingExpense] = useState<FixedExpense | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Mano de Obra State
   const [salary, setSalary] = useState<number | string>(350000);
@@ -96,72 +88,44 @@ export default function GastosPage() {
   const calculatedHourlyRate = totalHoursPerMonth > 0 ? parsedSalary / totalHoursPerMonth : 0;
   const calculatedMinuteRate = calculatedHourlyRate / 60;
 
-  // Manejo de guardado de gasto fijo
-  const handleSaveExpense = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setExpenseError(null);
+  // Handlers para Modales de Gastos Fijos
+  const handleOpenCreateExpense = () => {
+    setEditingExpense(null);
+    setIsExpenseModalOpen(true);
+  };
 
-    const amountNum = typeof expenseAmount === "number" ? expenseAmount : parseFloat(expenseAmount) || 0;
-    if (!expenseName.trim() || amountNum <= 0) {
-      setExpenseError("Ingresá un nombre y monto válido mayor a 0");
-      return;
-    }
+  const handleOpenEditExpense = (expense: FixedExpense) => {
+    setEditingExpense(expense);
+    setIsExpenseModalOpen(true);
+  };
 
-    // Factor divisor a mes
-    const dividers = {
-      mensual: 1,
-      bimestral: 2,
-      trimestral: 3,
-      semestral: 6,
-      anual: 12,
-    };
-    const monthlyEq = amountNum / dividers[expensePeriodicity];
+  const handleOpenDeleteExpense = (expense: FixedExpense) => {
+    setDeletingExpense(expense);
+    setIsDeleteModalOpen(true);
+  };
 
-    try {
-      setSavingExpense(true);
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+  const showToast = (message: string) => {
+    setToastMessage(message);
+    setTimeout(() => {
+      setToastMessage(null);
+    }, 3500);
+  };
 
-      if (!user) return;
-
-      const { data, error } = await supabase.from("fixed_expenses").insert({
-        user_id: user.id,
-        name: expenseName.trim(),
-        amount: amountNum,
-        periodicity: expensePeriodicity,
-        monthly_equivalent: monthlyEq,
-      }).select().single();
-
-      if (error) throw error;
-
-      if (data) {
-        setExpenses([data as FixedExpense, ...expenses]);
-      }
-
-      setIsExpenseModalOpen(false);
-      setExpenseName("");
-      setExpenseAmount("");
-      setExpensePeriodicity("mensual");
-    } catch (err: any) {
-      setExpenseError(err.message || "Error al guardar el gasto");
-    } finally {
-      setSavingExpense(false);
+  const handleExpenseSaved = (savedExpense: FixedExpense, isEdit: boolean) => {
+    if (isEdit) {
+      setExpenses((prev) =>
+        prev.map((e) => (e.id === savedExpense.id ? savedExpense : e))
+      );
+      showToast(`Gasto "${savedExpense.name}" actualizado con éxito.`);
+    } else {
+      setExpenses((prev) => [savedExpense, ...prev]);
+      showToast(`Gasto "${savedExpense.name}" agregado con éxito.`);
     }
   };
 
-  const handleDeleteExpense = async (id?: string) => {
-    if (!id) return;
-    if (!confirm("¿Eliminar este gasto fijo?")) return;
-
-    try {
-      const { error } = await supabase.from("fixed_expenses").delete().eq("id", id);
-      if (!error) {
-        setExpenses(expenses.filter((e) => e.id !== id));
-      }
-    } catch (err) {
-      console.error(err);
-    }
+  const handleExpenseDeleted = (deletedId: string) => {
+    setExpenses((prev) => prev.filter((e) => e.id !== deletedId));
+    showToast("Gasto fijo eliminado de tus costos mensuales.");
   };
 
   // Guardar configuración de Mano de Obra
@@ -198,12 +162,12 @@ export default function GastosPage() {
   };
 
   return (
-    <div className="w-full flex flex-col space-y-4">
+    <div className="w-full flex flex-col space-y-4 font-body">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-bold text-neutral-800">Gastos & Mano de Obra</h2>
-          <p className="text-xs text-neutral-500">Estructura base para costear tus productos con precisión</p>
+          <h2 className="text-xl font-bold text-[#2B2B2B] font-display">Gastos & Mano de Obra</h2>
+          <p className="text-xs text-[#7A7A7A]">Estructura base para costear tus productos con precisión</p>
         </div>
       </div>
 
@@ -214,7 +178,7 @@ export default function GastosPage() {
           className={`flex-1 py-2 text-xs font-semibold rounded-xl transition flex items-center justify-center gap-1.5 ${
             activeTab === "gastos"
               ? "bg-white text-[#1F7A4C] shadow-sm"
-              : "text-neutral-500 hover:text-neutral-800"
+              : "text-[#7A7A7A] hover:text-[#2B2B2B]"
           }`}
         >
           <DollarSign className="w-3.5 h-3.5" />
@@ -225,7 +189,7 @@ export default function GastosPage() {
           className={`flex-1 py-2 text-xs font-semibold rounded-xl transition flex items-center justify-center gap-1.5 ${
             activeTab === "mano_de_obra"
               ? "bg-white text-[#1F7A4C] shadow-sm"
-              : "text-neutral-500 hover:text-neutral-800"
+              : "text-[#7A7A7A] hover:text-[#2B2B2B]"
           }`}
         >
           <Clock className="w-3.5 h-3.5" />
@@ -239,22 +203,16 @@ export default function GastosPage() {
           {/* Total Mensual */}
           <div className="bg-white p-4 rounded-3xl border border-[#EAF0E8] shadow-sm flex items-center justify-between">
             <div>
-              <span className="text-xs font-semibold text-neutral-400 block">
+              <span className="text-xs font-semibold text-[#7A7A7A] block">
                 Total Gastos Fijos Mensuales
               </span>
-              <span className="text-2xl font-black text-neutral-800 mt-0.5 block">
+              <span className="text-2xl font-black text-[#2B2B2B] mt-0.5 block font-display">
                 {formatCurrency(totalMonthlyExpenses)}
               </span>
             </div>
             <button
-              onClick={() => {
-                setExpenseName("");
-                setExpenseAmount("");
-                setExpensePeriodicity("mensual");
-                setExpenseError(null);
-                setIsExpenseModalOpen(true);
-              }}
-              className="p-2.5 bg-[#3BB578] hover:bg-[#2E9E65] text-white rounded-2xl shadow-sm transition flex items-center gap-1.5 text-xs font-bold active:scale-[0.98]"
+              onClick={handleOpenCreateExpense}
+              className="py-2.5 px-3.5 bg-[#3BB578] hover:bg-[#2E9E65] text-white rounded-2xl shadow-sm transition flex items-center gap-1.5 text-xs font-bold active:scale-[0.98]"
             >
               <Plus className="w-4 h-4" />
               <span>Nuevo Gasto</span>
@@ -262,45 +220,68 @@ export default function GastosPage() {
           </div>
 
           {/* Listado */}
-          {expenses.length === 0 ? (
-            <div className="bg-white rounded-3xl p-8 border border-[#EAF0E8] text-center space-y-2.5 shadow-sm">
-              <DollarSign className="w-10 h-10 text-neutral-300 mx-auto" />
-              <p className="text-sm font-bold text-neutral-700">Sin gastos fijos registrados</p>
-              <p className="text-xs text-neutral-400 max-w-xs mx-auto">
-                Cargá alquiler, luz, internet, monotributo y herramientas para prorratearlos en tus productos.
-              </p>
+          {loading ? (
+            <div className="py-12 text-center text-xs text-[#7A7A7A]">Cargando gastos...</div>
+          ) : expenses.length === 0 ? (
+            <div className="bg-white rounded-3xl p-8 border border-[#EAF0E8] shadow-sm flex flex-col items-center text-center space-y-3">
+              <HabaMascot size={70} />
+              <div>
+                <h3 className="text-sm font-bold text-[#2B2B2B] font-display">Sin gastos fijos cargados</h3>
+                <p className="text-xs text-[#7A7A7A] max-w-[240px] mt-1 font-body">
+                  Agregá luz, alquiler, internet o aplicaciones. HABA los normaliza por mes para prorratear en tus productos.
+                </p>
+              </div>
+              <button
+                onClick={handleOpenCreateExpense}
+                className="py-2.5 px-4 bg-[#DCF4D7] hover:bg-[#C3EBC0] text-[#1F7A4C] text-xs font-bold rounded-2xl transition flex items-center gap-1.5"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Agregar mi primer gasto fijo</span>
+              </button>
             </div>
           ) : (
             <div className="space-y-2.5">
               {expenses.map((expense) => (
                 <div
                   key={expense.id}
-                  className="bg-white p-3.5 rounded-2xl border border-[#EAF0E8] shadow-2xs flex items-center justify-between"
+                  className="bg-white rounded-2xl p-3.5 border border-[#EAF0E8] shadow-xs hover:shadow-sm transition flex items-center justify-between gap-3"
                 >
                   <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-xl bg-neutral-100 text-neutral-600 flex items-center justify-center font-bold text-xs">
+                    <div className="w-8 h-8 rounded-xl bg-[#DCF4D7] text-[#1F7A4C] flex items-center justify-center font-bold text-xs">
                       {expense.name.slice(0, 1).toUpperCase()}
                     </div>
                     <div>
-                      <h4 className="text-xs font-bold text-neutral-800">{expense.name}</h4>
-                      <p className="text-[10px] text-neutral-400 capitalize">
+                      <h4 className="text-xs font-bold text-[#2B2B2B]">{expense.name}</h4>
+                      <p className="text-[10px] text-[#7A7A7A] capitalize">
                         {expense.periodicity} · {formatCurrency(expense.amount)}
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
+
+                  <div className="flex items-center gap-2 sm:gap-3">
                     <div className="text-right">
                       <span className="text-xs font-bold text-[#1F7A4C] block">
                         {formatCurrency(expense.monthly_equivalent)}
                       </span>
-                      <span className="text-[9px] text-neutral-400 block">/ mes</span>
+                      <span className="text-[9px] text-[#7A7A7A] block">/ mes</span>
                     </div>
-                    <button
-                      onClick={() => handleDeleteExpense(expense.id!)}
-                      className="p-1.5 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => handleOpenEditExpense(expense)}
+                        className="p-1.5 text-neutral-400 hover:text-[#1F7A4C] hover:bg-[#DCF4D7] rounded-xl transition"
+                        title="Editar gasto fijo"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleOpenDeleteExpense(expense)}
+                        className="p-1.5 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition"
+                        title="Eliminar gasto fijo"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -316,21 +297,21 @@ export default function GastosPage() {
           <div className="bg-[#DCF4D7] border border-[#C3EBC0] rounded-3xl p-4 flex items-center gap-3 shadow-sm">
             <HabaMascot size={55} className="flex-shrink-0" />
             <div>
-              <p className="text-xs font-bold text-[#1F7A4C]">¿Cuánto vale tu hora de trabajo?</p>
-              <p className="text-[11px] text-[#3BB578] mt-0.5 leading-snug">
+              <p className="text-xs font-bold text-[#1F7A4C] font-display">¿Cuánto vale tu hora de trabajo?</p>
+              <p className="text-[11px] text-[#2E9E65] mt-0.5 leading-snug font-body">
                 Definí tu sueldo deseado y tus horas reales de producción para que cada producto sume el valor exacto de tus minutos dedicados.
               </p>
             </div>
           </div>
 
           {/* Formulario */}
-          <div className="bg-white p-5 rounded-3xl border border-[#EAF0E8] shadow-sm space-y-4">
+          <div className="bg-white p-5 rounded-3xl border border-[#EAF0E8] shadow-sm space-y-4 font-body">
             <div className="space-y-1">
-              <label className="text-xs font-semibold text-neutral-700">
+              <label className="text-xs font-semibold text-[#2B2B2B]">
                 Sueldo Pretendido Mensual ($)
               </label>
               <div className="relative">
-                <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-neutral-400 font-semibold text-sm">
+                <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-[#7A7A7A] font-semibold text-sm">
                   $
                 </span>
                 <input
@@ -341,17 +322,17 @@ export default function GastosPage() {
                   onChange={(e) => setSalary(e.target.value)}
                   placeholder="350000"
                   required
-                  className="w-full pl-8 pr-4 py-2.5 text-sm font-bold text-neutral-800 bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none"
+                  className="w-full pl-8 pr-4 py-2.5 text-sm font-bold text-[#2B2B2B] bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none"
                 />
               </div>
-              <p className="text-[10px] text-neutral-400">
+              <p className="text-[10px] text-[#7A7A7A]">
                 Lo que querés ganar de bolsillo por mes trabajando en tu emprendimiento.
               </p>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <label className="text-xs font-semibold text-neutral-700">Días al Mes</label>
+                <label className="text-xs font-semibold text-[#2B2B2B]">Días al Mes</label>
                 <input
                   type="number"
                   min="1"
@@ -359,13 +340,13 @@ export default function GastosPage() {
                   value={daysPerMonth}
                   onChange={(e) => setDaysPerMonth(parseInt(e.target.value) || 1)}
                   required
-                  className="w-full px-3.5 py-2 text-sm bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none"
+                  className="w-full px-3.5 py-2 text-sm bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B]"
                 />
-                <span className="text-[10px] text-neutral-400">Habitual: 20 a 24 días</span>
+                <span className="text-[10px] text-[#7A7A7A]">Habitual: 20 a 24 días</span>
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs font-semibold text-neutral-700">Horas por Día</label>
+                <label className="text-xs font-semibold text-[#2B2B2B]">Horas por Día</label>
                 <input
                   type="number"
                   min="1"
@@ -373,22 +354,22 @@ export default function GastosPage() {
                   value={hoursPerDay}
                   onChange={(e) => setHoursPerDay(parseFloat(e.target.value) || 1)}
                   required
-                  className="w-full px-3.5 py-2 text-sm bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none"
+                  className="w-full px-3.5 py-2 text-sm bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B]"
                 />
-                <span className="text-[10px] text-neutral-400">Dedicadas a producción</span>
+                <span className="text-[10px] text-[#7A7A7A]">Dedicadas a producción</span>
               </div>
             </div>
 
             {/* Resultado Cálculos en Vivo */}
             <div className="pt-2 border-t border-neutral-100 grid grid-cols-2 gap-3">
-              <div className="bg-neutral-50 p-3 rounded-2xl border border-neutral-100 text-center">
-                <span className="text-[10px] font-semibold text-neutral-500 block">
+              <div className="bg-[#F6F7F2] p-3 rounded-2xl border border-[#EAF0E8] text-center">
+                <span className="text-[10px] font-semibold text-[#7A7A7A] block">
                   Valor por Hora
                 </span>
-                <span className="text-base font-black text-[#1F7A4C]">
+                <span className="text-base font-black text-[#1F7A4C] font-display">
                   {formatCurrency(calculatedHourlyRate)}
                 </span>
-                <span className="text-[9px] block text-neutral-400 mt-0.5">
+                <span className="text-[9px] block text-[#7A7A7A] mt-0.5">
                   ({totalHoursPerMonth} hs/mes)
                 </span>
               </div>
@@ -397,10 +378,10 @@ export default function GastosPage() {
                 <span className="text-[10px] font-bold text-[#1F7A4C] block">
                   Valor por Minuto
                 </span>
-                <span className="text-base font-black text-[#1F7A4C]">
+                <span className="text-base font-black text-[#1F7A4C] font-display">
                   {formatCurrency(calculatedMinuteRate)}
                 </span>
-                <span className="text-[9px] block text-[#3BB578] mt-0.5">
+                <span className="text-[9px] block text-[#2E9E65] mt-0.5 font-medium">
                   Se aplica a tus productos
                 </span>
               </div>
@@ -425,87 +406,33 @@ export default function GastosPage() {
         </form>
       )}
 
-      {/* Modal Agregar Gasto Fijo */}
-      {isExpenseModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="bg-white w-full max-w-sm rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl border border-[#EAF0E8] animate-in slide-in-from-bottom-6">
-            <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
-              <h3 className="text-sm font-bold text-neutral-800">Nuevo Gasto Fijo</h3>
-              <button
-                onClick={() => setIsExpenseModalOpen(false)}
-                className="p-1.5 text-neutral-400 hover:text-neutral-600 rounded-full"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+      {/* Modal Crear / Editar Gasto Fijo */}
+      <ExpenseModal
+        isOpen={isExpenseModalOpen}
+        onClose={() => {
+          setIsExpenseModalOpen(false);
+          setEditingExpense(null);
+        }}
+        onSuccess={handleExpenseSaved}
+        initialExpense={editingExpense}
+      />
 
-            {expenseError && (
-              <div className="mt-3 p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                <span>{expenseError}</span>
-              </div>
-            )}
+      {/* Modal Confirmación Eliminación */}
+      <DeleteExpenseModal
+        isOpen={isDeleteModalOpen}
+        expense={deletingExpense}
+        onClose={() => {
+          setIsDeleteModalOpen(false);
+          setDeletingExpense(null);
+        }}
+        onSuccess={handleExpenseDeleted}
+      />
 
-            <form onSubmit={handleSaveExpense} className="mt-4 space-y-3.5">
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-neutral-700">Nombre del Gasto</label>
-                <input
-                  type="text"
-                  value={expenseName}
-                  onChange={(e) => setExpenseName(e.target.value)}
-                  placeholder="Ej: Alquiler, Luz taller, Canva, Internet..."
-                  required
-                  className="w-full px-3.5 py-2.5 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-neutral-700">Monto ($)</label>
-                <input
-                  type="number"
-                  step="any"
-                  min="0.01"
-                  value={expenseAmount}
-                  onChange={(e) => setExpenseAmount(e.target.value)}
-                  placeholder="0.00"
-                  required
-                  className="w-full px-3.5 py-2.5 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-neutral-700">Periodicidad</label>
-                <select
-                  value={expensePeriodicity}
-                  onChange={(e) => setExpensePeriodicity(e.target.value as any)}
-                  className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none"
-                >
-                  <option value="mensual">Mensual (1 mes)</option>
-                  <option value="bimestral">Bimestral (cada 2 meses)</option>
-                  <option value="trimestral">Trimestral (cada 3 meses)</option>
-                  <option value="semestral">Semestral (cada 6 meses)</option>
-                  <option value="anual">Anual (cada 12 meses)</option>
-                </select>
-              </div>
-
-              <div className="pt-2 flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsExpenseModalOpen(false)}
-                  className="flex-1 py-2 px-3 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-2xl text-xs font-semibold"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={savingExpense}
-                  className="flex-1 py-2 px-3 bg-[#3BB578] hover:bg-[#2E9E65] text-white rounded-2xl text-xs font-bold shadow-sm"
-                >
-                  {savingExpense ? "Guardando..." : "Guardar"}
-                </button>
-              </div>
-            </form>
-          </div>
+      {/* Notificación flotante de confirmación (Toast Kawaii) */}
+      {toastMessage && (
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-[99999] bg-[#1F7A4C] text-white px-4 py-2.5 rounded-2xl shadow-xl flex items-center gap-2 text-xs font-semibold animate-in fade-in slide-in-from-bottom-3 duration-200">
+          <Sparkles className="w-4 h-4 text-emerald-300" />
+          <span>{toastMessage}</span>
         </div>
       )}
     </div>
