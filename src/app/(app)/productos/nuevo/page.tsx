@@ -42,7 +42,7 @@ interface ChannelPrice {
   selling_price: number;
 }
 
-export const PRODUCT_CATEGORIES = [
+const PRODUCT_CATEGORIES = [
   { id: "papeleria", label: "Papelería & Libretas", icon: "📓" },
   { id: "marroquineria", label: "Marroquinería & Cuero", icon: "👜" },
   { id: "textil", label: "Textil & Costura", icon: "🧵" },
