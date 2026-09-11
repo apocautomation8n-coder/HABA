@@ -52,6 +52,7 @@ function NuevoPresupuestoContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const editId = searchParams.get("edit");
+  const productIdParam = searchParams.get("productId");
   const isEditing = Boolean(editId);
 
   const supabase = createClient();
@@ -59,6 +60,7 @@ function NuevoPresupuestoContent() {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [quoteNumber, setQuoteNumber] = useState<string | number | null>(null);
+  const [preselectedProductName, setPreselectedProductName] = useState<string | null>(null);
 
   // Productos disponibles en catálogo
   const [products, setProducts] = useState<Product[]>([]);
@@ -156,6 +158,38 @@ function NuevoPresupuestoContent() {
 
     fetchQuoteToEdit();
   }, [editId, supabase]);
+
+  // Si viene con parámetro ?productId=[id], preseleccionar automáticamente el producto
+  useEffect(() => {
+    if (!productIdParam || isEditing || products.length === 0) return;
+
+    const alreadyAdded = items.some((item) => item.productId === productIdParam);
+    if (alreadyAdded) return;
+
+    const matchedProduct = products.find((p) => p.id === productIdParam);
+    if (matchedProduct) {
+      // Buscar precio minorista o primer precio configurado
+      const defaultPrice =
+        matchedProduct.product_prices?.find((pr) =>
+          pr.channel_name.toLowerCase().includes("minorista")
+        ) || matchedProduct.product_prices?.[0];
+
+      setItems((prev) => {
+        if (prev.some((it) => it.productId === productIdParam)) return prev;
+        return [
+          ...prev,
+          {
+            productId: matchedProduct.id,
+            productName: matchedProduct.name,
+            channelName: defaultPrice ? defaultPrice.channel_name : "General",
+            unitPrice: defaultPrice ? defaultPrice.selling_price : matchedProduct.total_cost || 0,
+            quantity: 1,
+          },
+        ];
+      });
+      setPreselectedProductName(matchedProduct.name);
+    }
+  }, [productIdParam, products, isEditing, items]);
 
   // Agregar producto a la cotización
   const handleAddProduct = (product: Product, price: ProductPrice) => {
@@ -255,7 +289,7 @@ function NuevoPresupuestoContent() {
         }));
         await supabase.from("quote_items").insert(quoteItemsToInsert);
 
-        router.push("/presupuestos");
+        router.push(`/presupuestos/${editId}`);
         return;
       }
 
@@ -308,8 +342,8 @@ function NuevoPresupuestoContent() {
         console.error("Error inserting quote items:", itemsError);
       }
 
-      // Redirigir a listado de presupuestos
-      router.push("/presupuestos");
+      // Redirigir a la vista previa oficial del presupuesto recién creado
+      router.push(`/presupuestos/${quoteData.id}`);
     } catch (err: any) {
       setErrorMsg(err.message || "Error al generar el presupuesto");
     } finally {
@@ -318,7 +352,7 @@ function NuevoPresupuestoContent() {
   };
 
   return (
-    <div className="w-full flex flex-col space-y-4 pb-12">
+    <div className="w-full flex flex-col space-y-4 pb-36">
       {/* Encabezado con Volver */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -343,6 +377,25 @@ function NuevoPresupuestoContent() {
         <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl text-rose-700 text-xs flex items-center gap-2">
           <AlertCircle className="w-4 h-4 flex-shrink-0" />
           <span>{errorMsg}</span>
+        </div>
+      )}
+
+      {/* Banner de Producto Preseleccionado */}
+      {preselectedProductName && (
+        <div className="p-3 bg-[#F0FAF4] border border-[#C3EBC0] rounded-2xl flex items-center justify-between text-xs text-[#1F7A4C] shadow-2xs animate-in fade-in duration-200">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-[#3BB578] flex-shrink-0" />
+            <span>
+              Producto <strong>"{preselectedProductName}"</strong> preseleccionado desde tu catálogo con su precio de venta sugerido.
+            </span>
+          </div>
+          <button
+            onClick={() => setPreselectedProductName(null)}
+            className="text-neutral-400 hover:text-neutral-600 text-xs px-1.5 py-0.5"
+            title="Cerrar aviso"
+          >
+            ✕
+          </button>
         </div>
       )}
 
@@ -570,6 +623,50 @@ function NuevoPresupuestoContent() {
               </>
             )}
           </button>
+        </div>
+      </div>
+
+      {/* Panel Sticky Inferior: Resumen en Tiempo Real */}
+      <div className="sticky bottom-[62px] sm:bottom-[68px] z-40 -mx-1 mt-2">
+        <div className="bg-white/95 backdrop-blur-md p-3 sm:p-3.5 rounded-3xl border border-[#C3EBC0] shadow-[0_-4px_25px_rgba(31,122,76,0.14)] flex items-center justify-between gap-3 transition-all duration-300">
+          {/* Lado Izquierdo: Subtotal, Descuento e Ítems */}
+          <div className="flex-1 min-w-0 space-y-0.5">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[#1F7A4C] flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#3BB578] animate-pulse"></span>
+                Resumen en vivo
+              </span>
+              <span className="text-[9px] bg-[#DCF4D7] text-[#1F7A4C] font-bold px-1.5 py-0.2 rounded-full">
+                {items.length} {items.length === 1 ? "ítem" : "ítems"}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2 text-xs flex-wrap">
+              <span className="text-neutral-600 font-medium">
+                Subtotal: <strong className="text-neutral-800">{formatCurrency(subtotal)}</strong>
+              </span>
+
+              {discountPercent > 0 ? (
+                <span className="text-[10px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-1.5 py-0.2 rounded-md">
+                  Dcto: -{discountPercent}% (-{formatCurrency(discountAmount)})
+                </span>
+              ) : (
+                <span className="text-[10px] text-neutral-400">
+                  Sin descuento
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Lado Derecho: Total Final Congelado */}
+          <div className="text-right flex-shrink-0 bg-[#DCF4D7] border border-[#C3EBC0] px-3.5 py-1.5 rounded-2xl">
+            <span className="text-[9px] font-extrabold uppercase tracking-wider text-[#1F7A4C] block leading-none">
+              Total Final
+            </span>
+            <span className="text-base sm:text-lg font-black text-[#1F7A4C] leading-tight block">
+              {formatCurrency(total)}
+            </span>
+          </div>
         </div>
       </div>
 

@@ -22,11 +22,13 @@ import {
   Package,
   Tag,
   Info,
+  X,
 } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency, calculateUnitCost } from "@/lib/units";
 import { SupplyItem } from "@/components/SupplyModal";
+import { PRODUCT_CATEGORIES, serializeProductDescription } from "@/lib/products";
 
 interface SelectedSupply {
   supply: SupplyItem;
@@ -38,17 +40,6 @@ interface ChannelPrice {
   profit_margin_percent: number;
   selling_price: number;
 }
-
-const PRODUCT_CATEGORIES = [
-  { id: "papeleria", label: "Papelería & Libretas", icon: "📓" },
-  { id: "marroquineria", label: "Marroquinería & Cuero", icon: "👜" },
-  { id: "textil", label: "Textil & Costura", icon: "🧵" },
-  { id: "velas", label: "Velas & Aromas", icon: "🕯️" },
-  { id: "ceramica", label: "Cerámica & Deco", icon: "🏺" },
-  { id: "gastronomia", label: "Gastronomía / Pastelería", icon: "🧁" },
-  { id: "packaging", label: "Packaging & Cajas", icon: "📦" },
-  { id: "otro", label: "Otro", icon: "✨" },
-];
 
 const DEFAULT_CHANNELS = [
   { name: "Minorista (Precio Regular)", defaultMargin: 100 },
@@ -285,22 +276,16 @@ export default function NuevoProductoPage() {
 
       if (!user) throw new Error("Sesión no válida");
 
-      // Concatenar categoría como metadatos en la descripción
+      // Categoría y estado activo serializados
       const effectiveCategory = category === "otro" ? customCategory.trim() : category;
       const categoryLabel =
         PRODUCT_CATEGORIES.find((c) => c.id === effectiveCategory)?.label || effectiveCategory;
 
-      const metaTags: string[] = [];
-      if (categoryLabel) {
-        metaTags.push(`[Categoría: ${categoryLabel}]`);
-      }
-
-      let finalDescription = description.trim();
-      if (metaTags.length > 0) {
-        finalDescription = finalDescription
-          ? `${metaTags.join(" ")}\n\n${finalDescription}`
-          : metaTags.join(" ");
-      }
+      const finalDescription = serializeProductDescription({
+        cleanDescription: description,
+        category: categoryLabel,
+        isActive: true,
+      });
 
       // 1. Insertar en tabla products
       const { data: productData, error: productError } = await supabase

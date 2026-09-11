@@ -18,6 +18,7 @@ import {
   FileText,
   Printer,
   Edit2,
+  Eye,
 } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
@@ -99,8 +100,11 @@ export default function PresupuestosPage() {
     }
   };
 
-  // Generar mensaje de WhatsApp con el detalle del presupuesto
-  const shareViaWhatsApp = (quote: Quote) => {
+  // Generar mensaje y compartir por Web Share API / WhatsApp
+  const shareViaWhatsApp = async (quote: Quote) => {
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    const previewUrl = `${origin}/presupuestos/${quote.id}`;
+
     const itemsText = (quote.quote_items || [])
       .map(
         (item) =>
@@ -108,27 +112,51 @@ export default function PresupuestosPage() {
             item.subtotal
           )}`
       )
-      .join("%0A");
+      .join("\n");
 
     const discountText =
       quote.discount_percent > 0
-        ? `%0ADescuento (${quote.discount_percent}%): -${formatCurrency(
+        ? `\n🏷️ Descuento (${quote.discount_percent}%): -${formatCurrency(
             (quote.subtotal * quote.discount_percent) / 100
           )}`
         : "";
 
-    const notesText = quote.notes ? `%0A%0A*Condiciones / Notas:*%0A${encodeURIComponent(quote.notes)}` : "";
+    const notesText = quote.notes ? `\n\n📝 *Condiciones / Notas:*\n${quote.notes}` : "";
 
-    const text = `*Presupuesto ${quote.quote_number}* 🌸%0A%0A*Cliente:* ${encodeURIComponent(
-      quote.client_name
-    )}%0A%0A*Detalle:*%0A${itemsText}%0A%0A*Subtotal:* ${formatCurrency(
-      quote.subtotal
-    )}${discountText}%0A*TOTAL FINAL:* ${formatCurrency(quote.total)}${notesText}%0A%0A¡Muchas gracias por tu consulta!`;
+    const fullMessage =
+      `*PRESUPUESTO #${quote.quote_number}* 🌸\n\n` +
+      `*Cliente:* ${quote.client_name}\n` +
+      `*Emisión:* ${new Date(quote.created_at).toLocaleDateString("es-AR")}\n\n` +
+      `*Detalle de Productos:*\n${itemsText}\n\n` +
+      `*Subtotal:* ${formatCurrency(quote.subtotal)}${discountText}\n` +
+      `*TOTAL FINAL:* ${formatCurrency(quote.total)}${notesText}\n\n` +
+      `⏳ *Vigencia:* 15 días corridos con precios congelados.\n` +
+      `📄 *Ver y descargar presupuesto oficial:*\n${previewUrl}\n\n` +
+      `¡Muchas gracias por tu consulta!`;
 
+    // 1. Intentar con Web Share API primero si el navegador lo soporta
+    if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+      try {
+        await navigator.share({
+          title: `Presupuesto #${quote.quote_number} - ${quote.client_name}`,
+          text: fullMessage,
+          url: previewUrl,
+        });
+        return;
+      } catch (err: any) {
+        if (err.name === "AbortError") {
+          return;
+        }
+        console.warn("Web Share API no disponible, usando WhatsApp directo:", err);
+      }
+    }
+
+    // 2. Fallback a WhatsApp Web / App
     const phoneClean = quote.client_contact?.replace(/[^0-9]/g, "") || "";
+    const encodedText = encodeURIComponent(fullMessage);
     const waUrl = phoneClean
-      ? `https://wa.me/${phoneClean}?text=${text}`
-      : `https://wa.me/?text=${text}`;
+      ? `https://wa.me/${phoneClean}?text=${encodedText}`
+      : `https://wa.me/?text=${encodedText}`;
 
     window.open(waUrl, "_blank");
   };
@@ -335,7 +363,16 @@ export default function PresupuestosPage() {
 
                 {/* Acciones Rápidas: WhatsApp, PDF, Desplegar */}
                 <div className="pt-2 border-t border-neutral-100 flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <Link
+                      href={`/presupuestos/${quote.id}`}
+                      className="py-1.5 px-3 bg-[#3BB578] hover:bg-[#2E9E65] text-white rounded-xl text-xs font-bold transition flex items-center gap-1 shadow-2xs active:scale-95"
+                      title="Ver vista previa oficial del presupuesto"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>Vista Previa</span>
+                    </Link>
+
                     <button
                       onClick={() => shareViaWhatsApp(quote)}
                       className="py-1.5 px-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl text-xs font-bold transition flex items-center gap-1"
