@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Fredoka, Nunito } from "next/font/google";
 import "./globals.css";
+import { PWAProvider } from "@/components/PWAProvider";
 
 const fredoka = Fredoka({
   subsets: ["latin"],
@@ -60,9 +61,11 @@ export default function RootLayout({
         className="min-h-screen bg-[#F6F7F2] text-[#2B2B2B] antialiased flex flex-col items-center font-body"
         suppressHydrationWarning
       >
-        <main className="w-full max-w-md min-h-screen flex flex-col px-4 pt-[env(safe-area-inset-top,4px)] pb-4 sm:px-6">
-          {children}
-        </main>
+        <PWAProvider>
+          <main className="w-full max-w-md min-h-screen flex flex-col px-4 pt-[env(safe-area-inset-top,4px)] pb-4 sm:px-6">
+            {children}
+          </main>
+        </PWAProvider>
       </body>
     </html>
   );

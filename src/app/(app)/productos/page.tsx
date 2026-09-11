@@ -28,7 +28,7 @@ import {
 } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
-import { formatCurrency } from "@/lib/units";
+import { formatCurrency, calculateUnitCost } from "@/lib/units";
 import {
   PRODUCT_CATEGORIES,
   parseProductMeta,
@@ -42,6 +42,19 @@ interface ProductPrice {
   channel_name: string;
   profit_margin_percent: number;
   selling_price: number;
+}
+
+interface RecipeSupply {
+  id: string;
+  quantity: number;
+  supplies: {
+    id: string;
+    name: string;
+    current_price: number;
+    purchase_quantity: number;
+    conversion_factor: number;
+    use_unit: string;
+  } | null;
 }
 
 interface Product {
@@ -58,6 +71,7 @@ interface Product {
   needs_price_review: boolean;
   created_at: string;
   product_prices?: ProductPrice[];
+  product_supplies?: RecipeSupply[];
 }
 
 export default function ProductosPage() {
@@ -67,6 +81,7 @@ export default function ProductosPage() {
   const [loading, setLoading] = useState(true);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
+  const [recalculatingId, setRecalculatingId] = useState<string | null>(null);
   const [successToast, setSuccessToast] = useState<string | null>(null);
 
   // Filtros
@@ -78,7 +93,7 @@ export default function ProductosPage() {
   // Acordeón desplegado
   const [expandedProductId, setExpandedProductId] = useState<string | null>(null);
 
-  // Cargar productos con sus precios asociados
+  // Cargar productos con sus precios asociados y recetas de insumos
   const loadProducts = useCallback(async () => {
     try {
       setLoading(true);
@@ -86,7 +101,19 @@ export default function ProductosPage() {
         .from("products")
         .select(`
           *,
-          product_prices (*)
+          product_prices (*),
+          product_supplies (
+            id,
+            quantity,
+            supplies (
+              id,
+              name,
+              current_price,
+              purchase_quantity,
+              conversion_factor,
+              use_unit
+            )
+          )
         `)
         .order("created_at", { ascending: false });
 
@@ -274,15 +301,100 @@ export default function ProductosPage() {
     }
   };
 
-  // Metadatos y conteos globales
+  // Recalcular costos y actualizar precios de canales
+  const handleRecalculate = async (product: typeof productsWithMeta[0]) => {
+    if (recalculatingId) return;
+    try {
+      setRecalculatingId(product.id);
+
+      const newDirectCost = Math.round(product.currentMaterialsCost * 100) / 100;
+      const newTotalCost = Math.round((newDirectCost + (product.labor_cost || 0) + (product.indirect_cost || 0)) * 100) / 100;
+
+      // 1. Actualizar producto en Supabase
+      const { error: prodErr } = await supabase
+        .from("products")
+        .update({
+          direct_cost: newDirectCost,
+          total_cost: newTotalCost,
+          needs_price_review: false,
+        })
+        .eq("id", product.id);
+
+      if (prodErr) throw prodErr;
+
+      // 2. Actualizar precios de canales manteniendo el margen %
+      const updatedPrices: ProductPrice[] = [];
+      if (product.product_prices && product.product_prices.length > 0) {
+        for (const price of product.product_prices) {
+          const newSellingPrice = Math.round(newTotalCost * (1 + (price.profit_margin_percent || 0) / 100));
+          await supabase
+            .from("product_prices")
+            .update({ selling_price: newSellingPrice })
+            .eq("id", price.id);
+
+          updatedPrices.push({
+            ...price,
+            selling_price: newSellingPrice,
+          });
+        }
+      }
+
+      // 3. Actualizar estado local inmediatamente
+      setProducts((prev) =>
+        prev.map((p) => {
+          if (p.id !== product.id) return p;
+          return {
+            ...p,
+            direct_cost: newDirectCost,
+            total_cost: newTotalCost,
+            needs_price_review: false,
+            product_prices: updatedPrices.length > 0 ? updatedPrices : p.product_prices,
+          };
+        })
+      );
+
+      setSuccessToast(`¡Costos y precios recalculados para "${product.name}"!`);
+      setTimeout(() => {
+        setSuccessToast(null);
+      }, 4000);
+    } catch (err: any) {
+      console.error("Error al recalcular costos:", err);
+      alert("No se pudo recalcular el producto: " + (err.message || "Error"));
+    } finally {
+      setRecalculatingId(null);
+    }
+  };
+
+  // Metadatos, costos vigentes y detección reactiva de alerta
   const productsWithMeta = useMemo(() => {
     return products.map((product) => {
       const meta = parseProductMeta(product.description);
       const badge = getCategoryBadge(meta.category);
+
+      let currentMaterialsCost = 0;
+      let hasRecipe = false;
+      if (product.product_supplies && product.product_supplies.length > 0) {
+        hasRecipe = true;
+        currentMaterialsCost = product.product_supplies.reduce((acc, ps) => {
+          if (!ps.supplies) return acc;
+          const unitCost = calculateUnitCost(
+            ps.supplies.current_price,
+            ps.supplies.purchase_quantity,
+            ps.supplies.conversion_factor
+          );
+          return acc + unitCost * (ps.quantity || 0);
+        }, 0);
+      }
+
+      const costDifference = hasRecipe ? Math.abs(currentMaterialsCost - product.direct_cost) : 0;
+      const isCostOutdated = Boolean(product.needs_price_review || (hasRecipe && costDifference > 0.5));
+
       return {
         ...product,
         meta,
         badge,
+        currentMaterialsCost: hasRecipe ? currentMaterialsCost : product.direct_cost,
+        isCostOutdated,
       };
     });
   }, [products]);
@@ -298,7 +410,7 @@ export default function ProductosPage() {
       if (p.meta.isActive) active++;
       else inactive++;
 
-      if (p.needs_price_review) alerts++;
+      if (p.isCostOutdated) alerts++;
 
       const catKey = p.meta.category.toLowerCase();
       byCategory[catKey] = (byCategory[catKey] || 0) + 1;
@@ -350,7 +462,7 @@ export default function ProductosPage() {
       if (statusFilter === "inactive" && p.meta.isActive) return false;
 
       // 4. Filtro por alerta de costo desactualizado
-      if (onlyAlerts && !p.needs_price_review) return false;
+      if (onlyAlerts && !p.isCostOutdated) return false;
 
       return true;
     });
@@ -710,10 +822,10 @@ export default function ProductosPage() {
                       </button>
 
                       {/* Badge 3: Alerta de Costo Desactualizado */}
-                      {product.needs_price_review && (
+                      {product.isCostOutdated && (
                         <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-300 animate-pulse">
                           <AlertTriangle className="w-3 h-3 text-amber-600" />
-                          <span>Revisar Precios</span>
+                          <span>Costos Desactualizados</span>
                         </span>
                       )}
                     </div>
@@ -833,18 +945,23 @@ export default function ProductosPage() {
                   </div>
                 </div>
 
-                {/* Alerta de precio integrada en la card si requiere revisión */}
-                {product.needs_price_review && !isExpanded && (
-                  <div className="bg-amber-50/80 border border-amber-200/80 p-2 rounded-xl flex items-center justify-between text-[10px] text-amber-800">
-                    <span className="flex items-center gap-1 font-medium">
-                      <AlertTriangle className="w-3 h-3 text-amber-600 flex-shrink-0" />
-                      Insumos aumentaron de precio
-                    </span>
+                {/* Alerta de precio integrada en la card con botón Recalcular */}
+                {product.isCostOutdated && (
+                  <div className="bg-amber-50/90 border border-amber-200 p-2.5 rounded-2xl flex items-center justify-between text-xs text-amber-900 shadow-2xs">
+                    <div className="flex items-center gap-1.5 min-w-0 pr-2">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                      <span className="text-[11px] font-medium leading-tight">
+                        Insumos cambiaron de precio.
+                      </span>
+                    </div>
                     <button
-                      onClick={() => setExpandedProductId(product.id)}
-                      className="font-bold underline text-amber-900 hover:text-amber-700"
+                      onClick={() => handleRecalculate(product)}
+                      disabled={recalculatingId === product.id}
+                      className="py-1 px-3 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition shadow-xs flex-shrink-0 disabled:opacity-50 cursor-pointer"
+                      title="Actualizar costo directo, total y precios sugeridos"
                     >
-                      Ver detalle
+                      <RefreshCw className={`w-3.5 h-3.5 ${recalculatingId === product.id ? "animate-spin" : ""}`} />
+                      <span>{recalculatingId === product.id ? "Recalculando..." : "Recalcular"}</span>
                     </button>
                   </div>
                 )}
@@ -852,13 +969,30 @@ export default function ProductosPage() {
                 {/* Vista Desplegada: Desglose de Canales y Costos */}
                 {isExpanded && (
                   <div className="pt-2 border-t border-neutral-100 space-y-2.5 animate-in fade-in-50 duration-200">
-                    {/* Alerta explicativa expandida */}
-                    {product.needs_price_review && (
-                      <div className="bg-amber-50 border border-amber-200 p-2.5 rounded-2xl flex items-start gap-2 text-xs text-amber-800">
-                        <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-                        <div>
-                          <strong className="block font-bold">Insumos con aumento detectado:</strong>
-                          Uno o más insumos asignados a esta receta se actualizaron. Te recomendamos revisar las cantidades y confirmar tus precios de venta.
+                    {/* Alerta explicativa expandida con comparador y botón */}
+                    {product.isCostOutdated && (
+                      <div className="bg-amber-50 border border-amber-200 p-3 rounded-2xl flex flex-col gap-2 text-xs text-amber-900">
+                        <div className="flex items-start gap-2">
+                          <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                          <div>
+                            <strong className="block font-bold">Insumos con aumento detectado:</strong>
+                            Uno o más insumos asignados a esta receta cambiaron de precio desde la última actualización.
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between bg-white/80 p-2 rounded-xl border border-amber-200/60 text-[11px]">
+                          <span>Costo materiales guardado: <strong>{formatCurrency(product.direct_cost)}</strong></span>
+                          <span>➔</span>
+                          <span>Costo actual vigente: <strong className="text-amber-800">{formatCurrency(product.currentMaterialsCost)}</strong></span>
+                        </div>
+                        <div className="flex justify-end pt-0.5">
+                          <button
+                            onClick={() => handleRecalculate(product)}
+                            disabled={recalculatingId === product.id}
+                            className="py-1.5 px-3.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-xs disabled:opacity-50 cursor-pointer"
+                          >
+                            <RefreshCw className={`w-3.5 h-3.5 ${recalculatingId === product.id ? "animate-spin" : ""}`} />
+                            <span>{recalculatingId === product.id ? "Recalculando..." : "Recalcular Costos y Precios"}</span>
+                          </button>
                         </div>
                       </div>
                     )}
