@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useEffect, useState, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import React, { useEffect, useState, useMemo, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -20,6 +20,7 @@ import {
   ChevronRight,
   Share2,
   Download,
+  Edit2,
 } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
@@ -47,12 +48,17 @@ interface QuoteItemLine {
   quantity: number;
 }
 
-export default function NuevoPresupuestoPage() {
+function NuevoPresupuestoContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const editId = searchParams.get("edit");
+  const isEditing = Boolean(editId);
+
   const supabase = createClient();
 
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [quoteNumber, setQuoteNumber] = useState<string | number | null>(null);
 
   // Productos disponibles en catálogo
   const [products, setProducts] = useState<Product[]>([]);
@@ -101,6 +107,55 @@ export default function NuevoPresupuestoPage() {
 
     fetchCatalog();
   }, [supabase]);
+
+  // Si viene con parámetro ?edit=[id], cargar datos del presupuesto existente
+  useEffect(() => {
+    if (!editId) return;
+
+    const fetchQuoteToEdit = async () => {
+      try {
+        setLoading(true);
+        const { data: quote, error } = await supabase
+          .from("quotes")
+          .select(`
+            *,
+            quote_items (*)
+          `)
+          .eq("id", editId)
+          .single();
+
+        if (error || !quote) {
+          setErrorMsg("No se pudo cargar el presupuesto a editar");
+          return;
+        }
+
+        setQuoteNumber(quote.quote_number);
+        setClientName(quote.client_name || "");
+        setClientContact(quote.client_contact || "");
+        setDeliveryDate(quote.delivery_date ? quote.delivery_date.split("T")[0] : "");
+        setDiscountPercent(quote.discount_percent || 0);
+        setNotes(quote.notes || "");
+
+        if (quote.quote_items && quote.quote_items.length > 0) {
+          setItems(
+            quote.quote_items.map((qi: any) => ({
+              productId: "",
+              productName: qi.product_name,
+              channelName: qi.channel_name || "General",
+              unitPrice: Number(qi.unit_price) || 0,
+              quantity: Number(qi.quantity) || 1,
+            }))
+          );
+        }
+      } catch (err: any) {
+        console.error("Error loading quote for edit:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchQuoteToEdit();
+  }, [editId, supabase]);
 
   // Agregar producto a la cotización
   const handleAddProduct = (product: Product, price: ProductPrice) => {
@@ -171,7 +226,40 @@ export default function NuevoPresupuestoPage() {
 
       if (!user) throw new Error("Sesión no válida");
 
-      // Obtener el último quote_number para generar el correlativo entero siguiente
+      if (isEditing && editId) {
+        // 1. Actualizar tabla quotes
+        const { error: quoteError } = await supabase
+          .from("quotes")
+          .update({
+            client_name: clientName.trim(),
+            client_contact: clientContact.trim() || null,
+            delivery_date: deliveryDate ? new Date(deliveryDate).toISOString() : null,
+            discount_percent: discountPercent || 0,
+            subtotal: subtotal,
+            total: total,
+            notes: notes.trim() || null,
+          })
+          .eq("id", editId);
+
+        if (quoteError) throw new Error(quoteError.message);
+
+        // 2. Reemplazar quote_items
+        await supabase.from("quote_items").delete().eq("quote_id", editId);
+        const quoteItemsToInsert = items.map((item) => ({
+          quote_id: editId,
+          product_name: item.productName,
+          channel_name: item.channelName,
+          unit_price: item.unitPrice,
+          quantity: item.quantity,
+          subtotal: item.unitPrice * item.quantity,
+        }));
+        await supabase.from("quote_items").insert(quoteItemsToInsert);
+
+        router.push("/presupuestos");
+        return;
+      }
+
+      // Modo creación: Obtener el último quote_number para generar el correlativo entero siguiente
       const { data: latestQuote } = await supabase
         .from("quotes")
         .select("quote_number")
@@ -241,8 +329,12 @@ export default function NuevoPresupuestoPage() {
             <ArrowLeft className="w-4 h-4" />
           </Link>
           <div>
-            <h2 className="text-xl font-bold text-neutral-800">Nuevo Presupuesto</h2>
-            <p className="text-xs text-neutral-500">Cotización con valores congelados y exportación</p>
+            <h2 className="text-xl font-bold text-neutral-800">
+              {isEditing ? `Editar Presupuesto ${quoteNumber ? `#${quoteNumber}` : ""}` : "Nuevo Presupuesto"}
+            </h2>
+            <p className="text-xs text-neutral-500">
+              {isEditing ? "Modificá los datos o ítems y guardá los cambios" : "Cotización con valores congelados y exportación"}
+            </p>
           </div>
         </div>
       </div>
@@ -470,11 +562,11 @@ export default function NuevoPresupuestoPage() {
             className="w-full py-3.5 bg-[#3BB578] hover:bg-[#2E9E65] disabled:opacity-60 text-white rounded-2xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-md"
           >
             {loading ? (
-              <span>Generando Presupuesto...</span>
+              <span>{isEditing ? "Guardando cambios..." : "Generando Presupuesto..."}</span>
             ) : (
               <>
                 <Check className="w-4 h-4" />
-                <span>Emitir y Guardar Presupuesto</span>
+                <span>{isEditing ? "Actualizar y Guardar Cambios" : "Emitir y Guardar Presupuesto"}</span>
               </>
             )}
           </button>
@@ -534,9 +626,10 @@ export default function NuevoPresupuestoPage() {
                         ))
                       ) : (
                         <button
+                          key="base"
                           onClick={() =>
                             handleAddProduct(prod, {
-                              id: "default",
+                              id: "base",
                               channel_name: "General",
                               profit_margin_percent: 0,
                               selling_price: prod.total_cost,
@@ -571,5 +664,19 @@ export default function NuevoPresupuestoPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function NuevoPresupuestoPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="py-20 text-center text-xs text-neutral-400">
+          Cargando presupuesto...
+        </div>
+      }
+    >
+      <NuevoPresupuestoContent />
+    </Suspense>
   );
 }

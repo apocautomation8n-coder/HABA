@@ -86,7 +86,7 @@ export async function PATCH(request: Request) {
     }
 
     const body = await request.json();
-    const { fullName, businessName } = body;
+    const { fullName, businessName, email, password } = body;
 
     const admin = getAdminClient();
     const updateData: Record<string, any> = {
@@ -95,27 +95,42 @@ export async function PATCH(request: Request) {
     if (fullName !== undefined) updateData.full_name = fullName?.trim() || null;
     if (businessName !== undefined) updateData.business_name = businessName?.trim() || null;
 
-    // Actualizar en profiles
+    const authUpdate: Record<string, any> = {
+      user_metadata: {
+        ...(user.user_metadata || {}),
+        full_name: fullName !== undefined ? fullName.trim() : user.user_metadata?.full_name,
+        business_name: businessName !== undefined ? businessName.trim() : user.user_metadata?.business_name,
+      },
+    };
+
+    if (email && email.trim().toLowerCase() !== user.email?.toLowerCase()) {
+      authUpdate.email = email.trim().toLowerCase();
+      authUpdate.email_confirm = true;
+      updateData.email = email.trim().toLowerCase();
+    }
+
+    if (password && password.trim().length >= 6) {
+      authUpdate.password = password.trim();
+    }
+
+    // 1. Actualizar datos en Supabase Auth
+    const { error: authUpdateError } = await admin.auth.admin.updateUserById(user.id, authUpdate);
+    if (authUpdateError) {
+      return NextResponse.json({ error: authUpdateError.message }, { status: 400 });
+    }
+
+    // 2. Actualizar en profiles
     const { error: profileError } = await admin
       .from("profiles")
       .upsert({
         id: user.id,
-        email: user.email,
+        email: updateData.email || user.email,
         ...updateData,
       });
 
     if (profileError) {
       return NextResponse.json({ error: profileError.message }, { status: 400 });
     }
-
-    // Actualizar también metadata de Auth para sincronización
-    await admin.auth.admin.updateUserById(user.id, {
-      user_metadata: {
-        ...(user.user_metadata || {}),
-        full_name: fullName !== undefined ? fullName.trim() : user.user_metadata?.full_name,
-        business_name: businessName !== undefined ? businessName.trim() : user.user_metadata?.business_name,
-      },
-    });
 
     return NextResponse.json({ success: true });
   } catch (err: any) {

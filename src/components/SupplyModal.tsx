@@ -246,9 +246,29 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
               </div>
             )}
 
+            {/* Banner Didáctico HABA */}
+            <div className="bg-[#F0FAF4] border border-[#DCF4D7] p-3 rounded-2xl flex items-start gap-2.5">
+              <div className="w-6 h-6 rounded-xl bg-[#DCF4D7] text-[#1F7A4C] flex items-center justify-center flex-shrink-0 mt-0.5">
+                <Sparkles className="w-3.5 h-3.5" />
+              </div>
+              <div className="text-[11px] leading-snug text-[#2B2B2B] space-y-0.5">
+                <p className="font-bold text-[#1F7A4C]">¿Cómo calcula HABA el costo?</p>
+                <p className="text-[#555]">
+                  Ingresás cuánto comprás (ej: <strong>1 paquete</strong> de <strong>$5.000</strong>) y cuánto te rinde (ej: <strong>50 bolsas</strong>). HABA calcula el valor exacto por unidad de uso (<strong>$100 c/u</strong>) para que tus productos siempre tengan el costo real al día.
+                </p>
+              </div>
+            </div>
+
             {/* Categoría */}
             <div className="space-y-1">
-              <label className="text-[11px] font-semibold text-[#2B2B2B]">Tipo de Insumo</label>
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-semibold text-[#2B2B2B] flex items-center gap-1">
+                  <span>Tipo de Insumo</span>
+                </label>
+                <span className="text-[10px] text-[#7A7A7A]">
+                  {category === "materia_prima" ? "Materia que compone el producto" : "Cajas, bolsas o empaques"}
+                </span>
+              </div>
               <div className="flex bg-[#F6F7F2] p-1 rounded-2xl gap-1 border border-[#EAF0E8]">
                 <button
                   type="button"
@@ -291,8 +311,11 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
             {/* Preset de Unidades */}
             <div className="space-y-1">
               <div className="flex items-center justify-between">
-                <label className="text-[11px] font-semibold text-[#2B2B2B]">Conversión de Unidades</label>
-                <span className="text-[10px] text-[#7A7A7A]">Automático</span>
+                <label className="text-[11px] font-semibold text-[#2B2B2B] flex items-center gap-1">
+                  <span>Conversión de Unidades</span>
+                  <span className="text-[9.5px] bg-[#DCF4D7] text-[#1F7A4C] px-1.5 py-0.2 rounded font-medium">Asistente</span>
+                </label>
+                <span className="text-[10px] text-[#7A7A7A]">Reglas automáticas</span>
               </div>
               <select
                 value={selectedPresetId}
@@ -316,7 +339,9 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
             {/* Cantidad y Unidad de Compra */}
             <div className="grid grid-cols-2 gap-2.5">
               <div className="space-y-1">
-                <label className="text-[11px] font-semibold text-[#2B2B2B]">Cantidad Comprada *</label>
+                <label className="text-[11px] font-semibold text-[#2B2B2B] flex items-center justify-between">
+                  <span>Cantidad Comprada *</span>
+                </label>
                 <input
                   type="number"
                   step="any"
@@ -346,8 +371,8 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
             {/* Precio de Reposición Actual */}
             <div className="space-y-1">
               <div className="flex items-center justify-between">
-                <label className="text-[11px] font-semibold text-[#2B2B2B]">
-                  Precio de Reposición ($ ARS) *
+                <label className="text-[11px] font-semibold text-[#2B2B2B] flex items-center gap-1">
+                  <span>Precio de Reposición ($ ARS) *</span>
                 </label>
                 <span className="text-[9.5px] text-[#1F7A4C] bg-[#DCF4D7] px-1.5 py-0.5 rounded-md font-medium">
                   Al día de hoy
@@ -368,6 +393,9 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
                   className="w-full pl-7 pr-3 py-2 text-xs font-semibold text-[#2B2B2B] bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none transition"
                 />
               </div>
+              <p className="text-[10px] text-[#7A7A7A] px-1">
+                ℹ️ ¿Cuánto pagarías hoy por volver a comprarlo? Mantener este precio al día protege tus ganancias de la inflación.
+              </p>
             </div>
 
             {/* Unidad de Uso y Factor de Conversión */}
@@ -386,6 +414,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
                     required
                     className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#EAF0E8] rounded-xl outline-none text-[#2B2B2B]"
                   />
+                  <span className="text-[9.5px] text-[#999] block px-0.5">Cómo lo medís en tu producto</span>
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10.5px] font-semibold text-[#7A7A7A]">
@@ -403,32 +432,46 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
                     required
                     className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#EAF0E8] rounded-xl outline-none text-[#2B2B2B]"
                   />
+                  <span className="text-[9.5px] text-[#999] block px-0.5">Equivalente en {useUnit}</span>
                 </div>
               </div>
 
               {/* Explicación didáctica del rendimiento */}
-              <div className="text-[10.5px] text-[#7A7A7A] pt-1 border-t border-neutral-200/50">
-                📦 Comprás <strong className="text-[#2B2B2B]">{purchaseQuantity} {purchaseUnit}</strong> = Tenés <strong className="text-[#1F7A4C]">{totalRecipeUnits} {useUnit}</strong> disponibles para armar tus productos.
+              <div className="text-[10.5px] text-[#7A7A7A] pt-1.5 border-t border-neutral-200/60 leading-tight">
+                📦 Comprás <strong className="text-[#2B2B2B]">{purchaseQuantity} {purchaseUnit}</strong> = Tenés <strong className="text-[#1F7A4C]">{totalRecipeUnits} {useUnit}</strong> disponibles para fabricar tus productos.
               </div>
             </div>
 
-            {/* Tarjeta de Cálculo en Vivo */}
-            <div className="bg-[#DCF4D7] border border-[#C3EBC0] p-3 rounded-2xl flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Calculator className="w-4 h-4 text-[#1F7A4C]" />
-                <div>
-                  <p className="text-[10.5px] font-bold text-[#1F7A4C]">Costo Unitario de Uso:</p>
-                  <p className="text-[10px] text-[#2E9E65]">
-                    1 {useUnit} = {formatCurrency(unitCost)}
-                  </p>
+            {/* Tarjeta de Cálculo en Vivo y Desglose Didáctico */}
+            <div className="bg-[#DCF4D7]/80 border border-[#C3EBC0] p-3 rounded-2xl space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-lg bg-[#3BB578] text-white flex items-center justify-center">
+                    <Calculator className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-bold text-[#1F7A4C]">Costo unitario de uso:</p>
+                    <p className="text-[10px] text-[#2E9E65] font-medium">
+                      1 {useUnit} = {formatCurrency(unitCost)}
+                    </p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="text-sm sm:text-base font-black text-[#1F7A4C] font-display">
+                    {formatCurrency(unitCost)}
+                  </span>
+                  <span className="text-[9.5px] block text-[#1F7A4C] font-medium">por cada {useUnit}</span>
                 </div>
               </div>
-              <div className="text-right">
-                <span className="text-sm font-black text-[#1F7A4C] font-display">
-                  {formatCurrency(unitCost)}
-                </span>
-                <span className="text-[9.5px] block text-[#1F7A4C]">por {useUnit}</span>
-              </div>
+
+              {parsedPrice > 0 && totalRecipeUnits > 0 && (
+                <div className="pt-2 border-t border-[#C3EBC0]/70 text-[10px] text-[#1F7A4C] flex items-center justify-between bg-white/70 px-2.5 py-1.5 rounded-xl font-medium">
+                  <span>💡 Fórmula:</span>
+                  <span>
+                    {formatCurrency(parsedPrice)} ÷ {totalRecipeUnits} {useUnit} = <strong>{formatCurrency(unitCost)}/{useUnit}</strong>
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 

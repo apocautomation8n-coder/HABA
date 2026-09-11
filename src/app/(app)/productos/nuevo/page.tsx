@@ -522,6 +522,19 @@ export default function NuevoProductoPage() {
             </span>
           </div>
 
+          {/* Banner Didáctico Paso 1 */}
+          <div className="bg-[#F0FAF4] border border-[#DCF4D7] p-3 rounded-2xl flex items-start gap-2.5">
+            <div className="w-6 h-6 rounded-xl bg-[#DCF4D7] text-[#1F7A4C] flex items-center justify-center flex-shrink-0 mt-0.5">
+              <Sparkles className="w-3.5 h-3.5" />
+            </div>
+            <div className="text-[11px] leading-snug text-[#2B2B2B] space-y-0.5">
+              <p className="font-bold text-[#1F7A4C]">Creá la ficha de tu producto</p>
+              <p className="text-[#555]">
+                Definí su nombre y categoría para tenerlo ordenado. Podés sumarle una foto opcional para que se luzca en tus presupuestos y catálogo.
+              </p>
+            </div>
+          </div>
+
           {/* Campo: Nombre del Producto */}
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-neutral-700 flex items-center justify-between">
@@ -748,6 +761,19 @@ export default function NuevoProductoPage() {
             </button>
           </div>
 
+          {/* Banner Didáctico Paso 2 */}
+          <div className="bg-[#F0FAF4] border border-[#DCF4D7] p-3 rounded-2xl flex items-start gap-2.5">
+            <div className="w-6 h-6 rounded-xl bg-[#DCF4D7] text-[#1F7A4C] flex items-center justify-center flex-shrink-0 mt-0.5">
+              <Sparkles className="w-3.5 h-3.5" />
+            </div>
+            <div className="text-[11px] leading-snug text-[#2B2B2B] space-y-0.5">
+              <p className="font-bold text-[#1F7A4C]">¿Cómo costear los materiales?</p>
+              <p className="text-[#555]">
+                Agregá únicamente lo que consume <strong>1 sola unidad terminada</strong> de tu producto (ej: 250 gramos de cera, 1 frasco, 1 bolsa kraft). HABA multiplica automáticamente la cantidad por el precio de reposición de tus insumos.
+              </p>
+            </div>
+          </div>
+
           {selectedSupplies.length === 0 ? (
             <div className="space-y-3">
               <div className="bg-neutral-50 rounded-2xl p-6 border border-dashed border-neutral-200 text-center">
@@ -787,7 +813,7 @@ export default function NuevoProductoPage() {
                           {item.supply.name}
                         </span>
                         <span className="text-[10px] block text-neutral-400">
-                          Costo: {formatCurrency(unitCost)} / {item.supply.use_unit}
+                          Costo reposición: {formatCurrency(unitCost)} / {item.supply.use_unit}
                         </span>
                       </div>
                       <button
@@ -801,7 +827,7 @@ export default function NuevoProductoPage() {
                     <div className="flex items-center justify-between pt-1 border-t border-neutral-200/50">
                       <div className="flex items-center gap-2">
                         <label className="text-[11px] font-semibold text-neutral-600">
-                          Cantidad usada:
+                          Cantidad consumida:
                         </label>
                         <div className="flex items-center gap-1">
                           <input
@@ -821,14 +847,24 @@ export default function NuevoProductoPage() {
                       </div>
 
                       <div className="text-right">
+                        <span className="text-[10px] text-neutral-400 block font-mono">
+                          {item.quantity} × {formatCurrency(unitCost)}
+                        </span>
                         <span className="text-xs font-bold text-[#1F7A4C]">
-                          {formatCurrency(subtotal)}
+                          = {formatCurrency(subtotal)}
                         </span>
                       </div>
                     </div>
                   </div>
                 );
               })}
+            </div>
+          )}
+
+          {selectedSupplies.length > 0 && (
+            <div className="p-3 bg-[#DCF4D7]/70 border border-[#C3EBC0] rounded-2xl flex items-center justify-between">
+              <span className="text-xs font-bold text-[#1F7A4C]">Total Materiales (1 unidad):</span>
+              <span className="text-sm font-black text-[#1F7A4C] font-display">{formatCurrency(directCost)}</span>
             </div>
           )}
 
@@ -860,6 +896,19 @@ export default function NuevoProductoPage() {
               <h3 className="text-sm font-bold text-neutral-800">3. Mano de Obra y Costos Indirectos</h3>
               <p className="text-[11px] text-neutral-400">
                 La mano de obra es opcional por si solo querés costear materiales
+              </p>
+            </div>
+          </div>
+
+          {/* Banner Didáctico Paso 3 */}
+          <div className="bg-[#F0FAF4] border border-[#DCF4D7] p-3 rounded-2xl flex items-start gap-2.5">
+            <div className="w-6 h-6 rounded-xl bg-[#DCF4D7] text-[#1F7A4C] flex items-center justify-center flex-shrink-0 mt-0.5">
+              <Sparkles className="w-3.5 h-3.5" />
+            </div>
+            <div className="text-[11px] leading-snug text-[#2B2B2B] space-y-0.5">
+              <p className="font-bold text-[#1F7A4C]">Tu tiempo es un costo, no tu ganancia</p>
+              <p className="text-[#555]">
+                Cobrar tu mano de obra asegura que tu propio sueldo esté cubierto antes de calcular la ganancia del negocio. Multiplica tus minutos de armado por tu costo por minuto configurado en Gastos.
               </p>
             </div>
           </div>
@@ -940,8 +989,19 @@ export default function NuevoProductoPage() {
               </div>
             </div>
             <p className="text-[10px] text-neutral-400">
-              Monto estimado de luz/taller/alquiler asignado a cada unidad.
+              💡 <strong>¿Qué son los gastos fijos?</strong> Si querés que cada producto vendido aporte un poquito para pagar internet, monotributo, luz o alquiler de taller, podés sumar un monto estimado aquí (ej: $150 por unidad).
             </p>
+          </div>
+
+          {/* Resumen Total Unitario de Producción */}
+          <div className="p-3 bg-[#DCF4D7]/70 border border-[#C3EBC0] rounded-2xl flex flex-col gap-1.5 text-xs text-[#1F7A4C]">
+            <div className="flex justify-between items-center text-[11px]">
+              <span>Materiales: <strong>{formatCurrency(directCost)}</strong> + M.O: <strong>{formatCurrency(laborCost)}</strong> + Fijos: <strong>{formatCurrency(indirectCost || 0)}</strong></span>
+            </div>
+            <div className="flex justify-between items-center font-bold pt-1.5 border-t border-[#C3EBC0]">
+              <span className="text-xs">Costo Total de Fabricación (1 unidad):</span>
+              <span className="text-sm font-black text-[#1F7A4C] font-display">{formatCurrency(totalCost)}</span>
+            </div>
           </div>
 
           <div className="pt-3 border-t border-neutral-100 flex items-center justify-between">
@@ -971,6 +1031,19 @@ export default function NuevoProductoPage() {
               <h3 className="text-sm font-bold text-neutral-800">4. Precios por Canal de Venta</h3>
               <p className="text-[11px] text-neutral-400">
                 Un solo costo, distintos márgenes según dónde lo vendas
+              </p>
+            </div>
+          </div>
+
+          {/* Banner Didáctico Paso 4 */}
+          <div className="bg-[#F0FAF4] border border-[#DCF4D7] p-3 rounded-2xl flex items-start gap-2.5">
+            <div className="w-6 h-6 rounded-xl bg-[#DCF4D7] text-[#1F7A4C] flex items-center justify-center flex-shrink-0 mt-0.5">
+              <Sparkles className="w-3.5 h-3.5" />
+            </div>
+            <div className="text-[11px] leading-snug text-[#2B2B2B] space-y-0.5">
+              <p className="font-bold text-[#1F7A4C]">Fijá tus precios con total claridad</p>
+              <p className="text-[#555]">
+                Tu costo total de fabricación es <strong>{formatCurrency(totalCost)}</strong>. El <strong>Margen (%)</strong> es la ganancia neta sobre ese costo. Podés ajustar el % o escribir el precio final en pesos y HABA te muestra exactamente cuánto dinero te queda limpio en mano.
               </p>
             </div>
           </div>
@@ -1038,6 +1111,14 @@ export default function NuevoProductoPage() {
                         className="w-full px-2.5 py-1.5 text-xs bg-white border border-neutral-200 rounded-xl font-bold text-[#1F7A4C] outline-none focus:border-[#3BB578]"
                       />
                     </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-neutral-200/60 flex items-center justify-between text-[10.5px] text-neutral-600 bg-white/80 px-2.5 py-1.5 rounded-xl font-medium">
+                    <span>Costo: <strong>{formatCurrency(totalCost)}</strong></span>
+                    <span>+</span>
+                    <span>Ganancia: <strong className={profitAmount >= 0 ? "text-[#1F7A4C]" : "text-rose-600"}>{formatCurrency(profitAmount)}</strong></span>
+                    <span>=</span>
+                    <span>Precio: <strong className="text-[#2B2B2B]">{formatCurrency(channel.selling_price)}</strong></span>
                   </div>
                 </div>
               );
