@@ -28,6 +28,15 @@ export const UNIT_PRESETS: UnitPreset[] = [
     example: "Ej: Pote de 250 g = 250 g",
   },
   {
+    id: "g-mg",
+    name: "Gramos a Miligramos (g → mg)",
+    category: "peso",
+    purchaseUnit: "g",
+    useUnit: "mg",
+    defaultFactor: 1000,
+    example: "Ej: Pigmento de 5 g = 5000 mg",
+  },
+  {
     id: "m-cm",
     name: "Metros a Centímetros (m → cm)",
     category: "longitud",
@@ -35,6 +44,15 @@ export const UNIT_PRESETS: UnitPreset[] = [
     useUnit: "cm",
     defaultFactor: 100,
     example: "Ej: Rollo de 10 m de cinta o tela = 1000 cm",
+  },
+  {
+    id: "m-mm",
+    name: "Metros a Milímetros (m → mm)",
+    category: "longitud",
+    purchaseUnit: "m",
+    useUnit: "mm",
+    defaultFactor: 1000,
+    example: "Ej: Alambre o hilo por metro = 1000 mm",
   },
   {
     id: "cm-cm",
@@ -53,6 +71,24 @@ export const UNIT_PRESETS: UnitPreset[] = [
     useUnit: "ml",
     defaultFactor: 1000,
     example: "Ej: Botella de 1 litro = 1000 ml",
+  },
+  {
+    id: "ml-ml",
+    name: "Mililitros directos (ml → ml)",
+    category: "volumen",
+    purchaseUnit: "ml",
+    useUnit: "ml",
+    defaultFactor: 1,
+    example: "Ej: Esencia de 30 ml = 30 ml",
+  },
+  {
+    id: "docena-u",
+    name: "Docena a Unidades (docena → u)",
+    category: "unidad",
+    purchaseUnit: "docena",
+    useUnit: "u",
+    defaultFactor: 12,
+    example: "Ej: 1 docena de botones = 12 unidades",
   },
   {
     id: "pack-u",
@@ -80,6 +116,15 @@ export const UNIT_PRESETS: UnitPreset[] = [
     useUnit: "hoja",
     defaultFactor: 1,
     example: "Ej: Pliego de papel que rinde 4 hojas A5",
+  },
+  {
+    id: "custom",
+    name: "⚙️ Personalizado (definir manualmente)",
+    category: "unidad",
+    purchaseUnit: "unidad",
+    useUnit: "unidad",
+    defaultFactor: 1,
+    example: "Personalizá tus unidades y factor de rendimiento",
   },
 ];
 

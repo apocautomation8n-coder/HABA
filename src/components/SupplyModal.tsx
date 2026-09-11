@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { X, Sparkles, AlertCircle, Calculator } from "lucide-react";
+import { X, Sparkles, AlertCircle, Calculator, Info } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { UNIT_PRESETS, calculateUnitCost, formatCurrency } from "@/lib/units";
 
@@ -54,7 +54,15 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
       setCurrentPrice(initialSupply.current_price || "");
       setUseUnit(initialSupply.use_unit || "g");
       setConversionFactor(initialSupply.conversion_factor || 1000);
-      setSelectedPresetId("custom");
+
+      // Detect matched preset if any
+      const matchingPreset = UNIT_PRESETS.find(
+        (p) =>
+          p.purchaseUnit.toLowerCase() === (initialSupply.purchase_unit || "").toLowerCase() &&
+          p.useUnit.toLowerCase() === (initialSupply.use_unit || "").toLowerCase() &&
+          p.defaultFactor === initialSupply.conversion_factor
+      );
+      setSelectedPresetId(matchingPreset ? matchingPreset.id : "custom");
     } else {
       setName("");
       setCategory("materia_prima");
@@ -73,7 +81,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
   const handlePresetChange = (presetId: string) => {
     setSelectedPresetId(presetId);
     const preset = UNIT_PRESETS.find((p) => p.id === presetId);
-    if (preset) {
+    if (preset && preset.id !== "custom") {
       setPurchaseUnit(preset.purchaseUnit);
       setUseUnit(preset.useUnit);
       setConversionFactor(preset.defaultFactor);
@@ -82,6 +90,8 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
 
   const parsedPrice = typeof currentPrice === "number" ? currentPrice : parseFloat(currentPrice) || 0;
   const unitCost = calculateUnitCost(parsedPrice, purchaseQuantity, conversionFactor);
+  const totalRecipeUnits = purchaseQuantity * conversionFactor;
+  const activePreset = UNIT_PRESETS.find((p) => p.id === selectedPresetId);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -97,6 +107,10 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
     }
     if (purchaseQuantity <= 0) {
       setError("La cantidad comprada debe ser mayor a 0");
+      return;
+    }
+    if (conversionFactor <= 0) {
+      setError("El factor de rendimiento debe ser mayor a 0");
       return;
     }
 
@@ -159,7 +173,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
       <div 
         className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col border border-[#EAF0E8] animate-in fade-in slide-in-from-bottom-6 duration-200" 
         style={{ 
-          height: 'min(92vh, 720px)',
+          height: 'min(92vh, 740px)',
           maxHeight: 'calc(100dvh - env(safe-area-inset-top, 20px) - 10px)'
         }}
       >
@@ -170,7 +184,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
             <div className="w-7 h-7 rounded-xl bg-[#DCF4D7] text-[#3BB578] flex items-center justify-center">
               <Sparkles className="w-4 h-4" />
             </div>
-            <h3 className="text-sm sm:text-base font-bold text-neutral-800">
+            <h3 className="text-sm sm:text-base font-bold text-[#2B2B2B] font-display">
               {initialSupply ? "Editar Insumo" : "Nuevo Insumo o Packaging"}
             </h3>
           </div>
@@ -183,7 +197,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
         </div>
 
         {/* Contenido scrolleable del formulario */}
-        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden font-body">
           <div className="overflow-y-auto px-4 py-3 space-y-3.5 flex-1 min-h-0 overscroll-contain">
             {error && (
               <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-2 text-rose-700 text-xs">
@@ -194,15 +208,15 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
 
             {/* Categoría */}
             <div className="space-y-1">
-              <label className="text-[11px] font-semibold text-neutral-700">Tipo de Insumo</label>
-              <div className="flex bg-neutral-100 p-1 rounded-2xl gap-1">
+              <label className="text-[11px] font-semibold text-[#2B2B2B]">Tipo de Insumo</label>
+              <div className="flex bg-[#F6F7F2] p-1 rounded-2xl gap-1 border border-[#EAF0E8]">
                 <button
                   type="button"
                   onClick={() => setCategory("materia_prima")}
                   className={`flex-1 py-1.5 text-xs font-semibold rounded-xl transition ${
                     category === "materia_prima"
                       ? "bg-white text-[#1F7A4C] shadow-xs"
-                      : "text-neutral-500 hover:text-neutral-800"
+                      : "text-[#7A7A7A] hover:text-[#2B2B2B]"
                   }`}
                 >
                   🧵 Materia Prima
@@ -213,7 +227,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
                   className={`flex-1 py-1.5 text-xs font-semibold rounded-xl transition ${
                     category === "packaging"
                       ? "bg-white text-[#1F7A4C] shadow-xs"
-                      : "text-neutral-500 hover:text-neutral-800"
+                      : "text-[#7A7A7A] hover:text-[#2B2B2B]"
                   }`}
                 >
                   📦 Packaging
@@ -223,24 +237,27 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
 
             {/* Nombre */}
             <div className="space-y-1">
-              <label className="text-[11px] font-semibold text-neutral-700">Nombre del Insumo</label>
+              <label className="text-[11px] font-semibold text-[#2B2B2B]">Nombre del Insumo *</label>
               <input
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder={category === "packaging" ? "Ej: Caja 15x15, Sobre Kraft..." : "Ej: Cera de Soja, Tela, Cartón..."}
                 required
-                className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none transition"
+                className="w-full px-3 py-2 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none transition text-[#2B2B2B]"
               />
             </div>
 
             {/* Preset de Unidades */}
             <div className="space-y-1">
-              <label className="text-[11px] font-semibold text-neutral-700">¿Cómo lo compras y cómo lo usas?</label>
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-semibold text-[#2B2B2B]">Conversión de Unidades</label>
+                <span className="text-[10px] text-[#7A7A7A]">Automático</span>
+              </div>
               <select
                 value={selectedPresetId}
                 onChange={(e) => handlePresetChange(e.target.value)}
-                className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none transition"
+                className="w-full px-3 py-2 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none transition text-[#2B2B2B]"
               >
                 {UNIT_PRESETS.map((preset) => (
                   <option key={preset.id} value={preset.id}>
@@ -248,12 +265,18 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
                   </option>
                 ))}
               </select>
+              {activePreset && activePreset.example && (
+                <p className="text-[10.5px] text-[#7A7A7A] italic px-1 flex items-center gap-1 mt-0.5">
+                  <Info className="w-3 h-3 text-[#3BB578] flex-shrink-0" />
+                  <span>{activePreset.example}</span>
+                </p>
+              )}
             </div>
 
             {/* Cantidad y Unidad de Compra */}
             <div className="grid grid-cols-2 gap-2.5">
               <div className="space-y-1">
-                <label className="text-[11px] font-semibold text-neutral-700">Cantidad Comprada</label>
+                <label className="text-[11px] font-semibold text-[#2B2B2B]">Cantidad Comprada *</label>
                 <input
                   type="number"
                   step="any"
@@ -261,18 +284,21 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
                   value={purchaseQuantity}
                   onChange={(e) => setPurchaseQuantity(parseFloat(e.target.value) || 0)}
                   required
-                  className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none"
+                  className="w-full px-3 py-2 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B]"
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-[11px] font-semibold text-neutral-700">Unidad de Compra</label>
+                <label className="text-[11px] font-semibold text-[#2B2B2B]">Unidad de Compra *</label>
                 <input
                   type="text"
                   value={purchaseUnit}
-                  onChange={(e) => setPurchaseUnit(e.target.value)}
+                  onChange={(e) => {
+                    setPurchaseUnit(e.target.value);
+                    setSelectedPresetId("custom");
+                  }}
                   placeholder="kg, metro, pack..."
                   required
-                  className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none"
+                  className="w-full px-3 py-2 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B]"
                 />
               </div>
             </div>
@@ -280,15 +306,15 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
             {/* Precio de Reposición Actual */}
             <div className="space-y-1">
               <div className="flex items-center justify-between">
-                <label className="text-[11px] font-semibold text-neutral-700">
-                  Precio Actual de Reposición ($ ARS)
+                <label className="text-[11px] font-semibold text-[#2B2B2B]">
+                  Precio de Reposición ($ ARS) *
                 </label>
                 <span className="text-[9.5px] text-[#1F7A4C] bg-[#DCF4D7] px-1.5 py-0.5 rounded-md font-medium">
                   Al día de hoy
                 </span>
               </div>
               <div className="relative">
-                <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-neutral-400 font-bold text-xs">
+                <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-[#7A7A7A] font-bold text-xs">
                   $
                 </span>
                 <input
@@ -299,37 +325,50 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
                   onChange={(e) => setCurrentPrice(e.target.value)}
                   placeholder="0.00"
                   required
-                  className="w-full pl-7 pr-3 py-2 text-xs font-semibold text-neutral-800 bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none transition"
+                  className="w-full pl-7 pr-3 py-2 text-xs font-semibold text-[#2B2B2B] bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none transition"
                 />
               </div>
             </div>
 
             {/* Unidad de Uso y Factor de Conversión */}
-            <div className="grid grid-cols-2 gap-2.5 bg-neutral-50 p-2.5 rounded-2xl border border-neutral-200/60">
-              <div className="space-y-1">
-                <label className="text-[10.5px] font-semibold text-neutral-600">Unidad en Receta</label>
-                <input
-                  type="text"
-                  value={useUnit}
-                  onChange={(e) => setUseUnit(e.target.value)}
-                  placeholder="g, cm, u..."
-                  required
-                  className="w-full px-2.5 py-1.5 text-xs bg-white border border-neutral-200 rounded-xl outline-none"
-                />
+            <div className="space-y-2 bg-[#F6F7F2] p-3 rounded-2xl border border-[#EAF0E8]">
+              <div className="grid grid-cols-2 gap-2.5">
+                <div className="space-y-1">
+                  <label className="text-[10.5px] font-semibold text-[#7A7A7A]">Unidad en Receta *</label>
+                  <input
+                    type="text"
+                    value={useUnit}
+                    onChange={(e) => {
+                      setUseUnit(e.target.value);
+                      setSelectedPresetId("custom");
+                    }}
+                    placeholder="g, cm, u..."
+                    required
+                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#EAF0E8] rounded-xl outline-none text-[#2B2B2B]"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10.5px] font-semibold text-[#7A7A7A]">
+                    Rinde por 1 {purchaseUnit || "compra"} *
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0.0001"
+                    value={conversionFactor}
+                    onChange={(e) => {
+                      setConversionFactor(parseFloat(e.target.value) || 1);
+                      setSelectedPresetId("custom");
+                    }}
+                    required
+                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#EAF0E8] rounded-xl outline-none text-[#2B2B2B]"
+                  />
+                </div>
               </div>
-              <div className="space-y-1">
-                <label className="text-[10.5px] font-semibold text-neutral-600">
-                  Rinde por 1 {purchaseUnit || "compra"}
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  min="0.0001"
-                  value={conversionFactor}
-                  onChange={(e) => setConversionFactor(parseFloat(e.target.value) || 1)}
-                  required
-                  className="w-full px-2.5 py-1.5 text-xs bg-white border border-neutral-200 rounded-xl outline-none"
-                />
+
+              {/* Explicación didáctica del rendimiento */}
+              <div className="text-[10.5px] text-[#7A7A7A] pt-1 border-t border-neutral-200/50">
+                📦 Comprás <strong className="text-[#2B2B2B]">{purchaseQuantity} {purchaseUnit}</strong> = Tenés <strong className="text-[#1F7A4C]">{totalRecipeUnits} {useUnit}</strong> disponibles para usar en recetas.
               </div>
             </div>
 
@@ -339,13 +378,13 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
                 <Calculator className="w-4 h-4 text-[#1F7A4C]" />
                 <div>
                   <p className="text-[10.5px] font-bold text-[#1F7A4C]">Costo Unitario de Uso:</p>
-                  <p className="text-[10px] text-[#3BB578]">
+                  <p className="text-[10px] text-[#2E9E65]">
                     1 {useUnit} = {formatCurrency(unitCost)}
                   </p>
                 </div>
               </div>
               <div className="text-right">
-                <span className="text-sm font-black text-[#1F7A4C]">
+                <span className="text-sm font-black text-[#1F7A4C] font-display">
                   {formatCurrency(unitCost)}
                 </span>
                 <span className="text-[9.5px] block text-[#1F7A4C]">por {useUnit}</span>
@@ -363,7 +402,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 py-2.5 px-3 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-2xl text-xs font-semibold transition"
+              className="flex-1 py-2.5 px-3 bg-neutral-100 hover:bg-neutral-200 text-[#7A7A7A] rounded-2xl text-xs font-semibold transition"
             >
               Cancelar
             </button>
