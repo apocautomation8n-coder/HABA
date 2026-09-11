@@ -16,6 +16,9 @@ import {
   Sparkles,
   Mail,
   Store,
+  KeyRound,
+  X,
+  Loader2,
 } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
@@ -26,7 +29,7 @@ interface UserProfile {
   full_name?: string;
   business_name?: string;
   role: "admin" | "user";
-  is_active: boolean;
+  status: "active" | "suspended";
   created_at: string;
 }
 
@@ -47,6 +50,13 @@ export default function AdminPage() {
   const [newBusinessName, setNewBusinessName] = useState("");
   const [creatingUser, setCreatingUser] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+
+  // Modal para cambiar contraseña
+  const [resetModalUser, setResetModalUser] = useState<UserProfile | null>(null);
+  const [resetPassword, setResetPassword] = useState("");
+  const [resettingPassword, setResettingPassword] = useState(false);
+  const [resetSuccess, setResetSuccess] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
 
   // Verificar rol de admin y cargar usuarias
   const loadUsers = async () => {
@@ -98,25 +108,29 @@ export default function AdminPage() {
 
   // Alternar estado activo / suspendido (apagar/encender)
   const toggleUserActive = async (targetUser: UserProfile) => {
-    const nextState = !targetUser.is_active;
-    const actionName = nextState ? "activar" : "apagar (suspender)";
+    const isCurrentlyActive = targetUser.status === "active";
+    const nextStatus = isCurrentlyActive ? "suspended" : "active";
+    const actionName = isCurrentlyActive ? "apagar (suspender)" : "activar";
+
     const confirm = window.confirm(
       `¿Estás segura de ${actionName} la cuenta de "${targetUser.full_name || targetUser.email}"?`
     );
     if (!confirm) return;
 
     try {
-      const { error } = await supabase
-        .from("profiles")
-        .update({ is_active: nextState })
-        .eq("id", targetUser.id);
+      const res = await fetch("/api/admin/users", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: targetUser.id, status: nextStatus }),
+      });
 
-      if (!error) {
+      const resJson = await res.json();
+      if (res.ok) {
         setUsers((prev) =>
-          prev.map((u) => (u.id === targetUser.id ? { ...u, is_active: nextState } : u))
+          prev.map((u) => (u.id === targetUser.id ? { ...u, status: nextStatus } : u))
         );
       } else {
-        alert("Error al actualizar estado: " + error.message);
+        alert("Error al actualizar estado: " + (resJson.error || "No se pudo actualizar"));
       }
     } catch (err: any) {
       alert("Error: " + err.message);
@@ -125,8 +139,13 @@ export default function AdminPage() {
 
   // Eliminar usuaria definitivamente
   const handleDeleteUser = async (targetUser: UserProfile) => {
+    if (targetUser.role === "admin") {
+      alert("No se puede eliminar la cuenta principal de SuperAdmin.");
+      return;
+    }
+
     const confirm = window.confirm(
-      `¿ELIMINAR DEFINITIVAMENTE a "${targetUser.full_name || targetUser.email}"? Esta acción borrará su cuenta y todos sus datos cargados.`
+      `¿ELIMINAR DEFINITIVAMENTE a "${targetUser.full_name || targetUser.email}"?\n\nEsta acción borrará permanentemente su cuenta y todos sus productos, insumos y presupuestos.`
     );
     if (!confirm) return;
 
@@ -185,6 +204,41 @@ export default function AdminPage() {
     }
   };
 
+  // Guardar nueva contraseña
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetModalUser) return;
+    setResetError(null);
+    setResettingPassword(true);
+
+    try {
+      const res = await fetch("/api/admin/users", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: resetModalUser.id,
+          password: resetPassword,
+        }),
+      });
+
+      const resJson = await res.json();
+      if (!res.ok) {
+        throw new Error(resJson.error || "No se pudo cambiar la contraseña");
+      }
+
+      setResetSuccess(true);
+      setTimeout(() => {
+        setResetSuccess(false);
+        setResetModalUser(null);
+        setResetPassword("");
+      }, 1500);
+    } catch (err: any) {
+      setResetError(err.message);
+    } finally {
+      setResettingPassword(false);
+    }
+  };
+
   const filteredUsers = users.filter(
     (u) =>
       u.email.toLowerCase().includes(search.toLowerCase()) ||
@@ -202,15 +256,15 @@ export default function AdminPage() {
 
   if (!isAdmin) {
     return (
-      <div className="bg-white rounded-3xl p-8 border border-rose-200 text-center space-y-3">
+      <div className="bg-white rounded-3xl p-8 border border-rose-200 text-center space-y-3 font-body">
         <HabaMascot size={70} />
-        <h3 className="text-base font-bold text-rose-700">Acceso Restringido</h3>
-        <p className="text-xs text-neutral-500">
+        <h3 className="text-base font-bold text-rose-700 font-display">Acceso Restringido</h3>
+        <p className="text-xs text-[#7A7A7A]">
           Solo la administradora Giulianna (Gio) tiene acceso a este panel de control.
         </p>
         <Link
           href="/dashboard"
-          className="inline-block mt-2 py-2 px-4 bg-neutral-100 text-neutral-700 rounded-2xl text-xs font-semibold"
+          className="inline-block mt-2 py-2 px-4 bg-neutral-100 text-[#2B2B2B] rounded-2xl text-xs font-semibold"
         >
           Volver al Inicio
         </Link>
@@ -219,30 +273,30 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="w-full flex flex-col space-y-4 pb-12">
+    <div className="w-full flex flex-col space-y-4 pb-12 font-body">
       {/* Header Admin */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Link
             href="/configuracion"
-            className="p-2 bg-white hover:bg-neutral-100 text-neutral-600 rounded-2xl border border-neutral-200 shadow-sm transition"
+            className="p-2 bg-white hover:bg-neutral-100 text-[#2B2B2B] rounded-2xl border border-[#EAF0E8] shadow-xs transition"
           >
             <ArrowLeft className="w-4 h-4" />
           </Link>
           <div>
-            <h2 className="text-xl font-bold text-neutral-800 flex items-center gap-2">
+            <h2 className="text-xl font-bold text-[#2B2B2B] flex items-center gap-2 font-display">
               <span>Panel Gio</span>
-              <span className="text-xs bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">
+              <span className="text-xs bg-[#DCF4D7] text-[#1F7A4C] font-bold px-2 py-0.5 rounded-full font-body">
                 SuperAdmin
               </span>
             </h2>
-            <p className="text-xs text-neutral-500">Gestión de altas, apagado y bajas de clientas</p>
+            <p className="text-xs text-[#7A7A7A]">Gestión de altas, apagado y bajas de usuarias</p>
           </div>
         </div>
 
         <button
           onClick={() => setIsCreateModalOpen(true)}
-          className="py-2.5 px-3.5 bg-[#3BB578] hover:bg-[#2E9E65] text-white rounded-2xl shadow-sm transition flex items-center gap-1.5 text-xs font-bold active:scale-[0.98]"
+          className="py-2.5 px-3.5 bg-[#3BB578] hover:bg-[#2E9E65] text-white rounded-2xl shadow-xs transition flex items-center gap-1.5 text-xs font-bold active:scale-[0.98]"
         >
           <UserPlus className="w-4 h-4" />
           <span>Alta Usuaria</span>
@@ -259,93 +313,125 @@ export default function AdminPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Buscar por email, nombre o emprendimiento..."
-          className="w-full pl-10 pr-4 py-2.5 text-xs bg-white border border-neutral-200 rounded-2xl focus:border-[#3BB578] outline-none shadow-sm"
+          className="w-full pl-10 pr-4 py-2.5 text-xs bg-white border border-[#EAF0E8] rounded-2xl focus:border-[#3BB578] outline-none shadow-xs text-[#2B2B2B]"
         />
       </div>
 
       {/* Lista de Usuarias */}
       <div className="space-y-3">
         {filteredUsers.length === 0 ? (
-          <div className="bg-white rounded-3xl p-6 border border-[#EAF0E8] text-center text-xs text-neutral-400">
-            No se encontraron clientas registradas.
+          <div className="bg-white rounded-3xl p-6 border border-[#EAF0E8] text-center text-xs text-[#7A7A7A]">
+            No se encontraron usuarias registradas.
           </div>
         ) : (
-          filteredUsers.map((u) => (
-            <div
-              key={u.id}
-              className={`bg-white rounded-3xl p-4 border shadow-sm transition flex flex-col space-y-3 ${
-                u.is_active ? "border-[#EAF0E8]" : "border-rose-200 bg-rose-50/20"
-              }`}
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-bold text-neutral-800">
-                      {u.full_name || "Sin nombre"}
-                    </span>
-                    <span
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                        u.is_active
-                          ? "bg-emerald-100 text-emerald-800"
-                          : "bg-rose-100 text-rose-700"
-                      }`}
-                    >
-                      {u.is_active ? "Activa" : "Apagada / Suspendida"}
-                    </span>
-                    {u.role === "admin" && (
-                      <span className="text-[10px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">
-                        Admin
+          filteredUsers.map((u) => {
+            const isActive = u.status === "active";
+
+            return (
+              <div
+                key={u.id}
+                className={`bg-white rounded-3xl p-4 border shadow-xs transition flex flex-col space-y-3 ${
+                  isActive ? "border-[#EAF0E8]" : "border-rose-200 bg-rose-50/20"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-bold text-[#2B2B2B]">
+                        {u.full_name || "Sin nombre"}
                       </span>
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          isActive
+                            ? "bg-[#DCF4D7] text-[#1F7A4C]"
+                            : "bg-rose-100 text-rose-700"
+                        }`}
+                      >
+                        {isActive ? "Activa" : "Apagada / Suspendida"}
+                      </span>
+                      {u.role === "admin" && (
+                        <span className="text-[10px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">
+                          Admin
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-[#7A7A7A] mt-0.5">{u.email}</p>
+                    {u.business_name && (
+                      <p className="text-[11px] text-[#7A7A7A] mt-0.5">
+                        Emprendimiento: <strong>{u.business_name}</strong>
+                      </p>
                     )}
                   </div>
-                  <p className="text-xs text-neutral-500 mt-0.5">{u.email}</p>
-                  {u.business_name && (
-                    <p className="text-[11px] text-neutral-400 mt-0.5">
-                      Emprendimiento: {u.business_name}
-                    </p>
-                  )}
-                </div>
 
-                {/* Acciones de Gio */}
-                <div className="flex items-center gap-1.5">
-                  <button
-                    onClick={() => toggleUserActive(u)}
-                    className={`py-1.5 px-2.5 rounded-xl text-xs font-bold transition flex items-center gap-1 ${
-                      u.is_active
-                        ? "bg-amber-50 hover:bg-amber-100 text-amber-700"
-                        : "bg-emerald-50 hover:bg-emerald-100 text-emerald-700"
-                    }`}
-                    title={u.is_active ? "Apagar cuenta" : "Encender cuenta"}
-                  >
-                    <Power className="w-3.5 h-3.5" />
-                    <span>{u.is_active ? "Apagar" : "Activar"}</span>
-                  </button>
+                  {/* Acciones de Gio */}
+                  <div className="flex items-center gap-1.5">
+                    {/* Botón Reset Password */}
+                    <button
+                      onClick={() => {
+                        setResetModalUser(u);
+                        setResetPassword("");
+                        setResetError(null);
+                        setResetSuccess(false);
+                      }}
+                      className="p-2 text-neutral-400 hover:text-[#3BB578] hover:bg-[#DCF4D7]/50 rounded-xl transition"
+                      title="Cambiar contraseña de esta cuenta"
+                    >
+                      <KeyRound className="w-4 h-4" />
+                    </button>
 
-                  <button
-                    onClick={() => handleDeleteUser(u)}
-                    className="p-1.5 text-neutral-300 hover:text-rose-600 rounded-xl transition"
-                    title="Eliminar usuario definitivamente"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                    {/* Botón Apagar / Activar */}
+                    <button
+                      onClick={() => toggleUserActive(u)}
+                      className={`py-1.5 px-2.5 rounded-xl text-xs font-bold transition flex items-center gap-1 ${
+                        isActive
+                          ? "bg-amber-50 hover:bg-amber-100 text-amber-700"
+                          : "bg-[#DCF4D7] hover:bg-[#C3EBC0] text-[#1F7A4C]"
+                      }`}
+                      title={isActive ? "Apagar cuenta" : "Encender cuenta"}
+                    >
+                      <Power className="w-3.5 h-3.5" />
+                      <span>{isActive ? "Apagar" : "Activar"}</span>
+                    </button>
+
+                    {/* Botón Eliminar */}
+                    {u.role !== "admin" && (
+                      <button
+                        onClick={() => handleDeleteUser(u)}
+                        className="p-1.5 text-neutral-300 hover:text-rose-600 rounded-xl transition"
+                        title="Eliminar usuaria definitivamente"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
 
       {/* Modal para Crear Usuaria */}
       {isCreateModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="bg-white w-full max-w-sm rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl border border-[#EAF0E8] animate-in slide-in-from-bottom-6">
-            <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
-              <h3 className="text-sm font-bold text-neutral-800">Alta de Nueva Clienta</h3>
+        <div className="fixed inset-0 z-[99999] bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center">
+          <div
+            className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl border border-[#EAF0E8] animate-in slide-in-from-bottom-6 flex flex-col"
+            style={{ maxHeight: "calc(100dvh - env(safe-area-inset-top, 20px) - 10px)" }}
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-neutral-100 flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-xl bg-[#DCF4D7] text-[#3BB578] flex items-center justify-center">
+                  <UserPlus className="w-4 h-4" />
+                </div>
+                <h3 className="text-sm font-bold text-[#2B2B2B] font-display">
+                  Alta de Nueva Usuaria
+                </h3>
+              </div>
               <button
                 onClick={() => setIsCreateModalOpen(false)}
                 className="p-1.5 text-neutral-400 hover:text-neutral-600 rounded-full"
               >
-                ✕
+                <X className="w-4 h-4" />
               </button>
             </div>
 
@@ -356,67 +442,148 @@ export default function AdminPage() {
               </div>
             )}
 
-            <form onSubmit={handleCreateUser} className="mt-4 space-y-3">
+            <form onSubmit={handleCreateUser} className="mt-3 space-y-3 flex-1 overflow-y-auto">
               <div className="space-y-1">
-                <label className="text-xs font-semibold text-neutral-700">Email de acceso *</label>
+                <label className="text-xs font-semibold text-[#2B2B2B]">Email de acceso *</label>
                 <input
                   type="email"
                   value={newEmail}
                   onChange={(e) => setNewEmail(e.target.value)}
                   placeholder="clienta@correo.com"
                   required
-                  className="w-full px-3.5 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none"
+                  className="w-full px-3.5 py-2 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B]"
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs font-semibold text-neutral-700">Contraseña inicial *</label>
+                <label className="text-xs font-semibold text-[#2B2B2B]">Contraseña inicial *</label>
                 <input
                   type="text"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Mínimo 6 caracteres"
+                  placeholder="Mínimo 6 caracteres (ej: haba123)"
                   required
-                  className="w-full px-3.5 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none"
+                  className="w-full px-3.5 py-2 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B]"
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs font-semibold text-neutral-700">Nombre de la clienta</label>
+                <label className="text-xs font-semibold text-[#2B2B2B]">Nombre de la usuaria</label>
                 <input
                   type="text"
                   value={newFullName}
                   onChange={(e) => setNewFullName(e.target.value)}
-                  placeholder="Ej: Laura Pérez"
-                  className="w-full px-3.5 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none"
+                  placeholder="Ej: Giulianna Penna"
+                  className="w-full px-3.5 py-2 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B]"
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs font-semibold text-neutral-700">Nombre del negocio</label>
+                <label className="text-xs font-semibold text-[#2B2B2B]">Nombre del emprendimiento</label>
                 <input
                   type="text"
                   value={newBusinessName}
                   onChange={(e) => setNewBusinessName(e.target.value)}
-                  placeholder="Ej: Creaciones Laura"
-                  className="w-full px-3.5 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none"
+                  placeholder="Ej: Amaoto Craft"
+                  className="w-full px-3.5 py-2 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B]"
                 />
               </div>
 
-              <div className="pt-2 flex gap-2">
+              <div
+                className="pt-2 flex gap-2 flex-shrink-0"
+                style={{ paddingBottom: "max(env(safe-area-inset-bottom, 12px), 16px)" }}
+              >
                 <button
                   type="button"
                   onClick={() => setIsCreateModalOpen(false)}
-                  className="flex-1 py-2 px-3 bg-neutral-100 text-neutral-700 rounded-2xl text-xs font-semibold"
+                  className="flex-1 py-2.5 px-3 bg-neutral-100 hover:bg-neutral-200 text-[#7A7A7A] rounded-2xl text-xs font-semibold transition"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={creatingUser}
-                  className="flex-1 py-2 px-3 bg-[#3BB578] hover:bg-[#2E9E65] text-white rounded-2xl text-xs font-bold shadow-sm disabled:opacity-60"
+                  className="flex-1 py-2.5 px-3 bg-[#3BB578] hover:bg-[#2E9E65] text-white rounded-2xl text-xs font-bold shadow-xs disabled:opacity-60 transition"
                 >
-                  {creatingUser ? "Creando..." : "Crear Usuaria"}
+                  {creatingUser ? "Creando..." : "Crear Cuenta"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal para Resetear Contraseña */}
+      {resetModalUser && (
+        <div className="fixed inset-0 z-[99999] bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center">
+          <div
+            className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl border border-[#EAF0E8] animate-in slide-in-from-bottom-6"
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+                  <KeyRound className="w-4 h-4" />
+                </div>
+                <h3 className="text-sm font-bold text-[#2B2B2B] font-display">
+                  Resetear Contraseña
+                </h3>
+              </div>
+              <button
+                onClick={() => setResetModalUser(null)}
+                className="p-1.5 text-neutral-400 hover:text-neutral-600 rounded-full"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-[#7A7A7A] mt-2">
+              Asigná una nueva clave para <strong>{resetModalUser.full_name || resetModalUser.email}</strong>.
+            </p>
+
+            {resetError && (
+              <div className="mt-2 p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                <span>{resetError}</span>
+              </div>
+            )}
+
+            {resetSuccess && (
+              <div className="mt-2 p-2.5 bg-[#DCF4D7] border border-[#C3EBC0] rounded-xl text-[#1F7A4C] text-xs flex items-center gap-2 font-bold">
+                <Check className="w-4 h-4 flex-shrink-0" />
+                <span>¡Contraseña actualizada con éxito!</span>
+              </div>
+            )}
+
+            <form onSubmit={handleResetPassword} className="mt-3 space-y-3">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-[#2B2B2B]">Nueva Contraseña *</label>
+                <input
+                  type="text"
+                  value={resetPassword}
+                  onChange={(e) => setResetPassword(e.target.value)}
+                  placeholder="Mínimo 6 caracteres"
+                  required
+                  className="w-full px-3.5 py-2 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B]"
+                />
+              </div>
+
+              <div
+                className="pt-2 flex gap-2"
+                style={{ paddingBottom: "max(env(safe-area-inset-bottom, 12px), 16px)" }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setResetModalUser(null)}
+                  className="flex-1 py-2.5 px-3 bg-neutral-100 hover:bg-neutral-200 text-[#7A7A7A] rounded-2xl text-xs font-semibold transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={resettingPassword || resetSuccess}
+                  className="flex-1 py-2.5 px-3 bg-[#3BB578] hover:bg-[#2E9E65] text-white rounded-2xl text-xs font-bold shadow-xs disabled:opacity-60 transition"
+                >
+                  {resettingPassword ? "Guardando..." : "Guardar Contraseña"}
                 </button>
               </div>
             </form>

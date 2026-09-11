@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { User, Store, Mail, ShieldCheck, LogOut, Check, Sparkles, Smartphone, Bell, Clock, RefreshCw } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
@@ -114,6 +115,27 @@ export default function SettingsPage() {
           </span>
         </div>
       </div>
+
+      {/* Enlace al panel de administración si es Admin */}
+      {role === "admin" && (
+        <Link
+          href="/admin"
+          className="bg-gradient-to-r from-[#DCF4D7] via-white to-[#DCF4D7]/70 border-2 border-[#3BB578] p-4 rounded-3xl flex items-center justify-between shadow-sm hover:shadow-md transition-all group"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-[#3BB578] text-white flex items-center justify-center font-bold shadow-xs group-hover:scale-105 transition-transform">
+              <Sparkles className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-[#1F7A4C] font-display">Panel SuperAdmin Gio</p>
+              <p className="text-xs text-[#2B2B2B]">Gestionar altas, apagar/activar y bajas de usuarias</p>
+            </div>
+          </div>
+          <span className="px-3.5 py-2 bg-[#3BB578] group-hover:bg-[#2E9E65] text-white font-bold rounded-2xl text-xs transition shadow-xs">
+            Abrir Panel →
+          </span>
+        </Link>
+      )}
 
       {/* Formulario de Emprendimiento */}
       <div className="bg-white p-5 rounded-3xl border border-[#EAF0E8] shadow-sm">
@@ -247,25 +269,6 @@ export default function SettingsPage() {
           </button>
         </div>
       </div>
-      {/* Enlace al panel de administración si es Admin */}
-      {role === "admin" && (
-        <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-3xl flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <Sparkles className="w-5 h-5 text-emerald-600" />
-            <div>
-              <p className="text-xs font-bold text-emerald-900">Panel Gio (SuperAdmin)</p>
-              <p className="text-[11px] text-emerald-700">Gestionar altas y bajas de usuarias</p>
-            </div>
-          </div>
-          <button
-            onClick={() => router.push("/admin")}
-            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl text-xs transition"
-          >
-            Abrir
-          </button>
-        </div>
-      )}
-
       {/* Instalar App en el Celular */}
       <div className="bg-white border border-[#EAF0E8] p-4 rounded-3xl flex items-center justify-between shadow-sm">
         <div className="flex items-center gap-2.5">
