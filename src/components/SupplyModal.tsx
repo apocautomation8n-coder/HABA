@@ -138,7 +138,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
       return;
     }
     if (purchaseQuantity <= 0) {
-      setError("La cantidad comprada debe ser mayor a 0");
+      setError("La cantidad debe ser mayor a 0");
       return;
     }
     if (conversionFactor <= 0) {
@@ -340,7 +340,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
             <div className="grid grid-cols-2 gap-2.5">
               <div className="space-y-1">
                 <label className="text-[11px] font-semibold text-[#2B2B2B] flex items-center justify-between">
-                  <span>Cantidad Comprada *</span>
+                  <span>Cantidad *</span>
                 </label>
                 <input
                   type="number"
