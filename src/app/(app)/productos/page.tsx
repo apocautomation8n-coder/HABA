@@ -504,8 +504,8 @@ export default function ProductosPage() {
           if (!ps.supplies) return acc;
           const unitCost = calculateUnitCost(
             ps.supplies.current_price,
-            ps.supplies.purchase_quantity,
-            ps.supplies.conversion_factor
+            ps.supplies.purchase_quantity || 1,
+            ps.supplies.conversion_factor || 1
           );
           return acc + unitCost * (ps.quantity || 0);
         }, 0);
@@ -1140,8 +1140,8 @@ export default function ProductosPage() {
                             if (!ps.supplies) return null;
                             const unitCost = calculateUnitCost(
                               ps.supplies.current_price,
-                              ps.supplies.purchase_quantity,
-                              ps.supplies.conversion_factor
+                              ps.supplies.purchase_quantity || 1,
+                              ps.supplies.conversion_factor || 1
                             );
                             const subtotal = unitCost * (ps.quantity || 0);
 
