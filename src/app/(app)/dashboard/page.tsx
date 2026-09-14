@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { PlusCircle, ShoppingBag, Receipt, Sparkles, DollarSign, ArrowRight, ShieldCheck } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
+import { HabaBottomGreeting } from "@/components/HabaBottomGreeting";
 import { createClient } from "@/lib/supabase/client";
 import { InstallPwaModal } from "@/components/InstallPwaModal";
 import { checkIsAdmin, getUserDisplayName } from "@/lib/auth-helpers";
@@ -61,22 +62,9 @@ export default function DashboardPage() {
   }, [supabase]);
 
   return (
-    <div className="w-full flex flex-col space-y-3 pb-2">
+    <div className="w-full flex flex-col space-y-3 pb-24">
       {/* Botón / Banner de Descarga PWA */}
       <InstallPwaModal />
-
-      {/* Tarjeta Mascota Saludo */}
-      <div className="bg-[#DCF4D7] border border-[#C3EBC0] rounded-3xl p-3.5 flex items-center gap-3 shadow-xs">
-        <HabaMascot size={56} className="flex-shrink-0" />
-        <div>
-          <h2 className="text-sm font-bold text-[#1F7A4C] font-display">
-            ¡Hola{userName ? `, ${userName}` : ""}! 🌿
-          </h2>
-          <p className="text-[11px] text-[#2E9E65] mt-0.5 leading-snug font-body">
-            Cada paso te acerca a conocer el verdadero costo de tus creaciones.
-          </p>
-        </div>
-      </div>
 
       {/* Banner Especial SuperAdmin si es Gio / Admin */}
       {isAdmin && (
@@ -194,6 +182,9 @@ export default function DashboardPage() {
           <ArrowRight className="w-4 h-4" />
         </div>
       </Link>
+
+      {/* Mascota HABA asomada con saludo interactivo en barra inferior */}
+      <HabaBottomGreeting userName={userName} />
     </div>
   );
 }
