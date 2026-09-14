@@ -535,8 +535,18 @@ export default function AdminPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Buscar por email, nombre o emprendimiento..."
-          className="w-full pl-10 pr-4 py-2.5 text-xs bg-white border border-[#EAF0E8] rounded-2xl focus:border-[#3BB578] outline-none shadow-xs text-[#2B2B2B]"
+          className="w-full pl-10 pr-10 py-2.5 text-xs bg-white border border-[#EAF0E8] rounded-2xl focus:border-[#3BB578] outline-none shadow-xs text-[#2B2B2B]"
         />
+        {search && (
+          <button
+            type="button"
+            onClick={() => setSearch("")}
+            className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-neutral-400 hover:text-neutral-600 transition"
+            title="Borrar búsqueda"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
       </div>
 
       {/* Filtros Rápidos */}
