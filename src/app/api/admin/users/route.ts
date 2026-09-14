@@ -139,7 +139,7 @@ export async function POST(request: Request) {
   }
 }
 
-// PATCH: Cambiar estado (active / suspended) o actualizar datos
+// PATCH: Cambiar estado (active / suspended) o actualizar datos del usuario
 export async function PATCH(request: Request) {
   try {
     const auth = await verifyAdminCaller(request);
@@ -147,34 +147,48 @@ export async function PATCH(request: Request) {
 
     const supabaseAdmin = getAdminClient();
     const body = await request.json();
-    const { userId, status, password } = body;
+    const { userId, status, password, fullName, businessName, email } = body;
 
     if (!userId) {
       return NextResponse.json({ error: "userId es requerido" }, { status: 400 });
     }
 
-    // Si se pasa nuevo status
-    if (status) {
-      const { error: profileError } = await supabaseAdmin
-        .from("profiles")
-        .update({ status, updated_at: new Date().toISOString() })
-        .eq("id", userId);
-
-      if (profileError) {
-        return NextResponse.json({ error: profileError.message }, { status: 400 });
-      }
+    // 1. Actualizaciones en Auth (email, password, metadata)
+    const authUpdates: Record<string, any> = {};
+    if (email && email.trim()) {
+      authUpdates.email = email.trim().toLowerCase();
+      authUpdates.email_confirm = true;
+    }
+    if (password) {
+      authUpdates.password = password;
+    }
+    if (fullName !== undefined || businessName !== undefined) {
+      authUpdates.user_metadata = {};
+      if (fullName !== undefined) authUpdates.user_metadata.full_name = fullName?.trim() || null;
+      if (businessName !== undefined) authUpdates.user_metadata.business_name = businessName?.trim() || null;
     }
 
-    // Si se pasa nueva contraseña
-    if (password) {
-      const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(
-        userId,
-        { password }
-      );
-
+    if (Object.keys(authUpdates).length > 0) {
+      const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(userId, authUpdates);
       if (authError) {
         return NextResponse.json({ error: authError.message }, { status: 400 });
       }
+    }
+
+    // 2. Actualizaciones en public.profiles
+    const profileUpdates: Record<string, any> = { updated_at: new Date().toISOString() };
+    if (status !== undefined) profileUpdates.status = status;
+    if (fullName !== undefined) profileUpdates.full_name = fullName?.trim() || null;
+    if (businessName !== undefined) profileUpdates.business_name = businessName?.trim() || null;
+    if (email !== undefined && email.trim()) profileUpdates.email = email.trim().toLowerCase();
+
+    const { error: profileError } = await supabaseAdmin
+      .from("profiles")
+      .update(profileUpdates)
+      .eq("id", userId);
+
+    if (profileError) {
+      return NextResponse.json({ error: profileError.message }, { status: 400 });
     }
 
     return NextResponse.json({ success: true });

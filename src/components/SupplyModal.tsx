@@ -138,7 +138,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
       return;
     }
     if (purchaseQuantity <= 0) {
-      setError("La cantidad comprada debe ser mayor a 0");
+      setError("La cantidad debe ser mayor a 0");
       return;
     }
     if (conversionFactor <= 0) {
@@ -158,7 +158,36 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
       }
 
       if (initialSupply?.id) {
-        // Actualizar existente (trigger guardará historial si cambia precio)
+        const nowIso = new Date().toISOString();
+        const priceChanged = parsedPrice !== initialSupply.current_price;
+
+        // Si el precio cambió, registrarlo en la cronología (supply_price_history)
+        if (priceChanged) {
+          const { data: existingHistory } = await supabase
+            .from("supply_price_history")
+            .select("id")
+            .eq("supply_id", initialSupply.id)
+            .limit(1);
+
+          // Si no tenía registros previos, guardamos el precio anterior como hito inicial
+          if (!existingHistory || existingHistory.length === 0) {
+            if (initialSupply.current_price && initialSupply.current_price > 0) {
+              await supabase.from("supply_price_history").insert({
+                supply_id: initialSupply.id,
+                price: initialSupply.current_price,
+                changed_at: initialSupply.updated_at || initialSupply.created_at || nowIso,
+              });
+            }
+          }
+
+          // Guardar el nuevo precio en el historial
+          await supabase.from("supply_price_history").insert({
+            supply_id: initialSupply.id,
+            price: parsedPrice,
+            changed_at: nowIso,
+          });
+        }
+
         const { error: updateError } = await supabase
           .from("supplies")
           .update({
@@ -169,25 +198,39 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
             current_price: parsedPrice,
             use_unit: useUnit.trim(),
             conversion_factor: conversionFactor,
-            updated_at: new Date().toISOString(),
+            updated_at: nowIso,
           })
           .eq("id", initialSupply.id);
 
         if (updateError) throw updateError;
       } else {
         // Insertar nuevo insumo
-        const { error: insertError } = await supabase.from("supplies").insert({
-          user_id: user.id,
-          name: name.trim(),
-          category,
-          purchase_unit: purchaseUnit.trim(),
-          purchase_quantity: purchaseQuantity,
-          current_price: parsedPrice,
-          use_unit: useUnit.trim(),
-          conversion_factor: conversionFactor,
-        });
+        const nowIso = new Date().toISOString();
+        const { data: newSupply, error: insertError } = await supabase
+          .from("supplies")
+          .insert({
+            user_id: user.id,
+            name: name.trim(),
+            category,
+            purchase_unit: purchaseUnit.trim(),
+            purchase_quantity: purchaseQuantity,
+            current_price: parsedPrice,
+            use_unit: useUnit.trim(),
+            conversion_factor: conversionFactor,
+          })
+          .select("id")
+          .single();
 
         if (insertError) throw insertError;
+
+        // Registrar precio inicial en el historial
+        if (newSupply?.id) {
+          await supabase.from("supply_price_history").insert({
+            supply_id: newSupply.id,
+            price: parsedPrice,
+            changed_at: nowIso,
+          });
+        }
       }
 
       onSuccess();
@@ -340,7 +383,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
             <div className="grid grid-cols-2 gap-2.5">
               <div className="space-y-1">
                 <label className="text-[11px] font-semibold text-[#2B2B2B] flex items-center justify-between">
-                  <span>Cantidad Comprada *</span>
+                  <span>Cantidad *</span>
                 </label>
                 <input
                   type="number"

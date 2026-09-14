@@ -21,6 +21,7 @@ import { formatCurrency, calculateUnitCost } from "@/lib/units";
 import { SupplyModal, SupplyItem } from "@/components/SupplyModal";
 import { PriceHistoryDrawer } from "@/components/insumos/PriceHistoryDrawer";
 import { DeleteSupplyModal } from "@/components/insumos/DeleteSupplyModal";
+import { SupplyDetailModal } from "@/components/insumos/SupplyDetailModal";
 import { Insumo, PriceRecord } from "@/types/insumo";
 
 export default function InsumosPage() {
@@ -34,6 +35,7 @@ export default function InsumosPage() {
   // Modales
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSupply, setEditingSupply] = useState<SupplyItem | null>(null);
+  const [selectedSupplyForDetail, setSelectedSupplyForDetail] = useState<SupplyItem | null>(null);
 
   // Modal de Eliminación con Validación de Integridad
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -88,24 +90,35 @@ export default function InsumosPage() {
         .from("supply_price_history")
         .select("*")
         .eq("supply_id", supply.id)
-        .order("date", { ascending: true });
+        .order("changed_at", { ascending: true });
 
-      const records: PriceRecord[] =
-        historyData && historyData.length > 0
-          ? historyData.map((h: any) => ({
-              id: String(h.id),
-              price: Number(h.price),
-              date: h.date || h.created_at || new Date().toISOString(),
-              note: h.note || undefined,
-            }))
-          : [
-              {
-                id: "init-" + supply.id,
-                price: Number(supply.current_price),
-                date: supply.updated_at || supply.created_at || new Date().toISOString(),
-                note: "Precio de reposición actual",
-              },
-            ];
+      let records: PriceRecord[] = [];
+      if (historyData && historyData.length > 0) {
+        records = historyData.map((h: any) => ({
+          id: String(h.id),
+          price: Number(h.price),
+          date: h.changed_at || new Date().toISOString(),
+        }));
+
+        // Si el precio actual en supplies no está reflejado al final del historial, sumarlo
+        const latest = records[records.length - 1];
+        if (latest && latest.price !== Number(supply.current_price)) {
+          records.push({
+            id: "current-" + supply.id,
+            price: Number(supply.current_price),
+            date: supply.updated_at || new Date().toISOString(),
+          });
+        }
+      } else {
+        records = [
+          {
+            id: "init-" + supply.id,
+            price: Number(supply.current_price),
+            date: supply.updated_at || supply.created_at || new Date().toISOString(),
+            note: "Precio de reposición actual",
+          },
+        ];
+      }
 
       const insumoModel: Insumo = {
         id: supply.id,
@@ -131,21 +144,24 @@ export default function InsumosPage() {
     newRecordData: Omit<PriceRecord, "id">
   ) => {
     try {
+      const isoDate = newRecordData.date
+        ? new Date(newRecordData.date).toISOString()
+        : new Date().toISOString();
+
       // 1. Actualizar el precio actual del insumo en supplies
       await supabase
         .from("supplies")
         .update({
           current_price: newRecordData.price,
-          updated_at: newRecordData.date,
+          updated_at: isoDate,
         })
         .eq("id", insumoId);
 
-      // 2. Insertar en supply_price_history
+      // 2. Insertar en supply_price_history con columna changed_at
       await supabase.from("supply_price_history").insert({
         supply_id: insumoId,
         price: newRecordData.price,
-        date: newRecordData.date,
-        note: newRecordData.note,
+        changed_at: isoDate,
       });
 
       // Recargar lista y actualizar estado local
@@ -154,17 +170,90 @@ export default function InsumosPage() {
       if (selectedInsumoForDrawer && selectedInsumoForDrawer.id === insumoId) {
         const newRecord: PriceRecord = {
           ...newRecordData,
+          date: isoDate,
           id: "rec-" + Date.now(),
         };
         setSelectedInsumoForDrawer({
           ...selectedInsumoForDrawer,
           current_price: newRecordData.price,
-          updated_at: newRecordData.date,
+          updated_at: isoDate,
           history: [...selectedInsumoForDrawer.history, newRecord],
         });
       }
     } catch (err: any) {
       alert("Error al actualizar precio: " + err.message);
+    }
+  };
+
+  // Eliminar registro de precio desde el Drawer
+  const handleDeletePriceFromDrawer = async (insumoId: string, recordId: string) => {
+    try {
+      if (!selectedInsumoForDrawer) return;
+
+      // 1. Eliminar de supply_price_history si es un registro persistido en BD
+      if (!recordId.startsWith("init-") && !recordId.startsWith("current-")) {
+        const { error } = await supabase
+          .from("supply_price_history")
+          .delete()
+          .eq("id", recordId);
+
+        if (error) throw error;
+      }
+
+      // 2. Traer el historial actualizado restante
+      const { data: updatedHistoryData } = await supabase
+        .from("supply_price_history")
+        .select("*")
+        .eq("supply_id", insumoId)
+        .order("changed_at", { ascending: true });
+
+      let newHistory: PriceRecord[] = [];
+      let newCurrentPrice = selectedInsumoForDrawer.current_price;
+      let newUpdatedAt = selectedInsumoForDrawer.updated_at;
+
+      if (updatedHistoryData && updatedHistoryData.length > 0) {
+        newHistory = updatedHistoryData.map((h: any) => ({
+          id: String(h.id),
+          price: Number(h.price),
+          date: h.changed_at || new Date().toISOString(),
+        }));
+
+        // El precio actual pasa a ser el último registro que quedó en el historial
+        const latestRemaining = newHistory[newHistory.length - 1];
+        newCurrentPrice = latestRemaining.price;
+        newUpdatedAt = latestRemaining.date;
+
+        // Si cambió el precio activo, actualizar la tabla supplies
+        await supabase
+          .from("supplies")
+          .update({
+            current_price: newCurrentPrice,
+            updated_at: newUpdatedAt,
+          })
+          .eq("id", insumoId);
+      } else {
+        newHistory = [
+          {
+            id: "init-" + insumoId,
+            price: Number(selectedInsumoForDrawer.current_price),
+            date: new Date().toISOString(),
+            note: "Precio de reposición actual",
+          },
+        ];
+      }
+
+      setSelectedInsumoForDrawer({
+        ...selectedInsumoForDrawer,
+        current_price: newCurrentPrice,
+        updated_at: newUpdatedAt,
+        history: newHistory,
+      });
+
+      await loadSupplies();
+      setToastMessage("Registro de precio eliminado correctamente.");
+      setTimeout(() => setToastMessage(null), 3000);
+    } catch (err: any) {
+      alert("Error al eliminar el registro de precio: " + err.message);
     }
   };
 
@@ -299,7 +388,8 @@ export default function InsumosPage() {
             return (
               <div
                 key={supply.id}
-                className="bg-white rounded-3xl p-4 border border-[#EAF0E8] shadow-sm hover:shadow-md transition flex flex-col space-y-3"
+                onClick={() => setSelectedSupplyForDetail(supply)}
+                className="bg-white rounded-3xl p-4 border border-[#EAF0E8] shadow-sm hover:shadow-md transition flex flex-col space-y-3 cursor-pointer group hover:border-[#C3EBC0]"
               >
                 {/* Header Card */}
                 <div className="flex items-start justify-between">
@@ -318,7 +408,7 @@ export default function InsumosPage() {
                       )}
                     </div>
                     <div>
-                      <h4 className="text-sm font-bold text-neutral-800 leading-snug">
+                      <h4 className="text-sm font-bold text-neutral-800 leading-snug group-hover:text-[#1F7A4C] transition-colors">
                         {supply.name}
                       </h4>
                       <div className="flex items-center gap-1.5 mt-0.5">
@@ -341,14 +431,18 @@ export default function InsumosPage() {
                   {/* Acciones */}
                   <div className="flex items-center gap-1">
                     <button
-                      onClick={() => handleOpenHistoryDrawer(supply)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleOpenHistoryDrawer(supply);
+                      }}
                       className="p-1.5 text-neutral-400 hover:text-amber-600 hover:bg-amber-50 rounded-xl transition"
                       title="Ver gráfico e historial de precios"
                     >
                       <TrendingUp className="w-4 h-4" />
                     </button>
                     <button
-                      onClick={() => {
+                      onClick={(e) => {
+                        e.stopPropagation();
                         setEditingSupply(supply);
                         setIsModalOpen(true);
                       }}
@@ -358,7 +452,10 @@ export default function InsumosPage() {
                       <Edit2 className="w-4 h-4" />
                     </button>
                     <button
-                      onClick={() => handleRequestDelete(supply)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRequestDelete(supply);
+                      }}
                       className="p-1.5 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition"
                       title="Eliminar insumo"
                     >
@@ -369,8 +466,7 @@ export default function InsumosPage() {
 
                 {/* Precios y Costo Unitario */}
                 <div
-                  onClick={() => handleOpenHistoryDrawer(supply)}
-                  className="bg-neutral-50 hover:bg-[#f3f8f3] cursor-pointer rounded-2xl p-3 flex items-center justify-between border border-neutral-100 transition"
+                  className="bg-neutral-50 group-hover:bg-[#f3f8f3] rounded-2xl p-3 flex items-center justify-between border border-neutral-100 transition"
                 >
                   <div>
                     <span className="text-[10px] text-neutral-400 block font-medium">
@@ -393,7 +489,7 @@ export default function InsumosPage() {
                         </span>
                       </span>
                     </div>
-                    <ChevronRight className="w-4 h-4 text-neutral-400" />
+                    <ChevronRight className="w-4 h-4 text-neutral-400 group-hover:translate-x-0.5 transition-transform" />
                   </div>
                 </div>
               </div>
@@ -438,6 +534,19 @@ export default function InsumosPage() {
         onClose={() => setIsDrawerOpen(false)}
         insumo={selectedInsumoForDrawer}
         onAddPriceRecord={handleAddPriceFromDrawer}
+        onDeletePriceRecord={handleDeletePriceFromDrawer}
+      />
+
+      {/* Modal de Detalle de la Carga del Insumo */}
+      <SupplyDetailModal
+        isOpen={!!selectedSupplyForDetail}
+        supply={selectedSupplyForDetail}
+        onClose={() => setSelectedSupplyForDetail(null)}
+        onEdit={(supply) => {
+          setEditingSupply(supply);
+          setIsModalOpen(true);
+        }}
+        onOpenHistory={(supply) => handleOpenHistoryDrawer(supply)}
       />
     </div>
   );
