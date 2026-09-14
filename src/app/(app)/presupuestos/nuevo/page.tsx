@@ -47,8 +47,8 @@ interface QuoteItemLine {
   productId: string;
   productName: string;
   channelName: string;
-  unitPrice: number;
-  quantity: number;
+  unitPrice: number | string;
+  quantity: number | string;
 }
 
 function NuevoPresupuestoContent() {
@@ -74,7 +74,7 @@ function NuevoPresupuestoContent() {
   const [clientContact, setClientContact] = useState("");
   const [deliveryDate, setDeliveryDate] = useState("");
   const [notes, setNotes] = useState("");
-  const [discountPercent, setDiscountPercent] = useState<number>(0);
+  const [discountPercent, setDiscountPercent] = useState<number | string>(0);
 
   // Costo de Envío (Punto B)
   const [shippingCost, setShippingCost] = useState<number>(0);
@@ -266,7 +266,7 @@ function NuevoPresupuestoContent() {
     setIsProductPickerOpen(false);
   };
 
-  const handleUpdateItemQty = (index: number, qty: number) => {
+  const handleUpdateItemQty = (index: number, qty: number | string) => {
     setItems((prev) => {
       const updated = [...prev];
       updated[index].quantity = qty;
@@ -274,7 +274,7 @@ function NuevoPresupuestoContent() {
     });
   };
 
-  const handleUpdateItemPrice = (index: number, price: number) => {
+  const handleUpdateItemPrice = (index: number, price: number | string) => {
     setItems((prev) => {
       const updated = [...prev];
       updated[index].unitPrice = price;
@@ -288,12 +288,17 @@ function NuevoPresupuestoContent() {
 
   // Cálculos reactivos de subtotales y total congelado
   const subtotal = useMemo(() => {
-    return items.reduce((acc, item) => acc + item.unitPrice * (item.quantity || 0), 0);
+    return items.reduce((acc, item) => {
+      const p = typeof item.unitPrice === "number" ? item.unitPrice : parseFloat(String(item.unitPrice)) || 0;
+      const q = typeof item.quantity === "number" ? item.quantity : parseFloat(String(item.quantity)) || 0;
+      return acc + p * q;
+    }, 0);
   }, [items]);
 
   const discountAmount = useMemo(() => {
-    if (!discountPercent || discountPercent <= 0) return 0;
-    return subtotal * (discountPercent / 100);
+    const disc = typeof discountPercent === "number" ? discountPercent : parseFloat(String(discountPercent)) || 0;
+    if (disc <= 0) return 0;
+    return subtotal * (disc / 100);
   }, [subtotal, discountPercent]);
 
   const total = useMemo(() => {
@@ -332,7 +337,7 @@ function NuevoPresupuestoContent() {
             client_name: clientName.trim(),
             client_contact: clientContact.trim() || null,
             delivery_date: deliveryDate ? new Date(deliveryDate).toISOString() : null,
-            discount_percent: discountPercent || 0,
+            discount_percent: typeof discountPercent === "number" ? discountPercent : parseFloat(String(discountPercent)) || 0,
             subtotal: subtotal,
             total: total,
             notes: finalNotes,
@@ -343,14 +348,18 @@ function NuevoPresupuestoContent() {
 
         // 2. Reemplazar quote_items
         await supabase.from("quote_items").delete().eq("quote_id", editId);
-        const quoteItemsToInsert = items.map((item) => ({
-          quote_id: editId,
-          product_name: item.productName,
-          channel_name: item.channelName,
-          unit_price: item.unitPrice,
-          quantity: item.quantity,
-          subtotal: item.unitPrice * item.quantity,
-        }));
+        const quoteItemsToInsert = items.map((item) => {
+          const p = typeof item.unitPrice === "number" ? item.unitPrice : parseFloat(String(item.unitPrice)) || 0;
+          const q = typeof item.quantity === "number" ? item.quantity : parseFloat(String(item.quantity)) || 0;
+          return {
+            quote_id: editId,
+            product_name: item.productName,
+            channel_name: item.channelName,
+            unit_price: p,
+            quantity: q,
+            subtotal: p * q,
+          };
+        });
         await supabase.from("quote_items").insert(quoteItemsToInsert);
 
         router.push(`/presupuestos/${editId}`);
@@ -376,7 +385,7 @@ function NuevoPresupuestoContent() {
           client_name: clientName.trim(),
           client_contact: clientContact.trim() || null,
           delivery_date: deliveryDate ? new Date(deliveryDate).toISOString() : null,
-          discount_percent: discountPercent || 0,
+          discount_percent: typeof discountPercent === "number" ? discountPercent : parseFloat(String(discountPercent)) || 0,
           subtotal: subtotal,
           total: total,
           notes: finalNotes,
@@ -389,14 +398,18 @@ function NuevoPresupuestoContent() {
       }
 
       // 2. Insertar los items congelados en quote_items
-      const quoteItemsToInsert = items.map((item) => ({
-        quote_id: quoteData.id,
-        product_name: item.productName,
-        channel_name: item.channelName,
-        unit_price: item.unitPrice,
-        quantity: item.quantity,
-        subtotal: item.unitPrice * item.quantity,
-      }));
+      const quoteItemsToInsert = items.map((item) => {
+        const p = typeof item.unitPrice === "number" ? item.unitPrice : parseFloat(String(item.unitPrice)) || 0;
+        const q = typeof item.quantity === "number" ? item.quantity : parseFloat(String(item.quantity)) || 0;
+        return {
+          quote_id: quoteData.id,
+          product_name: item.productName,
+          channel_name: item.channelName,
+          unit_price: p,
+          quantity: q,
+          subtotal: p * q,
+        };
+      });
 
       const { error: itemsError } = await supabase
         .from("quote_items")
@@ -478,8 +491,8 @@ function NuevoPresupuestoContent() {
           </span>
           <span className="text-xs text-[#1F7A4C]">
             Subtotal: {formatCurrency(subtotal)}
-            {discountPercent > 0 && ` | Dcto: -${discountPercent}%`}
-            {shippingCost > 0 && ` | Envío: +${formatCurrency(shippingCost)}`}
+            {Number(discountPercent) > 0 && ` | Dcto: -${discountPercent}%`}
+            {Number(shippingCost) > 0 && ` | Envío: +${formatCurrency(shippingCost)}`}
           </span>
         </div>
         <div className="text-right">
@@ -579,7 +592,9 @@ function NuevoPresupuestoContent() {
         ) : (
           <div className="space-y-3">
             {items.map((item, idx) => {
-              const lineTotal = item.unitPrice * item.quantity;
+              const p = typeof item.unitPrice === "number" ? item.unitPrice : parseFloat(String(item.unitPrice)) || 0;
+              const q = typeof item.quantity === "number" ? item.quantity : parseFloat(String(item.quantity)) || 0;
+              const lineTotal = p * q;
 
               return (
                 <div
@@ -611,8 +626,9 @@ function NuevoPresupuestoContent() {
                         min="1"
                         value={item.quantity}
                         onChange={(e) =>
-                          handleUpdateItemQty(idx, parseInt(e.target.value) || 1)
+                          handleUpdateItemQty(idx, e.target.value)
                         }
+                        placeholder="1"
                         className="w-16 px-2 py-1 text-xs bg-white border border-neutral-200 rounded-xl text-center font-bold outline-none focus:border-[#3BB578]"
                       />
                     </div>
@@ -624,8 +640,9 @@ function NuevoPresupuestoContent() {
                         step="any"
                         value={item.unitPrice}
                         onChange={(e) =>
-                          handleUpdateItemPrice(idx, parseFloat(e.target.value) || 0)
+                          handleUpdateItemPrice(idx, e.target.value)
                         }
+                        placeholder="0.00"
                         className="w-24 px-2 py-1 text-xs bg-white border border-neutral-200 rounded-xl text-right font-bold outline-none focus:border-[#3BB578]"
                       />
                     </div>
@@ -681,7 +698,8 @@ function NuevoPresupuestoContent() {
                 min="0"
                 max="100"
                 value={discountPercent}
-                onChange={(e) => setDiscountPercent(parseFloat(e.target.value) || 0)}
+                onChange={(e) => setDiscountPercent(e.target.value)}
+                placeholder="0"
                 className="w-20 px-2.5 py-1 text-xs bg-neutral-50 border border-neutral-200 rounded-xl text-center font-bold outline-none focus:border-[#3BB578]"
               />
               <span className="absolute right-2.5 top-1 text-xs text-neutral-400 font-bold">
@@ -760,7 +778,7 @@ function NuevoPresupuestoContent() {
                 Subtotal: <strong className="text-neutral-800">{formatCurrency(subtotal)}</strong>
               </span>
 
-              {discountPercent > 0 ? (
+              {Number(discountPercent) > 0 ? (
                 <span className="text-[10px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-1.5 py-0.2 rounded-md">
                   Dcto: -{discountPercent}% (-{formatCurrency(discountAmount)})
                 </span>

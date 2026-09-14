@@ -684,8 +684,10 @@ export default function ProductosPage() {
         />
         {search && (
           <button
+            type="button"
             onClick={() => setSearch("")}
-            className="absolute inset-y-0 right-0 pr-3 flex items-center text-neutral-400 hover:text-neutral-600"
+            className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-neutral-400 hover:text-neutral-600 transition"
+            title="Borrar búsqueda"
           >
             <X className="w-4 h-4" />
           </button>

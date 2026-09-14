@@ -39,15 +39,15 @@ import { PRODUCT_CATEGORIES, serializeProductDescription } from "@/lib/products"
 
 interface SelectedSupply {
   supply: SupplyItem;
-  quantity: number; // en use_unit
-  waste_percent?: number; // % de merma / desperdicio
+  quantity: number | string; // en use_unit
+  waste_percent?: number | string; // % de merma / desperdicio
 }
 
 interface ChannelPrice {
   id: string;
   channel_name: string;
-  profit_margin_percent: number;
-  selling_price: number;
+  profit_margin_percent: number | string;
+  selling_price: number | string;
 }
 
 const DEFAULT_CHANNELS = [
@@ -85,11 +85,15 @@ export default function NuevoProductoPage() {
   const [showWasteInfo, setShowWasteInfo] = useState(false);
   const [supplySearch, setSupplyPickerSearch] = useState("");
 
-  // Paso 3: Tiempo
-  const [workTimeMinutes, setWorkTimeMinutes] = useState<number>(30);
+  // Paso 3: Tiempo / Mano de Obra (Opcional)
+  const [includeLabor, setIncludeLabor] = useState(true);
+  const [workTimeMinutes, setWorkTimeMinutes] = useState<number | string>(30);
   const [showTimeInfo, setShowTimeInfo] = useState(false);
 
-  // Paso 4: Precios Multicanal
+  // Paso 4: Gastos Indirectos / Fijos (Opcional prorrateo sugerido)
+  const [indirectCost, setIndirectCost] = useState<number | string>("");
+
+  // Paso 5: Precios Multicanal
   const [channelPrices, setChannelPrices] = useState<ChannelPrice[]>(
     DEFAULT_CHANNELS.map((ch) => ({
       id: ch.id,
@@ -200,29 +204,34 @@ export default function NuevoProductoPage() {
         item.supply.purchase_quantity,
         item.supply.conversion_factor
       );
+      const q = typeof item.quantity === "number" ? item.quantity : parseFloat(String(item.quantity)) || 0;
       const wasteFactor = 1 + (Number(item.waste_percent) || 0) / 100;
-      return acc + unitCost * (item.quantity || 0) * wasteFactor;
+      return acc + unitCost * q * wasteFactor;
     }, 0);
   }, [selectedSupplies]);
 
   // 2. Costo de Mano de Obra
   const laborCost = useMemo(() => {
-    return (workTimeMinutes || 0) * (laborMinuteRate || 0);
-  }, [workTimeMinutes, laborMinuteRate]);
+    if (!includeLabor) return 0;
+    const mins = typeof workTimeMinutes === "number" ? workTimeMinutes : parseFloat(String(workTimeMinutes)) || 0;
+    return mins * (laborMinuteRate || 0);
+  }, [includeLabor, workTimeMinutes, laborMinuteRate]);
 
   // 3. Cuota de Gastos Fijos (Prorrateo % o Manual)
-  const indirectCost = 0;
+  // indirectCost is managed via state above
 
   // 4. Costo Total Unitario
   const totalCost = useMemo(() => {
-    return directCost + laborCost;
-  }, [directCost, laborCost]);
+    const ind = typeof indirectCost === "number" ? indirectCost : parseFloat(String(indirectCost)) || 0;
+    return directCost + laborCost + ind;
+  }, [directCost, laborCost, indirectCost]);
 
   // Actualizar precios sugeridos de canales cuando cambia el totalCost
   useEffect(() => {
     setChannelPrices((prev) =>
       prev.map((ch) => {
-        const calculatedPrice = totalCost * (1 + ch.profit_margin_percent / 100);
+        const marginNum = typeof ch.profit_margin_percent === "number" ? ch.profit_margin_percent : parseFloat(String(ch.profit_margin_percent)) || 0;
+        const calculatedPrice = totalCost * (1 + marginNum / 100);
         return {
           ...ch,
           selling_price: Math.round(calculatedPrice),
@@ -231,32 +240,50 @@ export default function NuevoProductoPage() {
     );
   }, [totalCost]);
 
-  // Modificar margen con slider o input y recalcular precio de un canal
-  const handleMarginChange = (index: number, margin: number) => {
+  // Modificar margen y recalcular precio de un canal
+  const handleMarginChange = (index: number, marginVal: number | string) => {
     setChannelPrices((prev) => {
       const updated = [...prev];
-      const newPrice = totalCost * (1 + margin / 100);
+      if (marginVal === "" || isNaN(Number(marginVal))) {
+        updated[index] = {
+          ...updated[index],
+          profit_margin_percent: marginVal,
+          selling_price: "",
+        };
+        return updated;
+      }
+      const marginNum = typeof marginVal === "number" ? marginVal : parseFloat(String(marginVal)) || 0;
+      const newPrice = totalCost * (1 + marginNum / 100);
       updated[index] = {
         ...updated[index],
-        profit_margin_percent: margin,
+        profit_margin_percent: marginVal,
         selling_price: Math.round(newPrice),
       };
       return updated;
     });
   };
 
-  // Modificar precio final manualmente y recalcular margen de un canal
-  const handlePriceChange = (index: number, price: number) => {
+  // Modificar precio final y recalcular margen de un canal
+  const handlePriceChange = (index: number, priceVal: number | string) => {
     setChannelPrices((prev) => {
       const updated = [...prev];
+      if (priceVal === "" || isNaN(Number(priceVal))) {
+        updated[index] = {
+          ...updated[index],
+          profit_margin_percent: "",
+          selling_price: priceVal,
+        };
+        return updated;
+      }
+      const priceNum = typeof priceVal === "number" ? priceVal : parseFloat(String(priceVal)) || 0;
       let newMargin = 0;
       if (totalCost > 0) {
-        newMargin = Math.round(((price - totalCost) / totalCost) * 100);
+        newMargin = Math.round(((priceNum - totalCost) / totalCost) * 100);
       }
       updated[index] = {
         ...updated[index],
         profit_margin_percent: newMargin,
-        selling_price: price,
+        selling_price: priceVal,
       };
       return updated;
     });
@@ -309,7 +336,7 @@ export default function NuevoProductoPage() {
   };
 
   // Cambiar cantidad de insumo
-  const handleUpdateSupplyQty = (index: number, qty: number) => {
+  const handleUpdateSupplyQty = (index: number, qty: number | string) => {
     setSelectedSupplies((prev) => {
       const updated = [...prev];
       updated[index].quantity = qty;
@@ -398,17 +425,19 @@ export default function NuevoProductoPage() {
       });
 
       // 1. Insertar en tabla products
+      const mins = typeof workTimeMinutes === "number" ? workTimeMinutes : parseFloat(String(workTimeMinutes)) || 0;
+      const ind = typeof indirectCost === "number" ? indirectCost : parseFloat(String(indirectCost)) || 0;
       const { data: productData, error: productError } = await supabase
         .from("products")
         .insert({
           user_id: user.id,
           name: name.trim(),
           description: finalDescription || null,
-          work_time_minutes: workTimeMinutes,
-          include_labor: true,
+          work_time_minutes: includeLabor ? mins : 0,
+          include_labor: includeLabor,
           direct_cost: directCost,
           labor_cost: laborCost,
-          indirect_cost: 0,
+          indirect_cost: ind,
           total_cost: totalCost,
           needs_price_review: false,
         })
@@ -425,7 +454,7 @@ export default function NuevoProductoPage() {
       const suppliesToInsert = selectedSupplies.map((s) => ({
         product_id: productId,
         supply_id: s.supply.id,
-        quantity: s.quantity,
+        quantity: typeof s.quantity === "number" ? s.quantity : parseFloat(String(s.quantity)) || 0,
       }));
 
       const { error: suppliesError } = await supabase
@@ -443,8 +472,8 @@ export default function NuevoProductoPage() {
       const pricesToInsert = channelPrices.map((cp) => ({
         product_id: productId,
         channel_name: cp.channel_name,
-        profit_margin_percent: cp.profit_margin_percent,
-        selling_price: cp.selling_price,
+        profit_margin_percent: typeof cp.profit_margin_percent === "number" ? cp.profit_margin_percent : parseFloat(String(cp.profit_margin_percent)) || 0,
+        selling_price: typeof cp.selling_price === "number" ? cp.selling_price : parseFloat(String(cp.selling_price)) || 0,
       }));
 
       const { error: pricesError } = await supabase
@@ -771,9 +800,10 @@ export default function NuevoProductoPage() {
                   item.supply.purchase_quantity,
                   item.supply.conversion_factor
                 );
+                const itemQty = typeof item.quantity === "number" ? item.quantity : parseFloat(String(item.quantity)) || 0;
                 const wastePercent = Number(item.waste_percent) || 0;
                 const wasteMultiplier = 1 + wastePercent / 100;
-                const subtotal = unitCost * item.quantity * wasteMultiplier;
+                const subtotal = unitCost * itemQty * wasteMultiplier;
 
                 return (
                   <div
@@ -811,8 +841,9 @@ export default function NuevoProductoPage() {
                             min="0.0001"
                             value={item.quantity}
                             onChange={(e) =>
-                              handleUpdateSupplyQty(idx, parseFloat(e.target.value) || 0)
+                              handleUpdateSupplyQty(idx, e.target.value)
                             }
+                            placeholder="1"
                             className="w-full px-2 py-1 text-xs bg-white border border-neutral-200 rounded-xl text-center font-bold outline-none focus:border-[#3BB578]"
                           />
                           <span className="text-[11px] font-semibold text-neutral-500 flex-shrink-0">
@@ -1005,6 +1036,41 @@ export default function NuevoProductoPage() {
                 </div>
               </div>
             )}
+
+            {/* Gastos Indirectos prorrateados (opcional) */}
+            <div className="p-4 bg-neutral-50 rounded-2xl border border-neutral-200/80 space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-neutral-800">
+                  Prorrateo de Gastos Fijos (opcional):
+                </label>
+                <div className="flex items-center gap-1">
+                  <span className="text-xs font-bold text-neutral-400">$</span>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    value={indirectCost}
+                    onChange={(e) => setIndirectCost(e.target.value)}
+                    placeholder="0.00"
+                    className="w-24 px-2 py-1 text-xs bg-white border border-neutral-200 rounded-xl text-right font-bold outline-none focus:border-[#3BB578]"
+                  />
+                </div>
+              </div>
+              <p className="text-[10px] text-neutral-400">
+                💡 <strong>¿Qué son los gastos fijos?</strong> Si querés que cada producto vendido aporte un poquito para pagar internet, monotributo, luz o alquiler de taller, podés sumar un monto estimado aquí (ej: $150 por unidad).
+              </p>
+            </div>
+
+            {/* Resumen Total Unitario de Producción */}
+            <div className="p-3 bg-[#DCF4D7]/70 border border-[#C3EBC0] rounded-2xl flex flex-col gap-1.5 text-xs text-[#1F7A4C]">
+              <div className="flex justify-between items-center text-[11px]">
+                <span>Materiales: <strong>{formatCurrency(directCost)}</strong> + M.O: <strong>{formatCurrency(laborCost)}</strong> + Fijos: <strong>{formatCurrency(Number(indirectCost) || 0)}</strong></span>
+              </div>
+              <div className="flex justify-between items-center font-bold pt-1.5 border-t border-[#C3EBC0]">
+                <span className="text-xs">Costo Total de Fabricación (1 unidad):</span>
+                <span className="text-sm font-black text-[#1F7A4C] font-display">{formatCurrency(totalCost)}</span>
+              </div>
+            </div>
           </div>
 
           <div className="pt-3 border-t border-neutral-100 flex items-center justify-between">
@@ -1067,8 +1133,10 @@ export default function NuevoProductoPage() {
 
           <div className="space-y-3">
             {channelPrices.map((channel, idx) => {
-              const profitAmount = channel.selling_price - totalCost;
-              const suggestedPrice = Math.round(totalCost * (1 + channel.profit_margin_percent / 100));
+              const channelSellingPrice = typeof channel.selling_price === "number" ? channel.selling_price : parseFloat(String(channel.selling_price)) || 0;
+              const marginNum = typeof channel.profit_margin_percent === "number" ? channel.profit_margin_percent : parseFloat(String(channel.profit_margin_percent)) || 0;
+              const profitAmount = channelSellingPrice - totalCost;
+              const suggestedPrice = Math.round(totalCost * (1 + marginNum / 100));
 
               return (
                 <div
@@ -1124,8 +1192,9 @@ export default function NuevoProductoPage() {
                           max="500"
                           value={channel.profit_margin_percent}
                           onChange={(e) =>
-                            handleMarginChange(idx, parseFloat(e.target.value) || 0)
+                            handleMarginChange(idx, e.target.value)
                           }
+                          placeholder="0"
                           className="w-12 text-center text-xs font-bold outline-none text-[#1F7A4C]"
                         />
                         <span className="text-xs font-bold text-neutral-400">%</span>
@@ -1164,8 +1233,9 @@ export default function NuevoProductoPage() {
                         step="any"
                         value={channel.selling_price}
                         onChange={(e) =>
-                          handlePriceChange(idx, parseFloat(e.target.value) || 0)
+                          handlePriceChange(idx, e.target.value)
                         }
+                        placeholder="0.00"
                         className="w-full text-center text-xs font-black text-[#1F7A4C] outline-none"
                       />
                     </div>
@@ -1177,7 +1247,7 @@ export default function NuevoProductoPage() {
                     <span>+</span>
                     <span>Ganancia: <strong className={profitAmount >= 0 ? "text-[#1F7A4C]" : "text-rose-600"}>{formatCurrency(profitAmount)}</strong></span>
                     <span>=</span>
-                    <span>Precio: <strong className="text-[#2B2B2B]">{formatCurrency(channel.selling_price)}</strong></span>
+                    <span>Precio: <strong className="text-[#2B2B2B]">{formatCurrency(channelSellingPrice)}</strong></span>
                   </div>
                 </div>
               );

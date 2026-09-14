@@ -40,10 +40,10 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
   const [category, setCategory] = useState<"materia_prima" | "packaging">("materia_prima");
   const [name, setName] = useState("");
   const [purchaseUnit, setPurchaseUnit] = useState("kg");
-  const [purchaseQuantity, setPurchaseQuantity] = useState<number>(1);
+  const [purchaseQuantity, setPurchaseQuantity] = useState<number | string>("");
   const [currentPrice, setCurrentPrice] = useState<number | string>("");
   const [useUnit, setUseUnit] = useState("g");
-  const [conversionFactor, setConversionFactor] = useState<number>(1000);
+  const [conversionFactor, setConversionFactor] = useState<number | string>(1000);
   const [selectedPresetId, setSelectedPresetId] = useState<string>("kg-g");
 
   const [loading, setLoading] = useState(false);
@@ -108,10 +108,10 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
       setName(initialSupply.name || "");
       setCategory(initialSupply.category === "packaging" ? "packaging" : "materia_prima");
       setPurchaseUnit(initialSupply.purchase_unit || "kg");
-      setPurchaseQuantity(initialSupply.purchase_quantity || 1);
-      setCurrentPrice(initialSupply.current_price || "");
+      setPurchaseQuantity(initialSupply.purchase_quantity ?? "");
+      setCurrentPrice(initialSupply.current_price ?? "");
       setUseUnit(initialSupply.use_unit || "g");
-      setConversionFactor(initialSupply.conversion_factor || 1000);
+      setConversionFactor(initialSupply.conversion_factor ?? 1000);
 
       // Detect matched preset if any
       const matchingPreset = UNIT_PRESETS.find(
@@ -132,7 +132,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
             setName(draft.name || "");
             setCategory(draft.category || "materia_prima");
             setPurchaseUnit(draft.purchaseUnit || "kg");
-            setPurchaseQuantity(draft.purchaseQuantity ?? 1);
+            setPurchaseQuantity(draft.purchaseQuantity !== undefined ? draft.purchaseQuantity : "");
             setCurrentPrice(draft.currentPrice || "");
             setUseUnit(draft.useUnit || "g");
             setConversionFactor(draft.conversionFactor ?? 1000);
@@ -148,7 +148,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
         setName("");
         setCategory("materia_prima");
         setPurchaseUnit("kg");
-        setPurchaseQuantity(1);
+        setPurchaseQuantity("");
         setCurrentPrice("");
         setUseUnit("g");
         setConversionFactor(1000);
@@ -195,8 +195,10 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
   };
 
   const parsedPrice = typeof currentPrice === "number" ? currentPrice : parseFloat(currentPrice) || 0;
-  const unitCost = calculateUnitCost(parsedPrice, purchaseQuantity, conversionFactor);
-  const totalRecipeUnits = purchaseQuantity * conversionFactor;
+  const parsedQuantity = typeof purchaseQuantity === "number" ? purchaseQuantity : parseFloat(String(purchaseQuantity)) || 0;
+  const parsedConversion = typeof conversionFactor === "number" ? conversionFactor : parseFloat(String(conversionFactor)) || 0;
+  const unitCost = calculateUnitCost(parsedPrice, parsedQuantity, parsedConversion);
+  const totalRecipeUnits = parsedQuantity * parsedConversion;
   const activePreset = UNIT_PRESETS.find((p) => p.id === selectedPresetId);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -211,11 +213,11 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
       setError("El precio de reposición debe ser mayor a 0");
       return;
     }
-    if (purchaseQuantity <= 0) {
+    if (parsedQuantity <= 0) {
       setError("La cantidad debe ser mayor a 0");
       return;
     }
-    if (conversionFactor <= 0) {
+    if (parsedConversion <= 0) {
       setError("El factor de rendimiento debe ser mayor a 0");
       return;
     }
@@ -268,10 +270,10 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
             name: name.trim(),
             category,
             purchase_unit: purchaseUnit.trim(),
-            purchase_quantity: purchaseQuantity,
+            purchase_quantity: parsedQuantity,
             current_price: parsedPrice,
             use_unit: useUnit.trim(),
-            conversion_factor: conversionFactor,
+            conversion_factor: parsedConversion,
             updated_at: nowIso,
           })
           .eq("id", initialSupply.id);
@@ -287,10 +289,10 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
             name: name.trim(),
             category,
             purchase_unit: purchaseUnit.trim(),
-            purchase_quantity: purchaseQuantity,
+            purchase_quantity: parsedQuantity,
             current_price: parsedPrice,
             use_unit: useUnit.trim(),
-            conversion_factor: conversionFactor,
+            conversion_factor: parsedConversion,
           })
           .select("id")
           .single();
@@ -485,7 +487,8 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
                   step="any"
                   min="0.001"
                   value={purchaseQuantity}
-                  onChange={(e) => setPurchaseQuantity(parseFloat(e.target.value) || 0)}
+                  onChange={(e) => setPurchaseQuantity(e.target.value)}
+                  placeholder="1"
                   required
                   className="w-full px-3 py-2 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B]"
                 />
@@ -564,9 +567,10 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
                     min="0.0001"
                     value={conversionFactor}
                     onChange={(e) => {
-                      setConversionFactor(parseFloat(e.target.value) || 1);
+                      setConversionFactor(e.target.value);
                       setSelectedPresetId("custom");
                     }}
+                    placeholder="1000"
                     required
                     className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#EAF0E8] rounded-xl outline-none text-[#2B2B2B]"
                   />

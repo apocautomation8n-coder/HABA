@@ -19,6 +19,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
 }) => {
   const supabase = createClient();
   const [businessName, setBusinessName] = useState<string | null>(null);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
 
@@ -34,6 +35,9 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
         } else if (user.user_metadata?.full_name) {
           setBusinessName(user.user_metadata.full_name);
         }
+        if (user.user_metadata?.avatar_url) {
+          setAvatarUrl(user.user_metadata.avatar_url);
+        }
 
         // Carga complementaria por API segura
         try {
@@ -44,6 +48,9 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
               setBusinessName(data.profile.business_name);
             } else if (data.profile?.full_name) {
               setBusinessName(data.profile.full_name);
+            }
+            if (data.profile?.avatar_url) {
+              setAvatarUrl(data.profile.avatar_url);
             }
           }
         } catch {
@@ -81,7 +88,15 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
     <>
       <header className="w-full flex items-center justify-between pb-2 pt-1 border-b border-[#EAF0E8] mb-2">
         <Link href="/dashboard" className="flex items-center gap-2.5">
-          <HabaMascot size={36} />
+          {avatarUrl ? (
+            <img
+              src={avatarUrl}
+              alt="Logo"
+              className="w-9 h-9 rounded-xl object-cover border border-[#C3EBC0] flex-shrink-0"
+            />
+          ) : (
+            <HabaMascot size={36} />
+          )}
           <div>
             <h1 className="text-base font-extrabold text-[#2B2B2B] leading-tight flex items-center gap-1.5 font-display">
               <span className="text-[#3BB578]">HABA</span>
