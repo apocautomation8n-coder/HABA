@@ -18,6 +18,7 @@ import {
   Mail,
   Store,
   KeyRound,
+  Edit2,
   X,
   Loader2,
 } from "lucide-react";
@@ -62,16 +63,29 @@ export default function AdminPage() {
   const [resetSuccess, setResetSuccess] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
 
+  // Modal para editar datos de usuaria
+  const [editModalUser, setEditModalUser] = useState<UserProfile | null>(null);
+  const [editFullName, setEditFullName] = useState("");
+  const [editBusinessName, setEditBusinessName] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [editingUserLoading, setEditingUserLoading] = useState(false);
+  const [editSuccess, setEditSuccess] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
   useEffect(() => {
     setMounted(true);
   }, []);
 
   // Oscurecer la barra de estado superior nativa de iOS al abrir cualquier modal en admin
-  useModalThemeColor(isCreateModalOpen || Boolean(resetModalUser), "#000000");
+  useModalThemeColor(
+    isCreateModalOpen || Boolean(resetModalUser) || Boolean(editModalUser),
+    "#000000"
+  );
 
   // Bloquear scroll de fondo para evitar rebote elástico en móviles
   useEffect(() => {
-    const isAnyModalOpen = isCreateModalOpen || Boolean(resetModalUser);
+    const isAnyModalOpen =
+      isCreateModalOpen || Boolean(resetModalUser) || Boolean(editModalUser);
     if (!isAnyModalOpen) return;
 
     const originalOverflow = document.body.style.overflow;
@@ -83,7 +97,7 @@ export default function AdminPage() {
       document.body.style.overflow = originalOverflow;
       document.body.style.touchAction = originalTouchAction;
     };
-  }, [isCreateModalOpen, resetModalUser]);
+  }, [isCreateModalOpen, resetModalUser, editModalUser]);
 
   // Verificar rol de admin y cargar usuarias
   const loadUsers = async () => {
@@ -273,6 +287,43 @@ export default function AdminPage() {
     }
   };
 
+  // Guardar cambios de datos de usuaria
+  const handleEditUserSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editModalUser) return;
+    setEditError(null);
+    setEditingUserLoading(true);
+
+    try {
+      const res = await fetch("/api/admin/users", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: editModalUser.id,
+          fullName: editFullName.trim(),
+          businessName: editBusinessName.trim(),
+          email: editEmail.trim(),
+        }),
+      });
+
+      const resJson = await res.json();
+      if (!res.ok) {
+        throw new Error(resJson.error || "No se pudieron actualizar los datos de la usuaria");
+      }
+
+      setEditSuccess(true);
+      await loadUsers();
+      setTimeout(() => {
+        setEditSuccess(false);
+        setEditModalUser(null);
+      }, 1000);
+    } catch (err: any) {
+      setEditError(err.message);
+    } finally {
+      setEditingUserLoading(false);
+    }
+  };
+
   const filteredUsers = users.filter(
     (u) =>
       u.email.toLowerCase().includes(search.toLowerCase()) ||
@@ -399,6 +450,22 @@ export default function AdminPage() {
 
                   {/* Acciones de Gio */}
                   <div className="flex items-center gap-1.5">
+                    {/* Botón Editar Datos */}
+                    <button
+                      onClick={() => {
+                        setEditModalUser(u);
+                        setEditFullName(u.full_name || "");
+                        setEditBusinessName(u.business_name || "");
+                        setEditEmail(u.email || "");
+                        setEditError(null);
+                        setEditSuccess(false);
+                      }}
+                      className="p-2 text-neutral-400 hover:text-[#3BB578] hover:bg-[#DCF4D7]/50 rounded-xl transition"
+                      title="Editar datos de esta usuaria"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+
                     {/* Botón Reset Password */}
                     <button
                       onClick={() => {
@@ -635,6 +702,112 @@ export default function AdminPage() {
                     className="flex-1 py-2.5 px-3 bg-[#3BB578] hover:bg-[#2E9E65] text-white rounded-2xl text-xs font-bold shadow-xs disabled:opacity-60 transition"
                   >
                     {resettingPassword ? "Guardando..." : "Guardar Contraseña"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {/* Modal para Editar Datos de Usuaria montado en Portal */}
+      {editModalUser &&
+        mounted &&
+        createPortal(
+          <div
+            className="fixed -top-40 -bottom-40 -left-20 -right-20 z-[99999] bg-black/65 backdrop-blur-xs flex items-end sm:items-center justify-center pt-40 pb-40 px-20 animate-in fade-in duration-200"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setEditModalUser(null);
+            }}
+          >
+            <div
+              className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl border border-[#EAF0E8] animate-in slide-in-from-bottom-6 flex flex-col overflow-hidden"
+              style={{ maxHeight: "calc(100dvh - env(safe-area-inset-top, 20px) - 10px)" }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-neutral-100 flex-shrink-0">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-xl bg-[#DCF4D7] text-[#3BB578] flex items-center justify-center">
+                    <Edit2 className="w-4 h-4" />
+                  </div>
+                  <h3 className="text-sm font-bold text-[#2B2B2B] font-display">
+                    Editar Datos de Usuaria
+                  </h3>
+                </div>
+                <button
+                  onClick={() => setEditModalUser(null)}
+                  className="p-1.5 text-neutral-400 hover:text-neutral-600 rounded-full"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {editError && (
+                <div className="mt-3 p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                  <span>{editError}</span>
+                </div>
+              )}
+
+              {editSuccess && (
+                <div className="mt-3 p-2.5 bg-[#DCF4D7] border border-[#C3EBC0] rounded-xl text-[#1F7A4C] text-xs flex items-center gap-2 font-bold">
+                  <Check className="w-4 h-4 flex-shrink-0" />
+                  <span>¡Datos actualizados con éxito!</span>
+                </div>
+              )}
+
+              <form onSubmit={handleEditUserSubmit} className="mt-3 space-y-3 flex-1 overflow-y-auto">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-[#2B2B2B]">Nombre de la usuaria</label>
+                  <input
+                    type="text"
+                    value={editFullName}
+                    onChange={(e) => setEditFullName(e.target.value)}
+                    placeholder="Ej: Giulianna Penna"
+                    className="w-full px-3.5 py-2 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B]"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-[#2B2B2B]">Nombre del emprendimiento</label>
+                  <input
+                    type="text"
+                    value={editBusinessName}
+                    onChange={(e) => setEditBusinessName(e.target.value)}
+                    placeholder="Ej: Amaoto Craft"
+                    className="w-full px-3.5 py-2 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B]"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-[#2B2B2B]">Email de acceso *</label>
+                  <input
+                    type="email"
+                    value={editEmail}
+                    onChange={(e) => setEditEmail(e.target.value)}
+                    placeholder="clienta@correo.com"
+                    required
+                    className="w-full px-3.5 py-2 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B]"
+                  />
+                </div>
+
+                <div
+                  className="pt-2 flex gap-2 flex-shrink-0"
+                  style={{ paddingBottom: "max(env(safe-area-inset-bottom, 12px), 16px)" }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setEditModalUser(null)}
+                    className="flex-1 py-2.5 px-3 bg-neutral-100 hover:bg-neutral-200 text-[#7A7A7A] rounded-2xl text-xs font-semibold transition"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={editingUserLoading || editSuccess}
+                    className="flex-1 py-2.5 px-3 bg-[#3BB578] hover:bg-[#2E9E65] text-white rounded-2xl text-xs font-bold shadow-xs disabled:opacity-60 transition"
+                  >
+                    {editingUserLoading ? "Guardando..." : "Guardar Cambios"}
                   </button>
                 </div>
               </form>
