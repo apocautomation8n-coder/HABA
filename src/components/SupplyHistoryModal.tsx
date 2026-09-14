@@ -174,7 +174,6 @@ export const SupplyHistoryModal: React.FC<SupplyHistoryModalProps> = ({
         supply_id: supply.id,
         price: priceNum,
         changed_at: isoDate,
-        note: newNote.trim() || undefined,
       });
 
       await supabase

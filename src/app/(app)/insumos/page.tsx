@@ -88,24 +88,35 @@ export default function InsumosPage() {
         .from("supply_price_history")
         .select("*")
         .eq("supply_id", supply.id)
-        .order("date", { ascending: true });
+        .order("changed_at", { ascending: true });
 
-      const records: PriceRecord[] =
-        historyData && historyData.length > 0
-          ? historyData.map((h: any) => ({
-              id: String(h.id),
-              price: Number(h.price),
-              date: h.date || h.created_at || new Date().toISOString(),
-              note: h.note || undefined,
-            }))
-          : [
-              {
-                id: "init-" + supply.id,
-                price: Number(supply.current_price),
-                date: supply.updated_at || supply.created_at || new Date().toISOString(),
-                note: "Precio de reposición actual",
-              },
-            ];
+      let records: PriceRecord[] = [];
+      if (historyData && historyData.length > 0) {
+        records = historyData.map((h: any) => ({
+          id: String(h.id),
+          price: Number(h.price),
+          date: h.changed_at || new Date().toISOString(),
+        }));
+
+        // Si el precio actual en supplies no está reflejado al final del historial, sumarlo
+        const latest = records[records.length - 1];
+        if (latest && latest.price !== Number(supply.current_price)) {
+          records.push({
+            id: "current-" + supply.id,
+            price: Number(supply.current_price),
+            date: supply.updated_at || new Date().toISOString(),
+          });
+        }
+      } else {
+        records = [
+          {
+            id: "init-" + supply.id,
+            price: Number(supply.current_price),
+            date: supply.updated_at || supply.created_at || new Date().toISOString(),
+            note: "Precio de reposición actual",
+          },
+        ];
+      }
 
       const insumoModel: Insumo = {
         id: supply.id,
@@ -131,21 +142,24 @@ export default function InsumosPage() {
     newRecordData: Omit<PriceRecord, "id">
   ) => {
     try {
+      const isoDate = newRecordData.date
+        ? new Date(newRecordData.date).toISOString()
+        : new Date().toISOString();
+
       // 1. Actualizar el precio actual del insumo en supplies
       await supabase
         .from("supplies")
         .update({
           current_price: newRecordData.price,
-          updated_at: newRecordData.date,
+          updated_at: isoDate,
         })
         .eq("id", insumoId);
 
-      // 2. Insertar en supply_price_history
+      // 2. Insertar en supply_price_history con columna changed_at
       await supabase.from("supply_price_history").insert({
         supply_id: insumoId,
         price: newRecordData.price,
-        date: newRecordData.date,
-        note: newRecordData.note,
+        changed_at: isoDate,
       });
 
       // Recargar lista y actualizar estado local
@@ -154,12 +168,13 @@ export default function InsumosPage() {
       if (selectedInsumoForDrawer && selectedInsumoForDrawer.id === insumoId) {
         const newRecord: PriceRecord = {
           ...newRecordData,
+          date: isoDate,
           id: "rec-" + Date.now(),
         };
         setSelectedInsumoForDrawer({
           ...selectedInsumoForDrawer,
           current_price: newRecordData.price,
-          updated_at: newRecordData.date,
+          updated_at: isoDate,
           history: [...selectedInsumoForDrawer.history, newRecord],
         });
       }
