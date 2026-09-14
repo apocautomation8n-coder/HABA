@@ -217,14 +217,10 @@ export default function NuevoProductoPage() {
     return mins * (laborMinuteRate || 0);
   }, [includeLabor, workTimeMinutes, laborMinuteRate]);
 
-  // 3. Cuota de Gastos Fijos (Prorrateo % o Manual)
-  // indirectCost is managed via state above
-
-  // 4. Costo Total Unitario
+  // 3. Costo Total Unitario (Materiales + Mano de obra según tiempo y objetivo mensual)
   const totalCost = useMemo(() => {
-    const ind = typeof indirectCost === "number" ? indirectCost : parseFloat(String(indirectCost)) || 0;
-    return directCost + laborCost + ind;
-  }, [directCost, laborCost, indirectCost]);
+    return directCost + laborCost;
+  }, [directCost, laborCost]);
 
   // Actualizar precios sugeridos de canales cuando cambia el totalCost
   useEffect(() => {
@@ -345,7 +341,7 @@ export default function NuevoProductoPage() {
   };
 
   // Cambiar merma % de insumo
-  const handleUpdateSupplyWaste = (index: number, waste: number) => {
+  const handleUpdateSupplyWaste = (index: number, waste: number | string) => {
     setSelectedSupplies((prev) => {
       const updated = [...prev];
       updated[index].waste_percent = waste;
@@ -839,7 +835,7 @@ export default function NuevoProductoPage() {
                             type="number"
                             step="any"
                             min="0.0001"
-                            value={item.quantity}
+                            value={item.quantity === 0 ? "" : item.quantity}
                             onChange={(e) =>
                               handleUpdateSupplyQty(idx, e.target.value)
                             }
@@ -864,9 +860,9 @@ export default function NuevoProductoPage() {
                             step="any"
                             min="0"
                             max="100"
-                            value={item.waste_percent || 0}
+                            value={item.waste_percent === 0 ? "" : (item.waste_percent ?? "")}
                             onChange={(e) =>
-                              handleUpdateSupplyWaste(idx, parseFloat(e.target.value) || 0)
+                              handleUpdateSupplyWaste(idx, e.target.value === "" ? 0 : parseFloat(e.target.value) || 0)
                             }
                             placeholder="0"
                             className="w-full px-2 py-1 text-xs bg-white border border-neutral-200 rounded-xl text-center font-bold outline-none focus:border-[#3BB578]"
@@ -965,12 +961,18 @@ export default function NuevoProductoPage() {
               <div className="flex items-center gap-2">
                 <input
                   type="number"
-                  min="1"
-                  value={workTimeMinutes}
-                  onChange={(e) => setWorkTimeMinutes(parseInt(e.target.value) || 0)}
+                  min="0"
+                  value={workTimeMinutes === 0 ? "" : workTimeMinutes}
+                  onChange={(e) => setWorkTimeMinutes(e.target.value === "" ? "" : parseFloat(e.target.value) || 0)}
+                  placeholder="0"
                   className="w-24 px-3 py-2 text-sm bg-white border border-neutral-200 rounded-xl text-center font-bold outline-none focus:border-[#3BB578]"
                 />
                 <span className="text-sm text-neutral-500 font-medium">minutos</span>
+                {Number(workTimeMinutes) >= 60 && (
+                  <span className="text-xs text-[#1F7A4C] bg-[#DCF4D7] px-2 py-0.5 rounded-md font-semibold">
+                    ~{(Number(workTimeMinutes) / 60).toFixed(1)} hs
+                  </span>
+                )}
               </div>
             </div>
 
@@ -990,7 +992,7 @@ export default function NuevoProductoPage() {
                 </div>
               </div>
               <p className="text-[10px] text-neutral-500 mt-2 leading-relaxed">
-                Este costo ya incluye proporcionalmente tus gastos operativos + tu sueldo pretendido, calculados a partir de tu Objetivo Mensual configurado en Gastos.
+                Este costo ya incluye proporcionalmente tus gastos operativos + tu sueldo pretendido, calculados a partir de tu Objetivo Mensual unificado.
               </p>
             </div>
 
@@ -1022,7 +1024,7 @@ export default function NuevoProductoPage() {
                 </div>
                 <div className="space-y-1.5 text-[11px] leading-relaxed">
                   <p>
-                    1️⃣ <strong>Tu costo por minuto:</strong> Se calcula en el módulo <em>Gastos &gt; Mano de Obra</em> dividiendo tu <strong>Objetivo Mensual</strong> (Sueldo + Gastos Operativos) entre las <strong>horas de taller</strong> que trabajás por mes:
+                    1️⃣ <strong>Tu costo por minuto:</strong> Se calcula dividiendo tu <strong>Objetivo Mensual</strong> (Sueldo Pretendido + Gastos Operativos) entre las <strong>horas de taller</strong> que trabajás por mes:
                   </p>
                   <div className="bg-white p-2 rounded-xl border border-[#DCF4D7] font-mono text-[10.5px] text-[#1F7A4C]">
                     Objetivo Mensual ÷ (Días × Horas diarias × 60) = <strong>{formatCurrency(laborMinuteRate)}/minuto</strong>
@@ -1037,34 +1039,10 @@ export default function NuevoProductoPage() {
               </div>
             )}
 
-            {/* Gastos Indirectos prorrateados (opcional) */}
-            <div className="p-4 bg-neutral-50 rounded-2xl border border-neutral-200/80 space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-neutral-800">
-                  Prorrateo de Gastos Fijos (opcional):
-                </label>
-                <div className="flex items-center gap-1">
-                  <span className="text-xs font-bold text-neutral-400">$</span>
-                  <input
-                    type="number"
-                    step="any"
-                    min="0"
-                    value={indirectCost}
-                    onChange={(e) => setIndirectCost(e.target.value)}
-                    placeholder="0.00"
-                    className="w-24 px-2 py-1 text-xs bg-white border border-neutral-200 rounded-xl text-right font-bold outline-none focus:border-[#3BB578]"
-                  />
-                </div>
-              </div>
-              <p className="text-[10px] text-neutral-400">
-                💡 <strong>¿Qué son los gastos fijos?</strong> Si querés que cada producto vendido aporte un poquito para pagar internet, monotributo, luz o alquiler de taller, podés sumar un monto estimado aquí (ej: $150 por unidad).
-              </p>
-            </div>
-
             {/* Resumen Total Unitario de Producción */}
             <div className="p-3 bg-[#DCF4D7]/70 border border-[#C3EBC0] rounded-2xl flex flex-col gap-1.5 text-xs text-[#1F7A4C]">
               <div className="flex justify-between items-center text-[11px]">
-                <span>Materiales: <strong>{formatCurrency(directCost)}</strong> + M.O: <strong>{formatCurrency(laborCost)}</strong> + Fijos: <strong>{formatCurrency(Number(indirectCost) || 0)}</strong></span>
+                <span>Insumos: <strong>{formatCurrency(directCost)}</strong> + Costo Productivo ({workTimeMinutes || 0} min): <strong>{formatCurrency(laborCost)}</strong></span>
               </div>
               <div className="flex justify-between items-center font-bold pt-1.5 border-t border-[#C3EBC0]">
                 <span className="text-xs">Costo Total de Fabricación (1 unidad):</span>
@@ -1190,7 +1168,7 @@ export default function NuevoProductoPage() {
                           step="5"
                           min="0"
                           max="500"
-                          value={channel.profit_margin_percent}
+                          value={channel.profit_margin_percent === 0 ? "" : channel.profit_margin_percent}
                           onChange={(e) =>
                             handleMarginChange(idx, e.target.value)
                           }
@@ -1231,7 +1209,7 @@ export default function NuevoProductoPage() {
                       <input
                         type="number"
                         step="any"
-                        value={channel.selling_price}
+                        value={channel.selling_price === 0 ? "" : channel.selling_price}
                         onChange={(e) =>
                           handlePriceChange(idx, e.target.value)
                         }
