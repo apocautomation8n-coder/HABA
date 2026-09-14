@@ -20,9 +20,9 @@ export const HabaMascot: React.FC<HabaMascotProps> = ({
         style={{ width: size, height: size }}
       >
         <img
-          src="/icon-192.png"
+          src="/haba-mascot.png"
           alt="Mascota HABA"
-          className="w-full h-full object-contain drop-shadow-sm rounded-2xl transition-transform hover:scale-105"
+          className="w-full h-full object-contain drop-shadow-sm transition-transform hover:scale-105"
         />
       </div>
     );

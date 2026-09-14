@@ -101,6 +101,7 @@ export default function NuevoProductoPage() {
   const [isAddingChannel, setIsAddingChannel] = useState(false);
   const [newChannelName, setNewChannelName] = useState("");
   const [newChannelMargin, setNewChannelMargin] = useState(100);
+  const [showChannelInfo, setShowChannelInfo] = useState(false);
 
   // Cargar insumos, mano de obra y gastos fijos
   useEffect(() => {
@@ -142,6 +143,53 @@ export default function NuevoProductoPage() {
 
     fetchData();
   }, [supabase]);
+
+  // Restaurar borrador de producto si el usuario salió temporalmente de la app (Punto E)
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem("haba_draft_nuevo_producto");
+      if (saved) {
+        const draft = JSON.parse(saved);
+        if (draft.name) setName(draft.name);
+        if (draft.category) setCategory(draft.category);
+        if (draft.customCategory) setCustomCategory(draft.customCategory);
+        if (draft.description) setDescription(draft.description);
+        if (draft.currentStep) setCurrentStep(draft.currentStep);
+        if (draft.workTimeMinutes) setWorkTimeMinutes(draft.workTimeMinutes);
+        if (draft.selectedSupplies && Array.isArray(draft.selectedSupplies)) {
+          setSelectedSupplies(draft.selectedSupplies);
+        }
+        if (draft.channelPrices && Array.isArray(draft.channelPrices)) {
+          setChannelPrices(draft.channelPrices);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  // Guardar borrador en sessionStorage reactivamente ante cambios (Punto E)
+  useEffect(() => {
+    try {
+      if (name || category || selectedSupplies.length > 0) {
+        sessionStorage.setItem(
+          "haba_draft_nuevo_producto",
+          JSON.stringify({
+            name,
+            category,
+            customCategory,
+            description,
+            currentStep,
+            workTimeMinutes,
+            selectedSupplies,
+            channelPrices,
+          })
+        );
+      }
+    } catch {
+      // ignore
+    }
+  }, [name, category, customCategory, description, currentStep, workTimeMinutes, selectedSupplies, channelPrices]);
 
   // Cálculos reactivos de costos:
   // 1. Costo directo de materiales (Insumos + Packaging + Merma %)
@@ -411,6 +459,13 @@ export default function NuevoProductoPage() {
         throw new Error(`Error al guardar los precios: ${pricesError.message}. Operación revertida.`);
       }
 
+      // Limpiar borrador de sesión
+      try {
+        sessionStorage.removeItem("haba_draft_nuevo_producto");
+      } catch {
+        // ignore
+      }
+
       // Redirigir con éxito
       router.push("/productos");
     } catch (err: any) {
@@ -663,17 +718,31 @@ export default function NuevoProductoPage() {
             </div>
           </div>
 
-          {/* Banner Didáctico Paso 2 */}
-          <div className="bg-[#F0FAF4] border border-[#DCF4D7] p-3 rounded-2xl flex items-start gap-2.5">
-            <div className="w-6 h-6 rounded-xl bg-[#DCF4D7] text-[#1F7A4C] flex items-center justify-center flex-shrink-0 mt-0.5">
-              <Sparkles className="w-3.5 h-3.5" />
-            </div>
-            <div className="text-[11px] leading-snug text-[#2B2B2B] space-y-0.5">
-              <p className="font-bold text-[#1F7A4C]">¿Cómo costear los materiales y la merma?</p>
-              <p className="text-[#555]">
-                Ingresá la cantidad que lleva 1 producto terminado. Si al cortar o producir hay recortes o desperdicios que se pierden, agregá un <strong>% de Merma</strong> (ej: 5% o 10%) para que el costo real quede cubierto.
-              </p>
-            </div>
+          {/* Banner Didáctico Paso 2 (Minimizable - Punto G) */}
+          <div className="bg-[#F0FAF4] border border-[#DCF4D7] rounded-2xl overflow-hidden transition-all">
+            <button
+              type="button"
+              onClick={() => setShowWasteInfo(!showWasteInfo)}
+              className="w-full p-2.5 sm:p-3 flex items-center justify-between text-left hover:bg-[#DCF4D7]/30 transition"
+            >
+              <div className="flex items-center gap-2">
+                <div className="w-5 h-5 rounded-lg bg-[#DCF4D7] text-[#1F7A4C] flex items-center justify-center flex-shrink-0">
+                  <Sparkles className="w-3 h-3" />
+                </div>
+                <span className="font-bold text-[11px] text-[#1F7A4C]">¿Cómo costear los materiales y la merma?</span>
+              </div>
+              <div className="flex items-center gap-1 text-[10px] text-[#1F7A4C] font-semibold bg-white/70 px-2 py-0.5 rounded-full border border-[#DCF4D7]">
+                <span>{showWasteInfo ? "Ocultar" : "Ver explicación"}</span>
+                {showWasteInfo ? <ChevronRight className="w-3 h-3 rotate-90 transition-transform" /> : <ChevronRight className="w-3 h-3 transition-transform" />}
+              </div>
+            </button>
+            {showWasteInfo && (
+              <div className="px-3 pb-3 pt-0.5 text-[11px] leading-snug text-[#555] border-t border-[#DCF4D7]/60 animate-in fade-in duration-150">
+                <p className="pt-2">
+                  Ingresás la cantidad que lleva 1 producto terminado. Si al cortar o producir hay recortes o desperdicios que se pierden, agregá un <strong>% de Merma</strong> (ej: 5% o 10%) para que el costo real quede cubierto.
+                </p>
+              </div>
+            )}
           </div>
 
           {selectedSupplies.length === 0 ? (
@@ -969,17 +1038,31 @@ export default function NuevoProductoPage() {
             </div>
           </div>
 
-          {/* Banner Didáctico Paso 4 */}
-          <div className="bg-[#F0FAF4] border border-[#DCF4D7] p-3 rounded-2xl flex items-start gap-2.5">
-            <div className="w-6 h-6 rounded-xl bg-[#DCF4D7] text-[#1F7A4C] flex items-center justify-center flex-shrink-0 mt-0.5">
-              <Sparkles className="w-3.5 h-3.5" />
-            </div>
-            <div className="text-[11px] leading-snug text-[#2B2B2B] space-y-0.5">
-              <p className="font-bold text-[#1F7A4C]">Costo base: {formatCurrency(totalCost)}</p>
-              <p className="text-[#555]">
-                Ajustá el slider del margen (%) o escribí directamente el precio de venta en pesos. HABA calcula al instante el <strong>precio sugerido</strong> y tu <strong>ganancia neta limpia</strong>.
-              </p>
-            </div>
+          {/* Banner Didáctico Paso 4 (Minimizable - Punto G) */}
+          <div className="bg-[#F0FAF4] border border-[#DCF4D7] rounded-2xl overflow-hidden transition-all">
+            <button
+              type="button"
+              onClick={() => setShowChannelInfo(!showChannelInfo)}
+              className="w-full p-2.5 sm:p-3 flex items-center justify-between text-left hover:bg-[#DCF4D7]/30 transition"
+            >
+              <div className="flex items-center gap-2">
+                <div className="w-5 h-5 rounded-lg bg-[#DCF4D7] text-[#1F7A4C] flex items-center justify-center flex-shrink-0">
+                  <Sparkles className="w-3 h-3" />
+                </div>
+                <span className="font-bold text-[11px] text-[#1F7A4C]">Costo base: {formatCurrency(totalCost)}</span>
+              </div>
+              <div className="flex items-center gap-1 text-[10px] text-[#1F7A4C] font-semibold bg-white/70 px-2 py-0.5 rounded-full border border-[#DCF4D7]">
+                <span>{showChannelInfo ? "Ocultar" : "Ver explicación"}</span>
+                {showChannelInfo ? <ChevronRight className="w-3 h-3 rotate-90 transition-transform" /> : <ChevronRight className="w-3 h-3 transition-transform" />}
+              </div>
+            </button>
+            {showChannelInfo && (
+              <div className="px-3 pb-3 pt-0.5 text-[11px] leading-snug text-[#555] border-t border-[#DCF4D7]/60 animate-in fade-in duration-150">
+                <p className="pt-2">
+                  Ajustá el slider del margen (%) o escribí directamente el precio de venta en pesos. HABA calcula al instante el <strong>precio sugerido</strong> y tu <strong>ganancia neta limpia</strong>.
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="space-y-3">

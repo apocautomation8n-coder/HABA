@@ -174,6 +174,51 @@ function NuevoPresupuestoContent() {
     fetchQuoteToEdit();
   }, [editId, supabase]);
 
+  // Restaurar borrador si el usuario salió temporalmente de la app (Punto E)
+  useEffect(() => {
+    if (editId) return;
+    try {
+      const saved = sessionStorage.getItem("haba_draft_nuevo_presupuesto");
+      if (saved) {
+        const draft = JSON.parse(saved);
+        if (draft.clientName) setClientName(draft.clientName);
+        if (draft.clientContact) setClientContact(draft.clientContact);
+        if (draft.deliveryDate) setDeliveryDate(draft.deliveryDate);
+        if (draft.notes) setNotes(draft.notes);
+        if (draft.discountPercent !== undefined) setDiscountPercent(draft.discountPercent);
+        if (draft.shippingCost !== undefined) setShippingCost(draft.shippingCost);
+        if (draft.items && Array.isArray(draft.items) && draft.items.length > 0) {
+          setItems(draft.items);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, [editId]);
+
+  // Guardar borrador en sessionStorage reactivamente mientras se escribe (Punto E)
+  useEffect(() => {
+    if (editId) return;
+    try {
+      if (clientName || clientContact || items.length > 0 || notes) {
+        sessionStorage.setItem(
+          "haba_draft_nuevo_presupuesto",
+          JSON.stringify({
+            clientName,
+            clientContact,
+            deliveryDate,
+            notes,
+            discountPercent,
+            shippingCost,
+            items,
+          })
+        );
+      }
+    } catch {
+      // ignore
+    }
+  }, [editId, clientName, clientContact, deliveryDate, notes, discountPercent, shippingCost, items]);
+
   // Si viene con parámetro ?productId=[id], preseleccionar automáticamente el producto
   useEffect(() => {
     if (!productIdParam || isEditing || products.length === 0) return;
@@ -359,6 +404,13 @@ function NuevoPresupuestoContent() {
 
       if (itemsError) {
         console.error("Error inserting quote items:", itemsError);
+      }
+
+      // Limpiar borrador de sesión
+      try {
+        sessionStorage.removeItem("haba_draft_nuevo_presupuesto");
+      } catch {
+        // ignore
       }
 
       // Redirigir a la vista previa oficial del presupuesto recién creado
