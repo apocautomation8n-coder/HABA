@@ -25,10 +25,11 @@ import {
   Copy,
   Loader2,
   Receipt,
+  Boxes,
 } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
-import { formatCurrency } from "@/lib/units";
+import { formatCurrency, calculateUnitCost } from "@/lib/units";
 import {
   PRODUCT_CATEGORIES,
   parseProductMeta,
@@ -42,6 +43,22 @@ interface ProductPrice {
   channel_name: string;
   profit_margin_percent: number;
   selling_price: number;
+}
+
+export interface ProductSupplyItem {
+  id: string;
+  quantity: number;
+  supply_id: string;
+  supplies?: {
+    id: string;
+    name: string;
+    category?: string;
+    current_price: number;
+    use_unit?: string;
+    purchase_unit?: string;
+    purchase_quantity?: number;
+    conversion_factor?: number;
+  } | null;
 }
 
 interface Product {
@@ -58,6 +75,7 @@ interface Product {
   needs_price_review: boolean;
   created_at: string;
   product_prices?: ProductPrice[];
+  product_supplies?: ProductSupplyItem[];
 }
 
 export default function ProductosPage() {
@@ -86,7 +104,22 @@ export default function ProductosPage() {
         .from("products")
         .select(`
           *,
-          product_prices (*)
+          product_prices (*),
+          product_supplies (
+            id,
+            quantity,
+            supply_id,
+            supplies (
+              id,
+              name,
+              category,
+              current_price,
+              use_unit,
+              purchase_unit,
+              purchase_quantity,
+              conversion_factor
+            )
+          )
         `)
         .order("created_at", { ascending: false });
 
@@ -882,6 +915,68 @@ export default function ProductosPage() {
                         <div className="flex justify-between text-neutral-600">
                           <span>Gastos fijos prorrateados:</span>
                           <span className="font-semibold">{formatCurrency(product.indirect_cost)}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Desglose de Insumos y Materiales de la Receta */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider flex items-center gap-1.5">
+                          <Boxes className="w-3.5 h-3.5 text-[#3BB578]" />
+                          Insumos de la Receta:
+                        </span>
+                        <span className="text-[10px] text-neutral-400 font-medium">
+                          {product.product_supplies?.length || 0}{" "}
+                          {product.product_supplies?.length === 1 ? "insumo" : "insumos"}
+                        </span>
+                      </div>
+
+                      {product.product_supplies && product.product_supplies.length > 0 ? (
+                        <div className="space-y-1.5">
+                          {product.product_supplies.map((item) => {
+                            const supply = item.supplies;
+                            const unitCost = supply
+                              ? calculateUnitCost(
+                                  Number(supply.current_price || 0),
+                                  Number(supply.purchase_quantity || 1),
+                                  Number(supply.conversion_factor || 1)
+                                )
+                              : 0;
+                            const subtotalCost = unitCost * Number(item.quantity || 0);
+
+                            return (
+                              <div
+                                key={item.id}
+                                className="p-2.5 bg-neutral-50/80 rounded-2xl border border-neutral-200/60 flex items-center justify-between text-xs hover:bg-neutral-50 transition"
+                              >
+                                <div className="min-w-0 pr-2">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="font-bold text-neutral-800 truncate">
+                                      {supply?.name || "Insumo"}
+                                    </span>
+                                    {supply?.category && (
+                                      <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-md bg-neutral-200/60 text-neutral-600">
+                                        {supply.category === "packaging" ? "Packaging" : "Materia prima"}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="text-[10px] text-neutral-400 block mt-0.5">
+                                    {item.quantity} {supply?.use_unit || "u"} • {formatCurrency(unitCost)} /{supply?.use_unit || "u"}
+                                  </span>
+                                </div>
+                                <div className="text-right flex-shrink-0">
+                                  <span className="font-extrabold text-[#1F7A4C] text-xs block">
+                                    {formatCurrency(subtotalCost)}
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="p-3 bg-neutral-50 rounded-xl border border-dashed border-neutral-200 text-center text-xs text-neutral-400 italic">
+                          Este producto no tiene insumos asignados en su receta.
                         </div>
                       )}
                     </div>
