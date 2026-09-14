@@ -21,6 +21,7 @@ import { formatCurrency, calculateUnitCost } from "@/lib/units";
 import { SupplyModal, SupplyItem } from "@/components/SupplyModal";
 import { PriceHistoryDrawer } from "@/components/insumos/PriceHistoryDrawer";
 import { DeleteSupplyModal } from "@/components/insumos/DeleteSupplyModal";
+import { SupplyDetailModal } from "@/components/insumos/SupplyDetailModal";
 import { Insumo, PriceRecord } from "@/types/insumo";
 
 export default function InsumosPage() {
@@ -34,6 +35,7 @@ export default function InsumosPage() {
   // Modales
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSupply, setEditingSupply] = useState<SupplyItem | null>(null);
+  const [selectedSupplyForDetail, setSelectedSupplyForDetail] = useState<SupplyItem | null>(null);
 
   // Modal de Eliminación con Validación de Integridad
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -386,7 +388,8 @@ export default function InsumosPage() {
             return (
               <div
                 key={supply.id}
-                className="bg-white rounded-3xl p-4 border border-[#EAF0E8] shadow-sm hover:shadow-md transition flex flex-col space-y-3"
+                onClick={() => setSelectedSupplyForDetail(supply)}
+                className="bg-white rounded-3xl p-4 border border-[#EAF0E8] shadow-sm hover:shadow-md transition flex flex-col space-y-3 cursor-pointer group hover:border-[#C3EBC0]"
               >
                 {/* Header Card */}
                 <div className="flex items-start justify-between">
@@ -405,7 +408,7 @@ export default function InsumosPage() {
                       )}
                     </div>
                     <div>
-                      <h4 className="text-sm font-bold text-neutral-800 leading-snug">
+                      <h4 className="text-sm font-bold text-neutral-800 leading-snug group-hover:text-[#1F7A4C] transition-colors">
                         {supply.name}
                       </h4>
                       <div className="flex items-center gap-1.5 mt-0.5">
@@ -428,14 +431,18 @@ export default function InsumosPage() {
                   {/* Acciones */}
                   <div className="flex items-center gap-1">
                     <button
-                      onClick={() => handleOpenHistoryDrawer(supply)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleOpenHistoryDrawer(supply);
+                      }}
                       className="p-1.5 text-neutral-400 hover:text-amber-600 hover:bg-amber-50 rounded-xl transition"
                       title="Ver gráfico e historial de precios"
                     >
                       <TrendingUp className="w-4 h-4" />
                     </button>
                     <button
-                      onClick={() => {
+                      onClick={(e) => {
+                        e.stopPropagation();
                         setEditingSupply(supply);
                         setIsModalOpen(true);
                       }}
@@ -445,7 +452,10 @@ export default function InsumosPage() {
                       <Edit2 className="w-4 h-4" />
                     </button>
                     <button
-                      onClick={() => handleRequestDelete(supply)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRequestDelete(supply);
+                      }}
                       className="p-1.5 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition"
                       title="Eliminar insumo"
                     >
@@ -456,8 +466,7 @@ export default function InsumosPage() {
 
                 {/* Precios y Costo Unitario */}
                 <div
-                  onClick={() => handleOpenHistoryDrawer(supply)}
-                  className="bg-neutral-50 hover:bg-[#f3f8f3] cursor-pointer rounded-2xl p-3 flex items-center justify-between border border-neutral-100 transition"
+                  className="bg-neutral-50 group-hover:bg-[#f3f8f3] rounded-2xl p-3 flex items-center justify-between border border-neutral-100 transition"
                 >
                   <div>
                     <span className="text-[10px] text-neutral-400 block font-medium">
@@ -480,7 +489,7 @@ export default function InsumosPage() {
                         </span>
                       </span>
                     </div>
-                    <ChevronRight className="w-4 h-4 text-neutral-400" />
+                    <ChevronRight className="w-4 h-4 text-neutral-400 group-hover:translate-x-0.5 transition-transform" />
                   </div>
                 </div>
               </div>
@@ -526,6 +535,18 @@ export default function InsumosPage() {
         insumo={selectedInsumoForDrawer}
         onAddPriceRecord={handleAddPriceFromDrawer}
         onDeletePriceRecord={handleDeletePriceFromDrawer}
+      />
+
+      {/* Modal de Detalle de la Carga del Insumo */}
+      <SupplyDetailModal
+        isOpen={!!selectedSupplyForDetail}
+        supply={selectedSupplyForDetail}
+        onClose={() => setSelectedSupplyForDetail(null)}
+        onEdit={(supply) => {
+          setEditingSupply(supply);
+          setIsModalOpen(true);
+        }}
+        onOpenHistory={(supply) => handleOpenHistoryDrawer(supply)}
       />
     </div>
   );
