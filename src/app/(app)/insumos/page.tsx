@@ -183,6 +183,78 @@ export default function InsumosPage() {
     }
   };
 
+  // Eliminar registro de precio desde el Drawer
+  const handleDeletePriceFromDrawer = async (insumoId: string, recordId: string) => {
+    try {
+      if (!selectedInsumoForDrawer) return;
+
+      // 1. Eliminar de supply_price_history si es un registro persistido en BD
+      if (!recordId.startsWith("init-") && !recordId.startsWith("current-")) {
+        const { error } = await supabase
+          .from("supply_price_history")
+          .delete()
+          .eq("id", recordId);
+
+        if (error) throw error;
+      }
+
+      // 2. Traer el historial actualizado restante
+      const { data: updatedHistoryData } = await supabase
+        .from("supply_price_history")
+        .select("*")
+        .eq("supply_id", insumoId)
+        .order("changed_at", { ascending: true });
+
+      let newHistory: PriceRecord[] = [];
+      let newCurrentPrice = selectedInsumoForDrawer.current_price;
+      let newUpdatedAt = selectedInsumoForDrawer.updated_at;
+
+      if (updatedHistoryData && updatedHistoryData.length > 0) {
+        newHistory = updatedHistoryData.map((h: any) => ({
+          id: String(h.id),
+          price: Number(h.price),
+          date: h.changed_at || new Date().toISOString(),
+        }));
+
+        // El precio actual pasa a ser el último registro que quedó en el historial
+        const latestRemaining = newHistory[newHistory.length - 1];
+        newCurrentPrice = latestRemaining.price;
+        newUpdatedAt = latestRemaining.date;
+
+        // Si cambió el precio activo, actualizar la tabla supplies
+        await supabase
+          .from("supplies")
+          .update({
+            current_price: newCurrentPrice,
+            updated_at: newUpdatedAt,
+          })
+          .eq("id", insumoId);
+      } else {
+        newHistory = [
+          {
+            id: "init-" + insumoId,
+            price: Number(selectedInsumoForDrawer.current_price),
+            date: new Date().toISOString(),
+            note: "Precio de reposición actual",
+          },
+        ];
+      }
+
+      setSelectedInsumoForDrawer({
+        ...selectedInsumoForDrawer,
+        current_price: newCurrentPrice,
+        updated_at: newUpdatedAt,
+        history: newHistory,
+      });
+
+      await loadSupplies();
+      setToastMessage("Registro de precio eliminado correctamente.");
+      setTimeout(() => setToastMessage(null), 3000);
+    } catch (err: any) {
+      alert("Error al eliminar el registro de precio: " + err.message);
+    }
+  };
+
   const filteredSupplies = useMemo(() => {
     return supplies.filter((item) => {
       const matchesCategory = filter === "todos" || item.category === filter;
@@ -453,6 +525,7 @@ export default function InsumosPage() {
         onClose={() => setIsDrawerOpen(false)}
         insumo={selectedInsumoForDrawer}
         onAddPriceRecord={handleAddPriceFromDrawer}
+        onDeletePriceRecord={handleDeletePriceFromDrawer}
       />
     </div>
   );
