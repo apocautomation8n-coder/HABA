@@ -172,30 +172,25 @@ export default function DashboardPage() {
         </Link>
       </div>
 
-      {/* Tarjeta Destacada: ¿Por dónde empezar? */}
+      {/* Tarjeta Destacada: Comenzá acá */}
       <Link
         href="/insumos"
         className="relative overflow-hidden bg-gradient-to-r from-[#DCF4D7] via-white to-[#DCF4D7]/60 rounded-3xl p-4 border-2 border-[#3BB578]/50 shadow-sm hover:shadow-md hover:border-[#3BB578] transition-all group flex items-center justify-between"
       >
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3.5">
           <div className="w-10 h-10 rounded-2xl bg-[#3BB578] text-white flex items-center justify-center flex-shrink-0 shadow-xs group-hover:scale-110 transition-transform">
             <Sparkles className="w-5 h-5" />
           </div>
           <div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-[9.5px] uppercase tracking-wider font-bold bg-[#3BB578] text-white px-2 py-0.5 rounded-full font-body">
-                Comenzá acá
-              </span>
-              <p className="text-xs sm:text-sm font-bold text-[#1F7A4C] font-display">
-                ¿Por dónde empezar?
-              </p>
-            </div>
-            <p className="text-[11px] text-[#2B2B2B] mt-1 font-body leading-snug">
+            <span className="inline-flex items-center justify-center text-xs font-bold bg-[#3BB578] text-white px-3.5 py-1 rounded-full font-body shadow-xs tracking-wide">
+              Comenzá acá
+            </span>
+            <p className="text-[11.5px] text-[#2B2B2B] mt-1.5 font-body leading-snug">
               Cargá tus <strong>insumos y packaging</strong> para luego armar tus productos y calcular tus precios.
             </p>
           </div>
         </div>
-        <div className="w-8 h-8 rounded-full bg-[#3BB578] text-white flex items-center justify-center flex-shrink-0 group-hover:translate-x-1 transition-transform ml-2">
+        <div className="w-8 h-8 rounded-full bg-[#3BB578] text-white flex items-center justify-center flex-shrink-0 group-hover:translate-x-1 transition-transform ml-2 shadow-xs">
           <ArrowRight className="w-4 h-4" />
         </div>
       </Link>
