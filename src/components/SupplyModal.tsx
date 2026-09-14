@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, Sparkles, AlertCircle, Calculator, Info } from "lucide-react";
+import { X, Sparkles, AlertCircle, Calculator, Info, ChevronDown, ChevronUp } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { UNIT_PRESETS, calculateUnitCost, formatCurrency } from "@/lib/units";
 import { useModalThemeColor } from "@/hooks/useModalThemeColor";
@@ -48,6 +48,32 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Sugerencia minimizable (Punto G) con persistencia en localStorage
+  const [isTipCollapsed, setIsTipCollapsed] = useState(false);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("haba_supply_modal_tip_collapsed");
+      if (saved !== null) {
+        setIsTipCollapsed(saved === "true");
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const toggleTipCollapsed = () => {
+    setIsTipCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("haba_supply_modal_tip_collapsed", String(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  };
 
   useEffect(() => {
     setMounted(true);
@@ -96,17 +122,65 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
       );
       setSelectedPresetId(matchingPreset ? matchingPreset.id : "custom");
     } else {
-      setName("");
-      setCategory("materia_prima");
-      setPurchaseUnit("kg");
-      setPurchaseQuantity("");
-      setCurrentPrice("");
-      setUseUnit("g");
-      setConversionFactor(1000);
-      setSelectedPresetId("kg-g");
+      // Intentar restaurar borrador no guardado si el usuario salió de la app (Punto E)
+      let restored = false;
+      try {
+        const savedDraft = sessionStorage.getItem("haba_draft_supply_modal");
+        if (savedDraft) {
+          const draft = JSON.parse(savedDraft);
+          if (draft.name || draft.currentPrice) {
+            setName(draft.name || "");
+            setCategory(draft.category || "materia_prima");
+            setPurchaseUnit(draft.purchaseUnit || "kg");
+            setPurchaseQuantity(draft.purchaseQuantity ?? "");
+            setCurrentPrice(draft.currentPrice ?? "");
+            setUseUnit(draft.useUnit || "g");
+            setConversionFactor(draft.conversionFactor ?? 1000);
+            setSelectedPresetId(draft.selectedPresetId || "kg-g");
+            restored = true;
+          }
+        }
+      } catch {
+        // ignore
+      }
+
+      if (!restored) {
+        setName("");
+        setCategory("materia_prima");
+        setPurchaseUnit("kg");
+        setPurchaseQuantity("");
+        setCurrentPrice("");
+        setUseUnit("g");
+        setConversionFactor(1000);
+        setSelectedPresetId("kg-g");
+      }
       setError(null);
     }
   }, [initialSupply, isOpen]);
+
+  // Persistir en sessionStorage mientras el usuario escribe para evitar pérdidas al cambiar de pestaña o salir de la app (Punto E)
+  useEffect(() => {
+    if (!isOpen || initialSupply) return;
+    try {
+      if (name || currentPrice) {
+        sessionStorage.setItem(
+          "haba_draft_supply_modal",
+          JSON.stringify({
+            name,
+            category,
+            purchaseUnit,
+            purchaseQuantity,
+            currentPrice,
+            useUnit,
+            conversionFactor,
+            selectedPresetId,
+          })
+        );
+      }
+    } catch {
+      // ignore
+    }
+  }, [isOpen, initialSupply, name, category, purchaseUnit, purchaseQuantity, currentPrice, useUnit, conversionFactor, selectedPresetId]);
 
   if (!isOpen || !mounted) return null;
 
@@ -233,6 +307,12 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
             changed_at: nowIso,
           });
         }
+        // Limpiar borrador guardado en sesión
+        try {
+          sessionStorage.removeItem("haba_draft_supply_modal");
+        } catch {
+          // ignore
+        }
       }
 
       onSuccess();
@@ -291,17 +371,32 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
               </div>
             )}
 
-            {/* Banner Didáctico HABA */}
-            <div className="bg-[#F0FAF4] border border-[#DCF4D7] p-3 rounded-2xl flex items-start gap-2.5">
-              <div className="w-6 h-6 rounded-xl bg-[#DCF4D7] text-[#1F7A4C] flex items-center justify-center flex-shrink-0 mt-0.5">
-                <Sparkles className="w-3.5 h-3.5" />
-              </div>
-              <div className="text-[11px] leading-snug text-[#2B2B2B] space-y-0.5">
-                <p className="font-bold text-[#1F7A4C]">¿Cómo calcula HABA el costo?</p>
-                <p className="text-[#555]">
-                  Ingresás cuánto comprás (ej: <strong>1 paquete</strong> de <strong>$5.000</strong>) y cuánto te rinde (ej: <strong>50 bolsas</strong>). HABA calcula el valor exacto por unidad de uso (<strong>$100 c/u</strong>) para que tus productos siempre tengan el costo real al día.
-                </p>
-              </div>
+            {/* Banner Didáctico HABA (Minimizable - Punto G) */}
+            <div className="bg-[#F0FAF4] border border-[#DCF4D7] rounded-2xl overflow-hidden transition-all duration-200">
+              <button
+                type="button"
+                onClick={toggleTipCollapsed}
+                className="w-full p-2.5 sm:p-3 flex items-center justify-between text-left hover:bg-[#DCF4D7]/30 transition"
+              >
+                <div className="flex items-center gap-2">
+                  <div className="w-5 h-5 rounded-lg bg-[#DCF4D7] text-[#1F7A4C] flex items-center justify-center flex-shrink-0">
+                    <Sparkles className="w-3 h-3" />
+                  </div>
+                  <span className="font-bold text-[11px] text-[#1F7A4C]">¿Cómo calcula HABA el costo?</span>
+                </div>
+                <div className="flex items-center gap-1 text-[10px] text-[#1F7A4C] font-semibold bg-white/70 px-2 py-0.5 rounded-full border border-[#DCF4D7]">
+                  <span>{isTipCollapsed ? "Ver explicación" : "Minimizar"}</span>
+                  {isTipCollapsed ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />}
+                </div>
+              </button>
+
+              {!isTipCollapsed && (
+                <div className="px-3 pb-3 pt-0.5 text-[11px] leading-snug text-[#555] border-t border-[#DCF4D7]/60 animate-in fade-in duration-150">
+                  <p className="pt-2">
+                    Ingresás cuánto comprás (ej: <strong>1 paquete</strong> de <strong>$5.000</strong>) y cuánto te rinde (ej: <strong>50 bolsas</strong>). HABA calcula el valor exacto por unidad de uso (<strong>$100 c/u</strong>) para que tus productos siempre tengan el costo real al día.
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Categoría */}

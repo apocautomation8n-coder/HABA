@@ -7,6 +7,7 @@ import { Home, Boxes, ShoppingBag, Receipt, Settings, ShieldCheck } from "lucide
 import { createClient } from "@/lib/supabase/client";
 
 import { checkIsAdmin } from "@/lib/auth-helpers";
+import { getOutdatedProductsCount } from "@/lib/products";
 
 interface NavItem {
   label: string;
@@ -26,9 +27,10 @@ export const BottomNav: React.FC = () => {
   const pathname = usePathname();
   const supabase = createClient();
   const [isAdmin, setIsAdmin] = useState(false);
+  const [productAlertsCount, setProductAlertsCount] = useState(0);
 
   useEffect(() => {
-    async function checkAdmin() {
+    async function checkAdminAndAlerts() {
       try {
         const {
           data: { user },
@@ -38,28 +40,31 @@ export const BottomNav: React.FC = () => {
           // 1. Verificación inmediata por email o metadata de Auth
           if (checkIsAdmin(user)) {
             setIsAdmin(true);
-            return;
+          } else {
+            // 2. Verificación por endpoint seguro con service role
+            try {
+              const res = await fetch("/api/user/profile");
+              if (res.ok) {
+                const data = await res.json();
+                if (data.isAdmin) {
+                  setIsAdmin(true);
+                }
+              }
+            } catch {
+              // Ignorar error de red secundario
+            }
           }
 
-          // 2. Verificación por endpoint seguro con service role
-          try {
-            const res = await fetch("/api/user/profile");
-            if (res.ok) {
-              const data = await res.json();
-              if (data.isAdmin) {
-                setIsAdmin(true);
-              }
-            }
-          } catch {
-            // Ignorar error de red secundario
-          }
+          // Cargar cantidad de alertas en productos (Punto H)
+          const alertCount = await getOutdatedProductsCount(supabase);
+          setProductAlertsCount(alertCount);
         }
       } catch (err) {
         console.error("Error checking role in BottomNav:", err);
       }
     }
-    checkAdmin();
-  }, [supabase]);
+    checkAdminAndAlerts();
+  }, [supabase, pathname]);
 
   const navItems = isAdmin
     ? [
@@ -77,6 +82,9 @@ export const BottomNav: React.FC = () => {
             pathname === item.href ||
             (item.href !== "/dashboard" && pathname.startsWith(item.href));
 
+          const isProductItem = item.href === "/productos";
+          const hasProductAlert = isProductItem && productAlertsCount > 0;
+
           return (
             <li key={item.href} className="flex-1">
               <Link
@@ -88,13 +96,19 @@ export const BottomNav: React.FC = () => {
                 }`}
               >
                 <div
-                  className={`p-1.5 rounded-xl transition-all duration-200 ${
+                  className={`relative p-1.5 rounded-xl transition-all duration-200 ${
                     isActive
                       ? "bg-[#DCF4D7] text-[#3BB578] scale-105 shadow-xs"
                       : "bg-transparent text-[#7A7A7A]"
                   }`}
                 >
                   <Icon className="w-4 h-4 sm:w-5 sm:h-5" strokeWidth={isActive ? 2.5 : 2} />
+                  {hasProductAlert && (
+                    <span 
+                      className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-amber-500 border-2 border-white rounded-full animate-pulse shadow-xs" 
+                      title={`${productAlertsCount} producto(s) con aumento de costos`}
+                    />
+                  )}
                 </div>
                 <span className="text-[9.5px] sm:text-[10px] mt-0.5 tracking-tight truncate max-w-[50px] text-center">
                   {item.label}

@@ -111,6 +111,18 @@ export default function PresupuestoPreviewPage() {
     loadQuoteAndProfile();
   }, [id, supabase]);
 
+  // Extraer envío y notas limpias
+  const shippingCost = React.useMemo(() => {
+    if (!quote?.notes) return 0;
+    const match = quote.notes.match(/\[ENVIO:(\d+(\.\d+)?)\]/);
+    return match ? Number(match[1]) || 0 : 0;
+  }, [quote?.notes]);
+
+  const cleanNotes = React.useMemo(() => {
+    if (!quote?.notes) return "";
+    return quote.notes.replace(/\[ENVIO:(\d+(\.\d+)?)\]\n?/, "").trim();
+  }, [quote?.notes]);
+
   // Compartir por WhatsApp / Web Share API
   const handleShareWhatsApp = async () => {
     if (!quote) return;
@@ -134,8 +146,13 @@ export default function PresupuestoPreviewPage() {
           )}`
         : "";
 
-    const notesText = quote.notes
-      ? `\n\n📝 *Condiciones / Entrega:*\n${quote.notes}`
+    const shippingText =
+      shippingCost > 0
+        ? `\n🚚 Envío: ${formatCurrency(shippingCost)} (sujeto a tarifa del correo)`
+        : "";
+
+    const notesText = cleanNotes
+      ? `\n\n📝 *Condiciones / Entrega:*\n${cleanNotes}`
       : "";
 
     const fullMessage =
@@ -143,27 +160,25 @@ export default function PresupuestoPreviewPage() {
       `*Cliente:* ${quote.client_name}\n` +
       `*Emisión:* ${new Date(quote.created_at).toLocaleDateString("es-AR")}\n\n` +
       `*Detalle de Productos:*\n${itemsText}\n\n` +
-      `*Subtotal:* ${formatCurrency(quote.subtotal)}${discountText}\n` +
+      `*Subtotal:* ${formatCurrency(quote.subtotal)}${discountText}${shippingText}\n` +
       `*TOTAL FINAL:* ${formatCurrency(quote.total)}${notesText}\n\n` +
       `⏳ *Vigencia:* 15 días corridos con precios congelados.\n` +
       `📄 *Ver y descargar presupuesto oficial:*\n${previewUrl}\n\n` +
       `¡Muchas gracias por tu consulta!`;
 
-    // 1. Intentar con Web Share API primero si el navegador lo soporta
+    // 1. Intentar con Web Share API (SIN url separada para evitar que WhatsApp duplique el enlace al final)
     if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
       try {
         await navigator.share({
           title: `Presupuesto #${quote.quote_number} - ${quote.client_name}`,
           text: fullMessage,
-          url: previewUrl,
         });
         return;
       } catch (err: any) {
-        // Si el usuario canceló la acción (AbortError), no forzamos abrir WhatsApp
         if (err.name === "AbortError") {
           return;
         }
-        console.warn("Web Share API no disponible o rechazada, usando fallback de WhatsApp:", err);
+        console.warn("Web Share API fallback:", err);
       }
     }
 
@@ -212,14 +227,27 @@ export default function PresupuestoPreviewPage() {
 
   return (
     <div className="w-full flex flex-col space-y-4 pb-16">
-      {/* Estilos específicos para impresión impecable en hoja A4 */}
+      {/* Estilos específicos para impresión impecable en hoja A4 (Punto F) */}
       <style jsx global>{`
+        @page {
+          size: A4 portrait;
+          margin: 12mm 15mm;
+        }
         @media print {
-          body {
+          html, body {
             background-color: #ffffff !important;
             color: #1a1a1a !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            width: 100% !important;
+          }
+          main {
+            max-width: 100% !important;
+            width: 100% !important;
+            padding: 0 !important;
+            margin: 0 !important;
           }
           header,
           nav,
@@ -232,7 +260,7 @@ export default function PresupuestoPreviewPage() {
             box-shadow: none !important;
             border: 1px solid #e5e7eb !important;
             padding: 24px !important;
-            margin: 0 !important;
+            margin: 0 auto !important;
             max-width: 100% !important;
             width: 100% !important;
             border-radius: 12px !important;
@@ -295,8 +323,8 @@ export default function PresupuestoPreviewPage() {
 
       {/* Hoja del Presupuesto con Branding HABA (Estructura de Documento A4) */}
       <div className="quote-sheet bg-white rounded-3xl p-6 sm:p-10 border border-[#EAF0E8] shadow-sm max-w-3xl mx-auto w-full space-y-6">
-        {/* Cabecera Institucional HABA */}
-        <div className="flex items-start justify-between gap-4 border-b border-[#EAF0E8] pb-6">
+        {/* Cabecera Institucional y Branding (Puntos D y G) */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-[#EAF0E8] pb-6">
           <div className="flex items-start gap-3">
             <div className="w-12 h-12 rounded-2xl bg-[#DCF4D7] border border-[#C3EBC0] flex items-center justify-center flex-shrink-0 shadow-2xs">
               <HabaMascot size={40} />
@@ -308,31 +336,35 @@ export default function PresupuestoPreviewPage() {
                   Costos & Presupuestos
                 </span>
               </div>
-              <p className="text-xs text-neutral-500 font-medium">
+              <p className="text-xs text-neutral-600 font-medium">
                 {profile?.business_name ? (
-                  <span className="font-bold text-neutral-700">{profile.business_name}</span>
+                  <strong className="text-neutral-800 font-bold">{profile.business_name}</strong>
                 ) : profile?.full_name ? (
-                  <span>Taller de {profile.full_name}</span>
+                  <span>Taller de <strong>{profile.full_name}</strong></span>
                 ) : (
                   "Taller Artesanal & Confección"
                 )}
               </p>
               {profile?.email && (
-                <p className="text-[10px] text-neutral-400">{profile.email}</p>
+                <p className="text-[10.5px] text-neutral-400">{profile.email}</p>
               )}
             </div>
           </div>
 
-          <div className="text-right">
-            <span className="inline-block text-[10px] font-black uppercase tracking-wider bg-[#DCF4D7] text-[#1F7A4C] px-3 py-1 rounded-full border border-[#C3EBC0]">
-              Presupuesto Oficial
-            </span>
-            <div className="text-lg font-black text-neutral-800 mt-1">
-              N° #{String(quote.quote_number).padStart(4, "0")}
+          <div className="flex flex-col sm:items-end items-start w-full sm:w-auto bg-[#F8FAF8] sm:bg-transparent p-3 sm:p-0 rounded-2xl border sm:border-0 border-[#EAF0E8]">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="inline-block text-[10px] font-black uppercase tracking-wider bg-[#DCF4D7] text-[#1F7A4C] px-2.5 py-0.5 rounded-full border border-[#C3EBC0]">
+                Presupuesto Oficial
+              </span>
+              <span className="text-base sm:text-lg font-black text-neutral-800">
+                N° #{String(quote.quote_number).padStart(4, "0")}
+              </span>
             </div>
-            <p className="text-[11px] text-neutral-500 mt-0.5 flex items-center justify-end gap-1">
-              <Calendar className="w-3 h-3 text-neutral-400" />
-              <span>Emisión: {new Date(quote.created_at).toLocaleDateString("es-AR", { day: "2-digit", month: "long", year: "numeric" })}</span>
+            <p className="text-[11px] text-neutral-500 mt-1 flex items-center gap-1">
+              <Calendar className="w-3.5 h-3.5 text-neutral-400 flex-shrink-0" />
+              <span>
+                Emisión: <strong>{new Date(quote.created_at).toLocaleDateString("es-AR", { day: "2-digit", month: "long", year: "numeric" })}</strong>
+              </span>
             </p>
           </div>
         </div>
@@ -453,6 +485,13 @@ export default function PresupuestoPreviewPage() {
               </div>
             )}
 
+            {shippingCost > 0 && (
+              <div className="flex justify-between text-[#1F7A4C] font-semibold px-1">
+                <span>Costo de Envío:</span>
+                <span>+{formatCurrency(shippingCost)}</span>
+              </div>
+            )}
+
             {/* Total Final Destacado HABA */}
             <div className="bg-[#DCF4D7] border border-[#C3EBC0] p-3 rounded-2xl flex items-center justify-between text-[#1F7A4C] shadow-xs mt-1">
               <div>
@@ -467,18 +506,23 @@ export default function PresupuestoPreviewPage() {
                 {formatCurrency(quote.total)}
               </span>
             </div>
+            {shippingCost > 0 && (
+              <p className="text-[9.5px] text-neutral-400 text-right italic px-1 pt-0.5">
+                * Tarifa de envío cotizada sujeta a variación del correo.
+              </p>
+            )}
           </div>
         </div>
 
         {/* Notas y Condiciones Particulares */}
-        {quote.notes && (
+        {cleanNotes && (
           <div className="bg-[#FFFDF5] border border-[#FEF3C7] p-3.5 rounded-2xl space-y-1 text-xs text-amber-900">
             <span className="font-bold flex items-center gap-1.5 text-amber-800">
               <FileText className="w-3.5 h-3.5 text-amber-600" />
               <span>Condiciones de entrega y formas de pago:</span>
             </span>
             <p className="whitespace-pre-line text-neutral-700 leading-relaxed text-[11px]">
-              {quote.notes}
+              {cleanNotes}
             </p>
           </div>
         )}
