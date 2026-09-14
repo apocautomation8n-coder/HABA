@@ -21,6 +21,9 @@ import {
   Share2,
   Download,
   Edit2,
+  Search,
+  Truck,
+  X,
 } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
@@ -73,9 +76,13 @@ function NuevoPresupuestoContent() {
   const [notes, setNotes] = useState("");
   const [discountPercent, setDiscountPercent] = useState<number>(0);
 
+  // Costo de Envío (Punto B)
+  const [shippingCost, setShippingCost] = useState<number>(0);
+
   // Líneas del presupuesto
   const [items, setItems] = useState<QuoteItemLine[]>([]);
   const [isProductPickerOpen, setIsProductPickerOpen] = useState(false);
+  const [productSearch, setProductSearch] = useState("");
 
   // Cargar catálogo de productos con sus precios
   useEffect(() => {
@@ -136,7 +143,15 @@ function NuevoPresupuestoContent() {
         setClientContact(quote.client_contact || "");
         setDeliveryDate(quote.delivery_date ? quote.delivery_date.split("T")[0] : "");
         setDiscountPercent(quote.discount_percent || 0);
-        setNotes(quote.notes || "");
+        let rawNotes = quote.notes || "";
+        const shippingMatch = rawNotes.match(/\[ENVIO:(\d+(\.\d+)?)\]/);
+        if (shippingMatch) {
+          setShippingCost(Number(shippingMatch[1]) || 0);
+          rawNotes = rawNotes.replace(/\[ENVIO:(\d+(\.\d+)?)\]\n?/, "").trim();
+        } else if (quote.shipping_cost) {
+          setShippingCost(Number(quote.shipping_cost) || 0);
+        }
+        setNotes(rawNotes);
 
         if (quote.quote_items && quote.quote_items.length > 0) {
           setItems(
@@ -237,8 +252,8 @@ function NuevoPresupuestoContent() {
   }, [subtotal, discountPercent]);
 
   const total = useMemo(() => {
-    return Math.max(0, subtotal - discountAmount);
-  }, [subtotal, discountAmount]);
+    return Math.max(0, subtotal - discountAmount) + (shippingCost || 0);
+  }, [subtotal, discountAmount, shippingCost]);
 
   // Guardar presupuesto congelado en Supabase
   const handleSaveQuote = async () => {
@@ -251,6 +266,10 @@ function NuevoPresupuestoContent() {
       setErrorMsg("Agregá al menos un producto al presupuesto");
       return;
     }
+
+    const finalNotes = shippingCost > 0 
+      ? `[ENVIO:${shippingCost}]\n${notes.trim()}`.trim()
+      : notes.trim() || null;
 
     try {
       setLoading(true);
@@ -271,7 +290,7 @@ function NuevoPresupuestoContent() {
             discount_percent: discountPercent || 0,
             subtotal: subtotal,
             total: total,
-            notes: notes.trim() || null,
+            notes: finalNotes,
           })
           .eq("id", editId);
 
@@ -315,7 +334,7 @@ function NuevoPresupuestoContent() {
           discount_percent: discountPercent || 0,
           subtotal: subtotal,
           total: total,
-          notes: notes.trim() || null,
+          notes: finalNotes,
         })
         .select()
         .single();
@@ -408,6 +427,7 @@ function NuevoPresupuestoContent() {
           <span className="text-xs text-[#1F7A4C]">
             Subtotal: {formatCurrency(subtotal)}
             {discountPercent > 0 && ` | Dcto: -${discountPercent}%`}
+            {shippingCost > 0 && ` | Envío: +${formatCurrency(shippingCost)}`}
           </span>
         </div>
         <div className="text-right">
@@ -571,6 +591,31 @@ function NuevoPresupuestoContent() {
           </div>
         )}
 
+        {/* Costo de Envío (Punto B) */}
+        <div className="pt-3 border-t border-neutral-100 space-y-2">
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-semibold text-neutral-700 flex items-center gap-1.5">
+              <Truck className="w-3.5 h-3.5 text-[#3BB578]" />
+              <span>Costo de Envío ($)</span>
+            </label>
+            <div className="relative">
+              <span className="absolute left-2.5 top-1.5 text-xs text-neutral-400 font-bold">$</span>
+              <input
+                type="number"
+                min="0"
+                step="any"
+                value={shippingCost || ""}
+                onChange={(e) => setShippingCost(Math.max(0, parseFloat(e.target.value) || 0))}
+                placeholder="0"
+                className="w-28 pl-6 pr-2.5 py-1 text-xs bg-neutral-50 border border-neutral-200 rounded-xl text-right font-bold outline-none focus:border-[#3BB578]"
+              />
+            </div>
+          </div>
+          <p className="text-[10.5px] text-neutral-400 italic bg-neutral-50/70 p-2 rounded-xl border border-neutral-200/50">
+            🚚 Cotización al momento de presupuestar, sujeta a cambio de tarifa por la empresa de envío.
+          </p>
+        </div>
+
         {/* Descuento y Notas */}
         <div className="pt-3 border-t border-neutral-100 space-y-3">
           <div className="flex items-center justify-between">
@@ -608,14 +653,31 @@ function NuevoPresupuestoContent() {
           </div>
         </div>
 
-        <div className="pt-2 flex justify-end">
+        {/* Botón Emitir / Guardar con Estado de Error visible al pie (Punto C) */}
+        <div className="pt-3 border-t border-neutral-100 space-y-2">
+          {errorMsg && (
+            <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-2xl text-rose-700 text-xs flex items-center gap-2 animate-in fade-in slide-in-from-top-1">
+              <AlertCircle className="w-4 h-4 flex-shrink-0 text-rose-600" />
+              <span className="font-semibold">{errorMsg}</span>
+            </div>
+          )}
+
           <button
             onClick={handleSaveQuote}
-            disabled={loading || items.length === 0}
-            className="w-full py-3.5 bg-[#3BB578] hover:bg-[#2E9E65] disabled:opacity-60 text-white rounded-2xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-md"
+            disabled={loading}
+            className={`w-full py-3.5 text-white rounded-2xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-md ${
+              errorMsg
+                ? "bg-rose-600 hover:bg-rose-700 active:scale-[0.99] shadow-rose-200 ring-2 ring-rose-300"
+                : "bg-[#3BB578] hover:bg-[#2E9E65] active:scale-[0.99]"
+            } ${loading ? "opacity-75 cursor-not-allowed" : ""}`}
           >
             {loading ? (
               <span>{isEditing ? "Guardando cambios..." : "Generando Presupuesto..."}</span>
+            ) : errorMsg ? (
+              <>
+                <AlertCircle className="w-4 h-4" />
+                <span>Revisar datos requeridos para emitir</span>
+              </>
             ) : (
               <>
                 <Check className="w-4 h-4" />
@@ -655,6 +717,12 @@ function NuevoPresupuestoContent() {
                   Sin descuento
                 </span>
               )}
+
+              {shippingCost > 0 && (
+                <span className="text-[10px] font-bold text-[#1F7A4C] bg-[#DCF4D7] border border-[#C3EBC0] px-1.5 py-0.2 rounded-md flex items-center gap-0.5">
+                  🚚 Envío: +{formatCurrency(shippingCost)}
+                </span>
+              )}
             </div>
           </div>
 
@@ -683,20 +751,63 @@ function NuevoPresupuestoContent() {
             <div className="flex items-center justify-between pb-3 border-b border-neutral-100 flex-shrink-0">
               <h3 className="text-sm font-bold text-neutral-800">Agregar Producto del Catálogo</h3>
               <button
-                onClick={() => setIsProductPickerOpen(false)}
+                onClick={() => {
+                  setIsProductPickerOpen(false);
+                  setProductSearch("");
+                }}
                 className="p-1.5 text-neutral-400 hover:text-neutral-600 rounded-full"
               >
                 ✕
               </button>
             </div>
 
-            <div className="overflow-y-auto flex-1 min-h-0 my-3 space-y-3 pr-1 overscroll-contain">
-              {products.length === 0 ? (
-                <div className="p-4 text-center text-xs text-neutral-500">
-                  No tenés productos cargados en tu catálogo. Creá uno en Productos primero.
-                </div>
-              ) : (
-                products.map((prod) => (
+            {/* Buscador predictivo en tiempo real */}
+            <div className="pt-3 pb-1 flex-shrink-0">
+              <div className="relative">
+                <Search className="w-4 h-4 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={productSearch}
+                  onChange={(e) => setProductSearch(e.target.value)}
+                  placeholder="Buscar producto por nombre..."
+                  className="w-full pl-9 pr-8 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none transition"
+                  autoFocus
+                />
+                {productSearch && (
+                  <button
+                    onClick={() => setProductSearch("")}
+                    className="p-1 text-neutral-400 hover:text-neutral-600 absolute right-2.5 top-1/2 -translate-y-1/2"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="overflow-y-auto flex-1 min-h-0 my-2 space-y-3 pr-1 overscroll-contain">
+              {(() => {
+                const filteredProducts = products.filter((p) =>
+                  p.name.toLowerCase().includes(productSearch.toLowerCase().trim())
+                );
+
+                if (products.length === 0) {
+                  return (
+                    <div className="p-4 text-center text-xs text-neutral-500">
+                      No tenés productos cargados en tu catálogo. Creá uno en Productos primero.
+                    </div>
+                  );
+                }
+
+                if (filteredProducts.length === 0) {
+                  return (
+                    <div className="p-6 text-center text-xs text-neutral-400 space-y-1">
+                      <p className="font-semibold text-neutral-600">No se encontraron productos</p>
+                      <p className="text-[11px]">Probá buscando con otro término</p>
+                    </div>
+                  );
+                }
+
+                return filteredProducts.map((prod) => (
                   <div
                     key={prod.id}
                     className="p-3 bg-neutral-50 rounded-2xl border border-neutral-200/80 space-y-2"
@@ -742,8 +853,8 @@ function NuevoPresupuestoContent() {
                       )}
                     </div>
                   </div>
-                ))
-              )}
+                ));
+              })()}
             </div>
 
             <div 

@@ -27,9 +27,9 @@ import {
   Truck,
   Users,
   Globe,
-  Building2,
   SlidersHorizontal,
-  HelpCircle,
+  Search,
+  Edit3,
 } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
@@ -48,14 +48,6 @@ interface ChannelPrice {
   channel_name: string;
   profit_margin_percent: number;
   selling_price: number;
-}
-
-interface FixedExpenseItem {
-  id: string;
-  name: string;
-  amount: number;
-  periodicity: string;
-  monthly_equivalent: number;
 }
 
 const DEFAULT_CHANNELS = [
@@ -80,10 +72,6 @@ export default function NuevoProductoPage() {
   // Configuración de Mano de Obra del usuario
   const [laborMinuteRate, setLaborMinuteRate] = useState<number>(0);
 
-  // Gastos Fijos del usuario
-  const [fixedExpenses, setFixedExpenses] = useState<FixedExpenseItem[]>([]);
-  const [loadingExpenses, setLoadingExpenses] = useState(true);
-
   // Datos del Producto - Paso 1: Básicos y Categoría
   const [name, setName] = useState("");
   const [category, setCategory] = useState("");
@@ -95,18 +83,13 @@ export default function NuevoProductoPage() {
   const [selectedSupplies, setSelectedSupplies] = useState<SelectedSupply[]>([]);
   const [supplyPickerOpen, setSupplyPickerOpen] = useState(false);
   const [showWasteInfo, setShowWasteInfo] = useState(false);
+  const [supplySearch, setSupplyPickerSearch] = useState("");
 
-  // Paso 3: Mano de Obra (Toggle e input de minutos)
-  const [includeLabor, setIncludeLabor] = useState(true);
+  // Paso 3: Tiempo
   const [workTimeMinutes, setWorkTimeMinutes] = useState<number>(30);
-  const [showLaborInfo, setShowLaborInfo] = useState(false);
+  const [showTimeInfo, setShowTimeInfo] = useState(false);
 
-  // Paso 4: Prorrateo Gastos Fijos
-  const [proratePercent, setProratePercent] = useState<number>(2);
-  const [prorateMode, setProrateMode] = useState<"percent" | "manual">("percent");
-  const [manualIndirectCost, setManualIndirectCost] = useState<number>(0);
-
-  // Paso 5: Precios Multicanal
+  // Paso 4: Precios Multicanal
   const [channelPrices, setChannelPrices] = useState<ChannelPrice[]>(
     DEFAULT_CHANNELS.map((ch) => ({
       id: ch.id,
@@ -115,13 +98,15 @@ export default function NuevoProductoPage() {
       selling_price: 0,
     }))
   );
+  const [isAddingChannel, setIsAddingChannel] = useState(false);
+  const [newChannelName, setNewChannelName] = useState("");
+  const [newChannelMargin, setNewChannelMargin] = useState(100);
 
   // Cargar insumos, mano de obra y gastos fijos
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoadingSupplies(true);
-        setLoadingExpenses(true);
         const {
           data: { user },
         } = await supabase.auth.getUser();
@@ -147,22 +132,11 @@ export default function NuevoProductoPage() {
           if (laborData && laborData.minute_rate) {
             setLaborMinuteRate(laborData.minute_rate);
           }
-
-          // Cargar gastos fijos
-          const { data: expensesData } = await supabase
-            .from("fixed_expenses")
-            .select("*")
-            .order("created_at", { ascending: false });
-
-          if (expensesData) {
-            setFixedExpenses(expensesData as FixedExpenseItem[]);
-          }
         }
       } catch (err) {
         console.error("Error fetching initial wizard data:", err);
       } finally {
         setLoadingSupplies(false);
-        setLoadingExpenses(false);
       }
     };
 
@@ -185,30 +159,16 @@ export default function NuevoProductoPage() {
 
   // 2. Costo de Mano de Obra
   const laborCost = useMemo(() => {
-    if (!includeLabor) return 0;
     return (workTimeMinutes || 0) * (laborMinuteRate || 0);
-  }, [includeLabor, workTimeMinutes, laborMinuteRate]);
-
-  // Total de gastos fijos mensuales del usuario
-  const totalMonthlyExpenses = useMemo(() => {
-    return fixedExpenses.reduce((acc, exp) => {
-      return acc + (Number(exp.monthly_equivalent) || Number(exp.amount) || 0);
-    }, 0);
-  }, [fixedExpenses]);
+  }, [workTimeMinutes, laborMinuteRate]);
 
   // 3. Cuota de Gastos Fijos (Prorrateo % o Manual)
-  const indirectCost = useMemo(() => {
-    if (prorateMode === "percent") {
-      if (totalMonthlyExpenses <= 0) return 0;
-      return Math.round((totalMonthlyExpenses * (proratePercent / 100)) * 100) / 100;
-    }
-    return Number(manualIndirectCost) || 0;
-  }, [prorateMode, totalMonthlyExpenses, proratePercent, manualIndirectCost]);
+  const indirectCost = 0;
 
   // 4. Costo Total Unitario
   const totalCost = useMemo(() => {
-    return directCost + laborCost + (Number(indirectCost) || 0);
-  }, [directCost, laborCost, indirectCost]);
+    return directCost + laborCost;
+  }, [directCost, laborCost]);
 
   // Actualizar precios sugeridos de canales cuando cambia el totalCost
   useEffect(() => {
@@ -249,6 +209,45 @@ export default function NuevoProductoPage() {
         ...updated[index],
         profit_margin_percent: newMargin,
         selling_price: price,
+      };
+      return updated;
+    });
+  };
+
+  // Eliminar un canal de precio
+  const handleRemoveChannel = (index: number) => {
+    if (channelPrices.length <= 1) {
+      alert("Debes mantener al menos un canal de precio para el producto.");
+      return;
+    }
+    setChannelPrices((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  // Agregar nuevo canal de precio
+  const handleAddChannel = () => {
+    if (!newChannelName.trim()) return;
+    const calculatedPrice = Math.round(totalCost * (1 + newChannelMargin / 100));
+    setChannelPrices((prev) => [
+      ...prev,
+      {
+        id: `custom-${Date.now()}`,
+        channel_name: newChannelName.trim(),
+        profit_margin_percent: newChannelMargin,
+        selling_price: calculatedPrice,
+      },
+    ]);
+    setNewChannelName("");
+    setNewChannelMargin(100);
+    setIsAddingChannel(false);
+  };
+
+  // Modificar nombre de un canal existente
+  const handleChannelNameChange = (index: number, newName: string) => {
+    setChannelPrices((prev) => {
+      const updated = [...prev];
+      updated[index] = {
+        ...updated[index],
+        channel_name: newName,
       };
       return updated;
     });
@@ -357,11 +356,11 @@ export default function NuevoProductoPage() {
           user_id: user.id,
           name: name.trim(),
           description: finalDescription || null,
-          work_time_minutes: includeLabor ? workTimeMinutes : 0,
-          include_labor: includeLabor,
+          work_time_minutes: workTimeMinutes,
+          include_labor: true,
           direct_cost: directCost,
           labor_cost: laborCost,
-          indirect_cost: Number(indirectCost) || 0,
+          indirect_cost: 0,
           total_cost: totalCost,
           needs_price_review: false,
         })
@@ -450,19 +449,18 @@ export default function NuevoProductoPage() {
           </Link>
           <div>
             <h2 className="text-xl font-bold text-neutral-800">Nuevo Producto</h2>
-            <p className="text-xs text-neutral-500">Calculadora de costo y fijación de precios en 5 pasos</p>
+            <p className="text-xs text-neutral-500">Calculadora de costo y fijación de precios en 4 pasos</p>
           </div>
         </div>
       </div>
 
-      {/* Barra de Pasos Kawaii (5 pasos) */}
+      {/* Barra de Pasos Kawaii (4 pasos) */}
       <div className="bg-white p-2.5 rounded-3xl border border-[#EAF0E8] shadow-sm flex items-center justify-between text-xs overflow-x-auto gap-1">
         {[
           { step: 1, label: "Detalles" },
           { step: 2, label: "Insumos" },
-          { step: 3, label: "Mano Obra" },
-          { step: 4, label: "Gastos Fijos" },
-          { step: 5, label: "Precios" },
+          { step: 3, label: "Tiempo" },
+          { step: 4, label: "Precios" },
         ].map((item) => (
           <button
             key={item.step}
@@ -508,9 +506,7 @@ export default function NuevoProductoPage() {
               Costo Unitario en Vivo
             </span>
             <span className="text-xs text-[#1F7A4C]">
-              Mat: {formatCurrency(directCost)}
-              {includeLabor && ` | M.O: ${formatCurrency(laborCost)}`}
-              {indirectCost > 0 && ` | Fijos: ${formatCurrency(indirectCost)}`}
+              Mat: {formatCurrency(directCost)} | Productivo: {formatCurrency(laborCost)}
             </span>
           </div>
         </div>
@@ -655,7 +651,7 @@ export default function NuevoProductoPage() {
       {/* PASO 2: Insumos & Packaging del Producto (Con Merma %) */}
       {currentStep === 2 && (
         <div className="bg-white p-5 rounded-3xl border border-[#EAF0E8] shadow-sm space-y-4">
-          <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+          <div className="border-b border-neutral-100 pb-3">
             <div className="flex items-center gap-2">
               <Boxes className="w-5 h-5 text-[#3BB578]" />
               <div>
@@ -665,13 +661,6 @@ export default function NuevoProductoPage() {
                 </p>
               </div>
             </div>
-            <button
-              onClick={() => setSupplyPickerOpen(true)}
-              className="py-1.5 px-3 bg-[#DCF4D7] hover:bg-[#C3EBC0] text-[#1F7A4C] rounded-2xl text-xs font-bold flex items-center gap-1 transition"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Agregar</span>
-            </button>
           </div>
 
           {/* Banner Didáctico Paso 2 */}
@@ -803,6 +792,19 @@ export default function NuevoProductoPage() {
           )}
 
           {selectedSupplies.length > 0 && (
+            <div className="pt-1">
+              <button
+                type="button"
+                onClick={() => setSupplyPickerOpen(true)}
+                className="py-2 px-4 bg-[#DCF4D7] hover:bg-[#C3EBC0] text-[#1F7A4C] rounded-2xl text-xs font-bold flex items-center gap-1.5 transition active:scale-95 shadow-xs"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Agregar</span>
+              </button>
+            </div>
+          )}
+
+          {selectedSupplies.length > 0 && (
             <div className="p-3 bg-[#DCF4D7]/70 border border-[#C3EBC0] rounded-2xl flex items-center justify-between">
               <span className="text-xs font-bold text-[#1F7A4C]">Total Materiales (1 unidad):</span>
               <span className="text-sm font-black text-[#1F7A4C] font-display">{formatCurrency(directCost)}</span>
@@ -821,79 +823,89 @@ export default function NuevoProductoPage() {
               disabled={selectedSupplies.length === 0}
               className="py-2.5 px-5 bg-[#3BB578] hover:bg-[#2E9E65] disabled:opacity-50 text-white rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
             >
-              <span>Siguiente: Mano de Obra</span>
+              <span>Siguiente: Tiempo</span>
               <ChevronRight className="w-4 h-4" />
             </button>
           </div>
         </div>
       )}
 
-      {/* PASO 3: Mano de Obra */}
+      {/* PASO 3: Tiempo de Producción */}
       {currentStep === 3 && (
         <div className="bg-white p-5 rounded-3xl border border-[#EAF0E8] shadow-sm space-y-4">
           <div className="flex items-center gap-2 border-b border-neutral-100 pb-3">
             <Clock className="w-5 h-5 text-[#3BB578]" />
             <div>
-              <h3 className="text-sm font-bold text-neutral-800">3. Mano de Obra</h3>
+              <h3 className="text-sm font-bold text-neutral-800">3. Tiempo de Producción</h3>
               <p className="text-[11px] text-neutral-400">
                 Tu tiempo de confección calculado al minuto
               </p>
             </div>
           </div>
 
-          {/* Banner Didáctico Paso 3 */}
-          <div className="bg-[#F0FAF4] border border-[#DCF4D7] p-3 rounded-2xl flex items-start gap-2.5">
-            <div className="w-6 h-6 rounded-xl bg-[#DCF4D7] text-[#1F7A4C] flex items-center justify-center flex-shrink-0 mt-0.5">
-              <Sparkles className="w-3.5 h-3.5" />
+          {laborMinuteRate === 0 && (
+            <div className="bg-amber-50 border border-amber-200 p-3 rounded-2xl flex items-start gap-2.5">
+              <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+              <div className="text-[11px] leading-snug text-amber-800 space-y-1">
+                <p>
+                  <strong>⚠️ Aún no configuraste tu Objetivo Mensual</strong> en la sección Gastos & Mano de Obra. Te recomendamos hacerlo para que HABA calcule correctamente el costo de tu tiempo.
+                </p>
+                <Link href="/gastos" className="inline-block font-bold text-amber-700 underline mt-1">
+                  Ir a Gastos
+                </Link>
+              </div>
             </div>
-            <div className="text-[11px] leading-snug text-[#2B2B2B] space-y-0.5">
-              <p className="font-bold text-[#1F7A4C]">Tu tiempo es un costo, no tu ganancia</p>
-              <p className="text-[#555]">
-                Cobrar tu mano de obra asegura que tu propio sueldo mensual esté garantizado antes de calcular la ganancia del negocio.
-              </p>
-            </div>
-          </div>
+          )}
 
-          {/* Toggle Mano de Obra */}
-          <div className="p-4 bg-neutral-50 rounded-2xl border border-neutral-200/80 space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <span className="text-xs font-bold text-neutral-800 block">
-                  ¿Incluir tu tiempo de confección?
-                </span>
-                <div className="flex items-center gap-2 mt-0.5">
-                  <span className="text-[10px] text-neutral-400">
-                    {laborMinuteRate > 0
-                      ? `Tu valor configurado: ${formatCurrency(laborMinuteRate)} / minuto`
-                      : "No configuraste tu sueldo aún en Gastos"}
+          <div className="p-4 bg-neutral-50 rounded-2xl border border-neutral-200/80 space-y-4">
+            <div className="flex flex-col space-y-3">
+              <label className="text-sm font-bold text-neutral-800 block">
+                ¿Cuánto tiempo lleva realizar este producto?
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min="1"
+                  value={workTimeMinutes}
+                  onChange={(e) => setWorkTimeMinutes(parseInt(e.target.value) || 0)}
+                  className="w-24 px-3 py-2 text-sm bg-white border border-neutral-200 rounded-xl text-center font-bold outline-none focus:border-[#3BB578]"
+                />
+                <span className="text-sm text-neutral-500 font-medium">minutos</span>
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-neutral-200/50">
+              <div className="bg-[#DCF4D7] p-3 rounded-xl flex flex-col space-y-1">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-[#1F7A4C] font-semibold">Cálculo:</span>
+                  <span className="font-mono text-[#1F7A4C]">
+                    {workTimeMinutes || 0} min × {formatCurrency(laborMinuteRate)}/min
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => setShowLaborInfo(!showLaborInfo)}
-                    className="text-[10px] font-bold text-[#1F7A4C] hover:text-[#165837] underline inline-flex items-center gap-0.5 cursor-pointer"
-                  >
-                    <Info className="w-3 h-3 text-[#3BB578]" />
-                    <span>{showLaborInfo ? "Ocultar cálculo" : "¿Cómo se calcula?"}</span>
-                  </button>
+                </div>
+                <div className="flex items-center justify-between pt-1 border-t border-[#C3EBC0]">
+                  <span className="text-[#1F7A4C] font-bold">Costo productivo:</span>
+                  <span className="text-sm font-black text-[#1F7A4C]">
+                    {formatCurrency(laborCost)}
+                  </span>
                 </div>
               </div>
+              <p className="text-[10px] text-neutral-500 mt-2 leading-relaxed">
+                Este costo ya incluye proporcionalmente tus gastos operativos + tu sueldo pretendido, calculados a partir de tu Objetivo Mensual configurado en Gastos.
+              </p>
+            </div>
+
+            <div className="pt-2">
               <button
                 type="button"
-                onClick={() => setIncludeLabor(!includeLabor)}
-                className={`w-12 h-6 flex items-center rounded-full p-1 transition duration-300 ${
-                  includeLabor ? "bg-[#3BB578]" : "bg-neutral-300"
-                }`}
+                onClick={() => setShowTimeInfo(!showTimeInfo)}
+                className="text-[10.5px] font-bold text-[#1F7A4C] hover:text-[#165837] underline inline-flex items-center gap-1 cursor-pointer"
               >
-                <div
-                  className={`bg-white w-4 h-4 rounded-full shadow-md transform transition duration-300 ${
-                    includeLabor ? "translate-x-6" : ""
-                  }`}
-                />
+                <Info className="w-3.5 h-3.5" />
+                <span>{showTimeInfo ? "Ocultar cómo se calcula" : "¿Cómo se calcula esto?"}</span>
               </button>
             </div>
 
-            {/* Explicación didáctica desplegable */}
-            {showLaborInfo && (
+            {showTimeInfo && (
               <div className="p-3 bg-[#F0FAF4] border border-[#C3EBC0] rounded-2xl space-y-2 text-xs text-[#2B2B2B] animate-in fade-in duration-200 shadow-xs">
                 <div className="flex items-center justify-between font-bold text-[#1F7A4C] border-b border-[#DCF4D7] pb-1">
                   <span className="flex items-center gap-1.5 font-display text-[11.5px]">
@@ -902,7 +914,7 @@ export default function NuevoProductoPage() {
                   </span>
                   <button
                     type="button"
-                    onClick={() => setShowLaborInfo(false)}
+                    onClick={() => setShowTimeInfo(false)}
                     className="text-[#7A7A7A] hover:text-[#2B2B2B] text-xs font-semibold"
                   >
                     ✕
@@ -910,10 +922,10 @@ export default function NuevoProductoPage() {
                 </div>
                 <div className="space-y-1.5 text-[11px] leading-relaxed">
                   <p>
-                    1️⃣ <strong>Tu costo por minuto:</strong> Se calcula en el módulo <em>Gastos &gt; Mano de Obra</em> dividiendo tu <strong>sueldo mensual pretendido</strong> entre las <strong>horas de taller</strong> que trabajás:
+                    1️⃣ <strong>Tu costo por minuto:</strong> Se calcula en el módulo <em>Gastos &gt; Mano de Obra</em> dividiendo tu <strong>Objetivo Mensual</strong> (Sueldo + Gastos Operativos) entre las <strong>horas de taller</strong> que trabajás por mes:
                   </p>
                   <div className="bg-white p-2 rounded-xl border border-[#DCF4D7] font-mono text-[10.5px] text-[#1F7A4C]">
-                    Sueldo Mensual ÷ (Días × Horas diarias × 60) = <strong>{formatCurrency(laborMinuteRate)}/minuto</strong>
+                    Objetivo Mensual ÷ (Días × Horas diarias × 60) = <strong>{formatCurrency(laborMinuteRate)}/minuto</strong>
                   </div>
                   <p>
                     2️⃣ <strong>Para este producto:</strong> Multiplicamos los minutos de elaboración por tu valor por minuto:
@@ -921,33 +933,6 @@ export default function NuevoProductoPage() {
                   <div className="bg-white p-2 rounded-xl border border-[#DCF4D7] font-mono text-[10.5px] text-[#1F7A4C]">
                     {workTimeMinutes || 0} min × {formatCurrency(laborMinuteRate)}/min = <strong>{formatCurrency(laborCost)}</strong>
                   </div>
-                </div>
-              </div>
-            )}
-
-            {includeLabor && (
-              <div className="pt-2 border-t border-neutral-200/50 space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-neutral-700">
-                    Tiempo de elaboración (minutos):
-                  </label>
-                  <div className="flex items-center gap-1.5">
-                    <input
-                      type="number"
-                      min="1"
-                      value={workTimeMinutes}
-                      onChange={(e) => setWorkTimeMinutes(parseInt(e.target.value) || 0)}
-                      className="w-20 px-2 py-1 text-xs bg-white border border-neutral-200 rounded-xl text-center font-bold outline-none focus:border-[#3BB578]"
-                    />
-                    <span className="text-xs text-neutral-500 font-medium">min</span>
-                  </div>
-                </div>
-
-                <div className="bg-[#DCF4D7] p-2.5 rounded-xl flex items-center justify-between text-xs">
-                  <span className="text-[#1F7A4C] font-semibold">Costo por tu tiempo:</span>
-                  <span className="font-extrabold text-[#1F7A4C]">
-                    {formatCurrency(laborCost)}
-                  </span>
                 </div>
               </div>
             )}
@@ -964,208 +949,27 @@ export default function NuevoProductoPage() {
               onClick={() => setCurrentStep(4)}
               className="py-2.5 px-5 bg-[#3BB578] hover:bg-[#2E9E65] text-white rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
             >
-              <span>Siguiente: Gastos Fijos</span>
+              <span>Siguiente: Precios</span>
               <ChevronRight className="w-4 h-4" />
             </button>
           </div>
         </div>
       )}
 
-      {/* PASO 4: Prorrateo de Gastos Fijos */}
+      {/* PASO 4: Precios Multicanal & Margen con Sliders */}
       {currentStep === 4 && (
-        <div className="bg-white p-5 rounded-3xl border border-[#EAF0E8] shadow-sm space-y-4">
-          <div className="flex items-center gap-2 border-b border-neutral-100 pb-3">
-            <Building2 className="w-5 h-5 text-[#3BB578]" />
-            <div>
-              <h3 className="text-sm font-bold text-neutral-800">4. Prorrateo de Gastos Fijos</h3>
-              <p className="text-[11px] text-neutral-400">
-                Alquiler, luz, monotributo o internet prorrateados a cada unidad
-              </p>
-            </div>
-          </div>
-
-          {/* Banner Didáctico Paso 4 */}
-          <div className="bg-[#F0FAF4] border border-[#DCF4D7] p-3 rounded-2xl flex items-start gap-2.5">
-            <div className="w-6 h-6 rounded-xl bg-[#DCF4D7] text-[#1F7A4C] flex items-center justify-center flex-shrink-0 mt-0.5">
-              <Sparkles className="w-3.5 h-3.5" />
-            </div>
-            <div className="text-[11px] leading-snug text-[#2B2B2B] space-y-0.5">
-              <p className="font-bold text-[#1F7A4C]">¿Por qué prorratear gastos fijos?</p>
-              <p className="text-[#555]">
-                Si tus gastos de taller son <strong>{formatCurrency(totalMonthlyExpenses)}/mes</strong>, cada unidad que vendés debe aportar un pequeño porcentaje para pagarlos. Así tu negocio no pierde plata al final del mes.
-              </p>
-            </div>
-          </div>
-
-          {/* Selector de Modo: Porcentaje o Monto Fijo */}
-          <div className="p-1 bg-neutral-100 rounded-2xl flex text-xs font-semibold">
-            <button
-              type="button"
-              onClick={() => setProrateMode("percent")}
-              className={`flex-1 py-1.5 rounded-xl transition ${
-                prorateMode === "percent"
-                  ? "bg-white text-[#1F7A4C] shadow-sm font-bold"
-                  : "text-neutral-500 hover:text-neutral-800"
-              }`}
-            >
-              Prorrateo por Porcentaje (%)
-            </button>
-            <button
-              type="button"
-              onClick={() => setProrateMode("manual")}
-              className={`flex-1 py-1.5 rounded-xl transition ${
-                prorateMode === "manual"
-                  ? "bg-white text-[#1F7A4C] shadow-sm font-bold"
-                  : "text-neutral-500 hover:text-neutral-800"
-              }`}
-            >
-              Monto Fijo Manual ($)
-            </button>
-          </div>
-
-          {prorateMode === "percent" ? (
-            <div className="p-4 bg-neutral-50 rounded-2xl border border-neutral-200/80 space-y-3.5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <span className="text-xs font-bold text-neutral-800 block">
-                    Porcentaje a asignar a este producto:
-                  </span>
-                  <span className="text-[10px] text-neutral-400">
-                    Total gastos mensuales: {formatCurrency(totalMonthlyExpenses)}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1 bg-white px-2.5 py-1 rounded-xl border border-neutral-200">
-                  <input
-                    type="number"
-                    step="0.5"
-                    min="0"
-                    max="100"
-                    value={proratePercent}
-                    onChange={(e) => setProratePercent(parseFloat(e.target.value) || 0)}
-                    className="w-12 text-center text-xs font-bold outline-none text-[#1F7A4C]"
-                  />
-                  <span className="text-xs font-bold text-neutral-400">%</span>
-                </div>
-              </div>
-
-              {/* Slider de Porcentaje */}
-              <input
-                type="range"
-                min="0"
-                max="20"
-                step="0.5"
-                value={proratePercent}
-                onChange={(e) => setProratePercent(parseFloat(e.target.value) || 0)}
-                className="w-full accent-[#3BB578] cursor-pointer"
-              />
-
-              {/* Desglose de cálculo reactivo */}
-              <div className="bg-[#DCF4D7] p-3 rounded-2xl space-y-1.5 text-xs text-[#1F7A4C]">
-                <div className="flex items-center justify-between text-[11px]">
-                  <span>Fórmula aplicada:</span>
-                  <span className="font-mono font-semibold">
-                    {formatCurrency(totalMonthlyExpenses)} × {proratePercent}%
-                  </span>
-                </div>
-                <div className="flex items-center justify-between font-bold pt-1 border-t border-[#C3EBC0]">
-                  <span>Cuota de Gastos Fijos por unidad:</span>
-                  <span className="text-sm font-black">{formatCurrency(indirectCost)}</span>
-                </div>
-              </div>
-
-              {/* Lista compacta de gastos registrados */}
-              {fixedExpenses.length > 0 && (
-                <div className="pt-2 border-t border-neutral-200/50 space-y-1">
-                  <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block">
-                    Gastos fijos activos del taller:
-                  </span>
-                  <div className="max-h-24 overflow-y-auto space-y-1 pr-1">
-                    {fixedExpenses.map((fe) => (
-                      <div key={fe.id} className="flex items-center justify-between text-[11px] text-neutral-600 bg-white/70 px-2 py-1 rounded-lg">
-                        <span className="truncate max-w-[180px]">{fe.name}</span>
-                        <span className="font-semibold text-neutral-800">
-                          {formatCurrency(fe.monthly_equivalent || fe.amount)}/mes
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {fixedExpenses.length === 0 && (
-                <p className="text-[11px] text-amber-700 bg-amber-50 p-2.5 rounded-xl border border-amber-200">
-                  ℹ️ Aún no cargaste gastos fijos en la sección <strong>Gastos</strong>. Podés ingresar un monto manual con la pestaña de arriba o cargar tu alquiler y servicios más tarde.
-                </p>
-              )}
-            </div>
-          ) : (
-            <div className="p-4 bg-neutral-50 rounded-2xl border border-neutral-200/80 space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-neutral-800">
-                  Monto directo por unidad ($):
-                </label>
-                <div className="flex items-center gap-1">
-                  <span className="text-xs font-bold text-neutral-400">$</span>
-                  <input
-                    type="number"
-                    step="any"
-                    min="0"
-                    value={manualIndirectCost}
-                    onChange={(e) => setManualIndirectCost(parseFloat(e.target.value) || 0)}
-                    placeholder="0.00"
-                    className="w-24 px-2 py-1 text-xs bg-white border border-neutral-200 rounded-xl text-right font-bold outline-none focus:border-[#3BB578]"
-                  />
-                </div>
-              </div>
-              <p className="text-[10px] text-neutral-400">
-                Podés asignar una cantidad fija en pesos por cada unidad vendida (ej: $150).
-              </p>
-            </div>
-          )}
-
-          {/* Resumen Total Unitario de Producción */}
-          <div className="p-3 bg-[#DCF4D7]/70 border border-[#C3EBC0] rounded-2xl flex flex-col gap-1.5 text-xs text-[#1F7A4C]">
-            <div className="flex justify-between items-center text-[11px]">
-              <span>Materiales: <strong>{formatCurrency(directCost)}</strong> + M.O: <strong>{formatCurrency(laborCost)}</strong> + Fijos: <strong>{formatCurrency(indirectCost)}</strong></span>
-            </div>
-            <div className="flex justify-between items-center font-bold pt-1.5 border-t border-[#C3EBC0]">
-              <span className="text-xs">Costo Total de Fabricación (1 unidad):</span>
-              <span className="text-sm font-black text-[#1F7A4C] font-display">{formatCurrency(totalCost)}</span>
-            </div>
-          </div>
-
-          <div className="pt-3 border-t border-neutral-100 flex items-center justify-between">
-            <button
-              onClick={() => setCurrentStep(3)}
-              className="py-2 px-4 bg-neutral-100 text-neutral-600 rounded-2xl text-xs font-semibold"
-            >
-              Atrás
-            </button>
-            <button
-              onClick={() => setCurrentStep(5)}
-              className="py-2.5 px-5 bg-[#3BB578] hover:bg-[#2E9E65] text-white rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
-            >
-              <span>Siguiente: Precios Multicanal</span>
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* PASO 5: Precios Multicanal & Margen con Sliders */}
-      {currentStep === 5 && (
         <div className="bg-white p-5 rounded-3xl border border-[#EAF0E8] shadow-sm space-y-4">
           <div className="flex items-center gap-2 border-b border-neutral-100 pb-3">
             <TrendingUp className="w-5 h-5 text-[#3BB578]" />
             <div>
-              <h3 className="text-sm font-bold text-neutral-800">5. Precios por Canal de Venta</h3>
+              <h3 className="text-sm font-bold text-neutral-800">4. Precios por Canal de Venta</h3>
               <p className="text-[11px] text-neutral-400">
                 Slider de margen %, precio sugerido y ganancia neta en mano
               </p>
             </div>
           </div>
 
-          {/* Banner Didáctico Paso 5 */}
+          {/* Banner Didáctico Paso 4 */}
           <div className="bg-[#F0FAF4] border border-[#DCF4D7] p-3 rounded-2xl flex items-start gap-2.5">
             <div className="w-6 h-6 rounded-xl bg-[#DCF4D7] text-[#1F7A4C] flex items-center justify-center flex-shrink-0 mt-0.5">
               <Sparkles className="w-3.5 h-3.5" />
@@ -1189,21 +993,37 @@ export default function NuevoProductoPage() {
                   className="p-3.5 bg-neutral-50 rounded-2xl border border-neutral-200/80 space-y-3"
                 >
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-1 mr-2">
                       {getChannelIcon(channel.id)}
-                      <span className="text-xs font-bold text-neutral-800">
-                        {channel.channel_name}
-                      </span>
+                      <input
+                        type="text"
+                        value={channel.channel_name}
+                        onChange={(e) => handleChannelNameChange(idx, e.target.value)}
+                        className="text-xs font-bold text-neutral-800 bg-transparent border-b border-dashed border-neutral-300 hover:border-[#3BB578] focus:border-[#3BB578] focus:bg-white px-1 py-0.5 rounded outline-none transition w-full max-w-[200px]"
+                        title="Hacé clic para editar el nombre del canal"
+                      />
                     </div>
-                    <span
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                        profitAmount >= 0
-                          ? "bg-[#DCF4D7] text-[#1F7A4C]"
-                          : "bg-rose-100 text-rose-700"
-                      }`}
-                    >
-                      {profitAmount >= 0 ? `Ganás ${formatCurrency(profitAmount)}` : `Pérdida ${formatCurrency(profitAmount)}`}
-                    </span>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          profitAmount >= 0
+                            ? "bg-[#DCF4D7] text-[#1F7A4C]"
+                            : "bg-rose-100 text-rose-700"
+                        }`}
+                      >
+                        {profitAmount >= 0 ? `Ganás ${formatCurrency(profitAmount)}` : `Pérdida ${formatCurrency(profitAmount)}`}
+                      </span>
+                      {channelPrices.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveChannel(idx)}
+                          className="p-1 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
+                          title="Eliminar este tipo de precio"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {/* Slider de Margen % */}
@@ -1279,11 +1099,90 @@ export default function NuevoProductoPage() {
                 </div>
               );
             })}
+
+            {/* Formulario / Botón para agregar nuevo tipo de precio */}
+            {isAddingChannel ? (
+              <div className="p-3.5 bg-neutral-50 rounded-2xl border-2 border-dashed border-[#3BB578] space-y-3 animate-in fade-in duration-200">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-[#1F7A4C] flex items-center gap-1.5">
+                    <Tag className="w-3.5 h-3.5" />
+                    Nuevo Tipo de Precio
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsAddingChannel(false);
+                      setNewChannelName("");
+                    }}
+                    className="text-neutral-400 hover:text-neutral-600 text-xs"
+                  >
+                    ✕ Cancelar
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] font-semibold text-neutral-600 block mb-1">
+                      Nombre del canal / lista:
+                    </label>
+                    <input
+                      type="text"
+                      value={newChannelName}
+                      onChange={(e) => setNewChannelName(e.target.value)}
+                      placeholder="Ej: Promo X, Precio Feria, Black Friday..."
+                      className="w-full px-3 py-1.5 text-xs bg-white border border-neutral-200 rounded-xl outline-none focus:border-[#3BB578]"
+                      autoFocus
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-semibold text-neutral-600 block mb-1">
+                      Margen inicial (%):
+                    </label>
+                    <input
+                      type="number"
+                      value={newChannelMargin}
+                      onChange={(e) => setNewChannelMargin(parseFloat(e.target.value) || 0)}
+                      placeholder="100"
+                      className="w-full px-3 py-1.5 text-xs bg-white border border-neutral-200 rounded-xl outline-none focus:border-[#3BB578]"
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsAddingChannel(false);
+                      setNewChannelName("");
+                    }}
+                    className="py-1.5 px-3 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-xl text-xs font-semibold"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleAddChannel}
+                    disabled={!newChannelName.trim()}
+                    className="py-1.5 px-4 bg-[#3BB578] hover:bg-[#2E9E65] disabled:opacity-50 text-white rounded-xl text-xs font-bold transition flex items-center gap-1 shadow-xs"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Agregar Precio</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsAddingChannel(true)}
+                className="w-full py-2.5 px-3 bg-white hover:bg-[#DCF4D7]/40 text-[#1F7A4C] border-2 border-dashed border-[#3BB578]/50 hover:border-[#3BB578] rounded-2xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-2xs"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Agregar otro tipo de precio (Promo, Feria, etc.)</span>
+              </button>
+            )}
           </div>
 
           <div className="pt-3 border-t border-neutral-100 flex items-center justify-between">
             <button
-              onClick={() => setCurrentStep(4)}
+              onClick={() => setCurrentStep(3)}
               className="py-2 px-4 bg-neutral-100 text-neutral-600 rounded-2xl text-xs font-semibold"
             >
               Atrás
@@ -1319,20 +1218,110 @@ export default function NuevoProductoPage() {
             <div className="flex items-center justify-between pb-3 border-b border-neutral-100 flex-shrink-0">
               <h3 className="text-sm font-bold text-neutral-800">Elegir Insumo o Packaging</h3>
               <button
-                onClick={() => setSupplyPickerOpen(false)}
+                onClick={() => {
+                  setSupplyPickerOpen(false);
+                  setSupplyPickerSearch("");
+                }}
                 className="p-1.5 text-neutral-400 hover:text-neutral-600 rounded-full"
               >
                 ✕
               </button>
             </div>
 
+            {/* Barra de Búsqueda con Texto Predictivo / Sugerencia en Gris */}
+            <div className="pt-3 pb-1 flex-shrink-0">
+              {(() => {
+                // Encontrar la mejor coincidencia que comience con lo que el usuario va escribiendo
+                const trimmedQuery = supplySearch.trim().toLowerCase();
+                const matchedSuggestion = trimmedQuery
+                  ? availableSupplies.find((s) => s.name.toLowerCase().startsWith(trimmedQuery))
+                  : null;
+                const suggestionSuffix = matchedSuggestion && supplySearch
+                  ? matchedSuggestion.name.slice(supplySearch.length)
+                  : "";
+
+                return (
+                  <div className="relative flex items-center">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-neutral-400">
+                      <Search className="w-4 h-4" />
+                    </div>
+
+                    {/* Capa de texto predictivo sugerido en gris de fondo */}
+                    {suggestionSuffix && (
+                      <div
+                        aria-hidden="true"
+                        className="absolute inset-0 pl-9 pr-8 py-2 text-xs flex items-center pointer-events-none select-none font-medium text-neutral-300 overflow-hidden"
+                      >
+                        <span className="opacity-0">{supplySearch}</span>
+                        <span className="text-neutral-400 bg-neutral-100/80 px-0.5 rounded">{suggestionSuffix}</span>
+                        <span className="text-[10px] text-neutral-400 ml-1.5 bg-neutral-200/70 px-1 py-0.2 rounded-md font-normal">
+                          Tab ⇥
+                        </span>
+                      </div>
+                    )}
+
+                    <input
+                      type="text"
+                      value={supplySearch}
+                      onChange={(e) => setSupplyPickerSearch(e.target.value)}
+                      onKeyDown={(e) => {
+                        // Presionar Tab o Flecha Derecha autocompleta con la sugerencia
+                        if ((e.key === "Tab" || e.key === "ArrowRight") && matchedSuggestion && suggestionSuffix) {
+                          e.preventDefault();
+                          setSupplyPickerSearch(matchedSuggestion.name);
+                        } else if (e.key === "Enter" && matchedSuggestion && !selectedSupplies.some((s) => s.supply.id === matchedSuggestion.id)) {
+                          e.preventDefault();
+                          handleAddSupply(matchedSuggestion);
+                          setSupplyPickerSearch("");
+                        }
+                      }}
+                      placeholder="Buscar insumo (ej: harina, caja, tela...)"
+                      className="w-full pl-9 pr-8 py-2 text-xs bg-neutral-50/80 focus:bg-white border border-neutral-200 rounded-2xl focus:border-[#3BB578] focus:ring-2 focus:ring-[#DCF4D7] outline-none transition text-neutral-800"
+                      autoFocus
+                    />
+
+                    {supplySearch && (
+                      <button
+                        type="button"
+                        onClick={() => setSupplyPickerSearch("")}
+                        className="absolute inset-y-0 right-0 pr-2.5 flex items-center text-neutral-400 hover:text-neutral-600"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+
             <div className="overflow-y-auto flex-1 min-h-0 my-3 space-y-2 pr-1 overscroll-contain">
-              {availableSupplies.length === 0 ? (
-                <div className="p-4 text-center text-xs text-neutral-500">
-                  No tenés insumos cargados. Creá uno en el módulo Insumos primero.
-                </div>
-              ) : (
-                availableSupplies.map((sup) => {
+              {(() => {
+                const filtered = availableSupplies.filter((sup) => {
+                  if (!supplySearch.trim()) return true;
+                  const query = supplySearch.toLowerCase();
+                  return (
+                    sup.name.toLowerCase().includes(query) ||
+                    (sup.category && sup.category.toLowerCase().includes(query))
+                  );
+                });
+
+                if (availableSupplies.length === 0) {
+                  return (
+                    <div className="p-4 text-center text-xs text-neutral-500">
+                      No tenés insumos cargados. Creá uno en el módulo Insumos primero.
+                    </div>
+                  );
+                }
+
+                if (filtered.length === 0) {
+                  return (
+                    <div className="p-6 text-center text-xs text-neutral-400">
+                      No encontramos insumos que coincidan con &ldquo;<strong>{supplySearch}</strong>&rdquo;.
+                    </div>
+                  );
+                }
+
+                return filtered.map((sup) => {
                   const isSelected = selectedSupplies.some((s) => s.supply.id === sup.id);
                   const unitCost = calculateUnitCost(
                     sup.current_price,
@@ -1369,8 +1358,8 @@ export default function NuevoProductoPage() {
                       </div>
                     </button>
                   );
-                })
-              )}
+                });
+              })()}
             </div>
 
             <div

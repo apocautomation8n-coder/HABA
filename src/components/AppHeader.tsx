@@ -20,10 +20,10 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   const supabase = createClient();
   const [businessName, setBusinessName] = useState<string | null>(null);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
-  const [unreadCount, setUnreadCount] = useState(1);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
-    async function loadProfile() {
+    async function loadProfileAndAlerts() {
       const {
         data: { user },
       } = await supabase.auth.getUser();
@@ -49,9 +49,32 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
         } catch {
           // ignore
         }
+
+        // Cargar alertas no leídas para la campanita
+        try {
+          const { getOutdatedProductsCount } = await import("@/lib/products");
+          const outdatedProductsCount = await getOutdatedProductsCount(supabase);
+          
+          let readIds: string[] = [];
+          try {
+            const stored = localStorage.getItem("haba_read_notifications");
+            if (stored) readIds = JSON.parse(stored);
+          } catch {
+            // ignore
+          }
+
+          // Si hay productos con alerta no marcados como leídos
+          let count = 0;
+          if (outdatedProductsCount > 0) {
+            count += outdatedProductsCount;
+          }
+          setUnreadCount(count);
+        } catch {
+          // ignore
+        }
       }
     }
-    loadProfile();
+    loadProfileAndAlerts();
   }, [supabase]);
 
   return (

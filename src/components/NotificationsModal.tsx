@@ -59,25 +59,40 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
 
         const items: NotificationItem[] = [];
 
-        // 1. Alertas de aumento de precio
+        // 1. Alertas de productos que tienen recetas afectadas por aumento de insumos
+        const { getOutdatedProductsList } = await import("@/lib/products");
+        const outdatedProducts = await getOutdatedProductsList(supabase);
+
+        outdatedProducts.forEach((p) => {
+          items.push({
+            id: `product-cost-${p.id}`,
+            type: "price_increase",
+            title: `Revisar costos: ${p.name}`,
+            description: `Los insumos de este producto subieron de costo (de ${formatCurrency(p.direct_cost)} a ${formatCurrency(p.currentMaterialsCost)}). Tocá para recalcular.`,
+            date: new Date().toISOString(),
+            isRead: false,
+          });
+        });
+
+        // 2. Alertas de aumento de precio de insumos (supply_price_history)
         if (priceHistory && supplies) {
           priceHistory.forEach((hist) => {
             const currentSupply = supplies.find((s) => s.id === hist.supply_id);
             if (currentSupply && currentSupply.current_price > hist.price) {
               const diff = currentSupply.current_price - hist.price;
               items.push({
-                id: `price-${hist.supply_id}-${hist.changed_at}`,
+                id: `price-${hist.supply_id}-${hist.changed_at || (hist as any).date}`,
                 type: "price_increase",
                 title: `Aumento en: ${currentSupply.name}`,
                 description: `Subió ${formatCurrency(diff)} (Nuevo precio: ${formatCurrency(currentSupply.current_price)}). Revisá el costo de tus productos.`,
-                date: hist.changed_at,
+                date: hist.changed_at || (hist as any).date || new Date().toISOString(),
                 isRead: false,
               });
             }
           });
         }
 
-        // 2. Alertas de insumos desactualizados (más de X días sin actualizar)
+        // 3. Alertas de insumos desactualizados (más de X días sin actualizar precio)
         if (supplies) {
           const now = new Date();
           const thresholdMs = reviewDays * 24 * 60 * 60 * 1000;
@@ -101,21 +116,36 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
           });
         }
 
-        // Si no hay alertas, mensaje informativo
-        if (items.length === 0) {
-          items.push({
+        // Leer notificaciones ya descartadas o marcadas como leídas de localStorage
+        let readIds: string[] = [];
+        try {
+          const stored = localStorage.getItem("haba_read_notifications");
+          if (stored) readIds = JSON.parse(stored);
+        } catch {
+          // ignore
+        }
+
+        // Marcar estado isRead según historial
+        const finalItems = items.map((it) => ({
+          ...it,
+          isRead: readIds.includes(it.id),
+        }));
+
+        // Si no hay alertas activas
+        if (finalItems.length === 0) {
+          finalItems.push({
             id: "system-welcome",
             type: "system",
             title: "¡Todo al día! 🌱",
-            description: `Tus insumos están actualizados dentro de los últimos ${reviewDays} días. HABA te avisará cuando necesiten revisión.`,
+            description: `Tus costos e insumos están actualizados. HABA te avisará cuando necesiten revisión.`,
             date: new Date().toISOString(),
             isRead: true,
           });
         }
 
-        setNotifications(items);
+        setNotifications(finalItems);
         if (onCountChange) {
-          const unread = items.filter((i) => !i.isRead).length;
+          const unread = finalItems.filter((i) => !i.isRead).length;
           onCountChange(unread);
         }
       } catch (err) {
@@ -195,7 +225,7 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
             notifications.map((item) => (
               <div
                 key={item.id}
-                className={`p-3 rounded-2xl border transition ${
+                className={`p-3 rounded-2xl border transition relative ${
                   item.type === "price_increase"
                     ? "bg-rose-50/70 border-rose-200"
                     : item.type === "stock_alert"
@@ -213,21 +243,37 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
                       <CheckCircle className="w-4 h-4 text-[#3BB578]" />
                     )}
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <h4 className="text-xs font-bold text-neutral-800 leading-tight">
-                      {item.title}
-                    </h4>
+                  <div className="flex-1 min-w-0 pr-4">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <h4 className="text-xs font-bold text-neutral-800 leading-tight">
+                        {item.title}
+                      </h4>
+                      {!item.isRead && (
+                        <span className="w-2 h-2 rounded-full bg-amber-500 flex-shrink-0" title="Nueva" />
+                      )}
+                    </div>
                     <p className="text-[11px] text-neutral-600 mt-1 leading-snug">
                       {item.description}
                     </p>
-                    <span className="text-[9px] text-neutral-400 mt-1 block">
-                      {new Date(item.date).toLocaleDateString("es-AR", {
-                        day: "2-digit",
-                        month: "short",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </span>
+                    <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-neutral-200/40">
+                      <span className="text-[9px] text-neutral-400">
+                        {new Date(item.date).toLocaleDateString("es-AR", {
+                          day: "2-digit",
+                          month: "short",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </span>
+                      {item.type === "price_increase" && item.id.startsWith("product-cost-") && (
+                        <a
+                          href="/productos"
+                          onClick={onClose}
+                          className="text-[10px] font-bold text-[#1F7A4C] hover:underline"
+                        >
+                          Ir a Productos →
+                        </a>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -235,12 +281,28 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
           )}
         </div>
 
-        <button
-          onClick={onClose}
-          className="mt-5 w-full py-2.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-semibold rounded-2xl text-xs transition"
-        >
-          Cerrar
-        </button>
+        <div className="mt-5 space-y-2">
+          {notifications.some((n) => !n.isRead) && (
+            <button
+              onClick={() => {
+                const allIds = notifications.map((n) => n.id);
+                localStorage.setItem("haba_read_notifications", JSON.stringify(allIds));
+                setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+                if (onCountChange) onCountChange(0);
+              }}
+              className="w-full py-2 bg-[#DCF4D7] hover:bg-[#C3EBC0] text-[#1F7A4C] font-bold rounded-2xl text-xs transition"
+            >
+              Marcar todos como leídos
+            </button>
+          )}
+
+          <button
+            onClick={onClose}
+            className="w-full py-2.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-semibold rounded-2xl text-xs transition"
+          >
+            Cerrar
+          </button>
+        </div>
       </div>
     </div>
   );

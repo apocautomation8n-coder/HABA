@@ -25,6 +25,7 @@ import {
   Copy,
   Loader2,
   Receipt,
+  Pencil,
 } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
@@ -83,6 +84,7 @@ export default function ProductosPage() {
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
   const [recalculatingId, setRecalculatingId] = useState<string | null>(null);
   const [successToast, setSuccessToast] = useState<string | null>(null);
+  const [currentMinuteRate, setCurrentMinuteRate] = useState<number>(0);
 
   // Filtros
   const [search, setSearch] = useState("");
@@ -92,6 +94,18 @@ export default function ProductosPage() {
 
   // Acordeón desplegado
   const [expandedProductId, setExpandedProductId] = useState<string | null>(null);
+
+  // Modal para duplicar con nombre personalizado
+  const [duplicateModalProduct, setDuplicateModalProduct] = useState<Product | null>(null);
+  const [duplicateNewName, setDuplicateNewName] = useState("");
+
+  // Modal para editar producto (nombre, descripción, minutos y categoría)
+  const [editModalProduct, setEditModalProduct] = useState<Product | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editCategory, setEditCategory] = useState("");
+  const [editWorkMinutes, setEditWorkMinutes] = useState<number>(0);
+  const [savingEdit, setSavingEdit] = useState(false);
 
   // Cargar productos con sus precios asociados y recetas de insumos
   const loadProducts = useCallback(async () => {
@@ -119,6 +133,18 @@ export default function ProductosPage() {
 
       if (!error && data) {
         setProducts(data as Product[]);
+        
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: laborData } = await supabase
+            .from("labor_settings")
+            .select("minute_rate")
+            .eq("user_id", user.id)
+            .single();
+          if (laborData?.minute_rate) {
+            setCurrentMinuteRate(laborData.minute_rate);
+          }
+        }
       } else if (error) {
         console.error("Error fetching products:", error);
       }
@@ -195,11 +221,27 @@ export default function ProductosPage() {
     }
   };
 
-  // Duplicar producto (clonar receta, precios y datos base)
-  const handleDuplicate = async (product: Product) => {
-    if (duplicatingId) return;
+  // Abrir modal de duplicación para pedir nombre distinto (Punto I)
+  const handleDuplicate = (product: Product) => {
+    setDuplicateModalProduct(product);
+    setDuplicateNewName(`${product.name} (copia)`);
+  };
+
+  // Confirmar duplicación con nombre validado
+  const handleConfirmDuplicate = async () => {
+    if (!duplicateModalProduct || duplicatingId) return;
+    const finalName = duplicateNewName.trim();
+    if (!finalName) {
+      alert("Por favor ingresá un nombre para la copia del producto.");
+      return;
+    }
+    if (finalName.toLowerCase() === duplicateModalProduct.name.toLowerCase()) {
+      alert("El nombre debe ser distinto al del producto original para evitar confusiones.");
+      return;
+    }
+
     try {
-      setDuplicatingId(product.id);
+      setDuplicatingId(duplicateModalProduct.id);
 
       const {
         data: { user },
@@ -211,7 +253,7 @@ export default function ProductosPage() {
       const { data: originalSupplies, error: suppliesFetchErr } = await supabase
         .from("product_supplies")
         .select("supply_id, quantity")
-        .eq("product_id", product.id);
+        .eq("product_id", duplicateModalProduct.id);
 
       if (suppliesFetchErr) {
         console.error("Error al obtener insumos:", suppliesFetchErr);
@@ -221,27 +263,25 @@ export default function ProductosPage() {
       const { data: originalPrices, error: pricesFetchErr } = await supabase
         .from("product_prices")
         .select("channel_name, profit_margin_percent, selling_price")
-        .eq("product_id", product.id);
+        .eq("product_id", duplicateModalProduct.id);
 
       if (pricesFetchErr) {
         console.error("Error al obtener precios:", pricesFetchErr);
       }
-
-      const clonedName = `${product.name} (copia)`;
 
       // 3. Insertar el nuevo producto en la tabla products
       const { data: newProduct, error: productError } = await supabase
         .from("products")
         .insert({
           user_id: user.id,
-          name: clonedName,
-          description: product.description,
-          work_time_minutes: product.work_time_minutes,
-          include_labor: product.include_labor,
-          direct_cost: product.direct_cost,
-          labor_cost: product.labor_cost,
-          indirect_cost: product.indirect_cost,
-          total_cost: product.total_cost,
+          name: finalName,
+          description: duplicateModalProduct.description,
+          work_time_minutes: duplicateModalProduct.work_time_minutes,
+          include_labor: duplicateModalProduct.include_labor,
+          direct_cost: duplicateModalProduct.direct_cost,
+          labor_cost: duplicateModalProduct.labor_cost,
+          indirect_cost: duplicateModalProduct.indirect_cost,
+          total_cost: duplicateModalProduct.total_cost,
           needs_price_review: false,
         })
         .select()
@@ -284,12 +324,15 @@ export default function ProductosPage() {
         }
       }
 
+      // Cerrar modal
+      setDuplicateModalProduct(null);
+
       // 6. Recargar el listado
       await loadProducts();
 
       // 7. Expandir el nuevo producto y mostrar notificación
       setExpandedProductId(newProduct.id);
-      setSuccessToast(`¡Producto duplicado como "${clonedName}"!`);
+      setSuccessToast(`¡Producto duplicado como "${finalName}"!`);
       setTimeout(() => {
         setSuccessToast(null);
       }, 4000);
@@ -301,6 +344,76 @@ export default function ProductosPage() {
     }
   };
 
+  // Abrir modal de edición rápida de producto (Punto H)
+  const handleOpenEdit = (product: Product) => {
+    const meta = parseProductMeta(product.description);
+    setEditModalProduct(product);
+    setEditName(product.name);
+    setEditDescription(meta.cleanDescription || "");
+    setEditCategory(meta.category || "");
+    setEditWorkMinutes(product.work_time_minutes || 0);
+  };
+
+  // Guardar cambios del modal de edición
+  const handleSaveEditProduct = async () => {
+    if (!editModalProduct || savingEdit) return;
+    if (!editName.trim()) {
+      alert("El nombre del producto es obligatorio.");
+      return;
+    }
+
+    try {
+      setSavingEdit(true);
+
+      const meta = parseProductMeta(editModalProduct.description);
+      const newDescription = serializeProductDescription({
+        cleanDescription: editDescription.trim(),
+        category: editCategory || meta.category,
+        isActive: meta.isActive,
+      });
+
+      // Recalcular costo productivo y costo total con los nuevos minutos
+      const newLaborCost = Math.round((editWorkMinutes || 0) * (currentMinuteRate || 0) * 100) / 100;
+      const newTotalCost = Math.round(((editModalProduct.direct_cost || 0) + newLaborCost) * 100) / 100;
+
+      const { error } = await supabase
+        .from("products")
+        .update({
+          name: editName.trim(),
+          description: newDescription,
+          work_time_minutes: editWorkMinutes,
+          labor_cost: newLaborCost,
+          total_cost: newTotalCost,
+        })
+        .eq("id", editModalProduct.id);
+
+      if (error) throw error;
+
+      // Actualizar precios por canal manteniendo margen %
+      if (editModalProduct.product_prices && editModalProduct.product_prices.length > 0) {
+        for (const price of editModalProduct.product_prices) {
+          const newSelling = Math.round(newTotalCost * (1 + (price.profit_margin_percent || 0) / 100));
+          await supabase
+            .from("product_prices")
+            .update({ selling_price: newSelling })
+            .eq("id", price.id);
+        }
+      }
+
+      setEditModalProduct(null);
+      await loadProducts();
+      setSuccessToast(`¡Producto "${editName.trim()}" actualizado correctamente!`);
+      setTimeout(() => {
+        setSuccessToast(null);
+      }, 4000);
+    } catch (err: any) {
+      console.error("Error al actualizar producto:", err);
+      alert("No se pudo actualizar el producto: " + (err.message || "Error"));
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
   // Recalcular costos y actualizar precios de canales
   const handleRecalculate = async (product: typeof productsWithMeta[0]) => {
     if (recalculatingId) return;
@@ -308,13 +421,16 @@ export default function ProductosPage() {
       setRecalculatingId(product.id);
 
       const newDirectCost = Math.round(product.currentMaterialsCost * 100) / 100;
-      const newTotalCost = Math.round((newDirectCost + (product.labor_cost || 0) + (product.indirect_cost || 0)) * 100) / 100;
+      const newLaborCost = Math.round((product.work_time_minutes || 0) * currentMinuteRate * 100) / 100;
+      const newTotalCost = Math.round((newDirectCost + newLaborCost) * 100) / 100;
 
       // 1. Actualizar producto en Supabase
       const { error: prodErr } = await supabase
         .from("products")
         .update({
           direct_cost: newDirectCost,
+          labor_cost: newLaborCost,
+          indirect_cost: 0,
           total_cost: newTotalCost,
           needs_price_review: false,
         })
@@ -346,6 +462,8 @@ export default function ProductosPage() {
           return {
             ...p,
             direct_cost: newDirectCost,
+            labor_cost: newLaborCost,
+            indirect_cost: 0,
             total_cost: newTotalCost,
             needs_price_review: false,
             product_prices: updatedPrices.length > 0 ? updatedPrices : p.product_prices,
@@ -493,7 +611,7 @@ export default function ProductosPage() {
             </span>
           </h2>
           <p className="text-xs text-neutral-500">
-            Catálogo artesanal, badges de estado y cálculo de costos en tiempo real
+            Catálogo artesanal, etiquetas de estado y cálculo de costos en tiempo real
           </p>
         </div>
         <Link
@@ -691,16 +809,16 @@ export default function ProductosPage() {
         </div>
       </div>
 
-      {/* Tip Didáctico HABA */}
+      {/* Tip Didáctico HABA (Punto I) */}
       <div className="bg-[#F0FAF4] border border-[#DCF4D7] p-3 rounded-2xl flex items-start gap-2.5">
         <div className="w-6 h-6 rounded-xl bg-[#DCF4D7] text-[#1F7A4C] flex items-center justify-center flex-shrink-0 mt-0.5">
           <Sparkles className="w-3.5 h-3.5" />
         </div>
         <div className="text-[11px] leading-snug text-[#2B2B2B]">
           <span className="font-bold text-[#1F7A4C] block mb-0.5">
-            💡 Badges de estado y alertas de precios en tu taller
+            💡 Etiquetas de estado y alertas de precios en tu taller
           </span>
-          Los productos con el badge <strong className="text-amber-700">⚠️ Revisar Precios</strong> indican que alguno de sus insumos subió de precio recientemente. Podés activar o pausar cualquier producto haciendo clic en su badge de estado.
+          Los productos con la etiqueta <strong className="text-amber-700">⚠️ Revisar Precios</strong> indican que alguno de sus insumos subió de precio recientemente. Podés activar o pausar cualquier producto haciendo clic en su etiqueta de estado.
         </div>
       </div>
 
@@ -760,26 +878,14 @@ export default function ProductosPage() {
                     : "border-neutral-200/80 bg-neutral-50/40 opacity-90"
                 }`}
               >
-                {/* Cabecera de la tarjeta con Avatar temático de Categoría y Badges */}
-                <div className="flex items-start justify-between gap-3">
-                  {/* Avatar de Categoría Artesanal (Sin foto) */}
-                  <div
-                    className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl flex-shrink-0 border shadow-xs transition transform hover:scale-105"
-                    style={{
-                      backgroundColor: product.badge.bgColor,
-                      borderColor: product.badge.color + "33",
-                    }}
-                    title={`Categoría: ${product.meta.category}`}
-                  >
-                    <span>{product.meta.categoryIcon}</span>
-                  </div>
-
+                {/* Cabecera de la tarjeta: Título a la izquierda, botones de acción a la derecha */}
+                <div className="flex items-start justify-between gap-2">
                   {/* Información Principal y Badges */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                  <div className="flex-1 min-w-0 pr-1">
+                    <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
                       {/* Badge 1: Categoría */}
                       <span
-                        className="inline-flex items-center gap-1 text-[10px] font-bold px-2.5 py-0.5 rounded-full border shadow-2xs"
+                        className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border shadow-2xs"
                         style={{
                           backgroundColor: product.badge.bgColor,
                           color: product.badge.color,
@@ -787,14 +893,14 @@ export default function ProductosPage() {
                         }}
                       >
                         <span>{product.badge.icon}</span>
-                        <span className="truncate max-w-[130px]">{product.badge.label}</span>
+                        <span className="truncate max-w-[120px]">{product.badge.label}</span>
                       </span>
 
                       {/* Badge 2: Estado Activo / Inactivo (Interactivo con toggle) */}
                       <button
                         onClick={() => handleToggleStatus(product, isActive)}
                         disabled={togglingId === product.id}
-                        className={`inline-flex items-center gap-1.5 text-[10px] font-bold px-2 py-0.5 rounded-full border transition active:scale-95 cursor-pointer ${
+                        className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border transition active:scale-95 cursor-pointer ${
                           isActive
                             ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
                             : "bg-neutral-100 text-neutral-600 border-neutral-300 hover:bg-neutral-200"
@@ -821,18 +927,18 @@ export default function ProductosPage() {
                         )}
                       </button>
 
-                      {/* Badge 3: Alerta de Costo Desactualizado */}
+                      {/* Etiqueta 3: Alerta de Costo Desactualizado */}
                       {product.isCostOutdated && (
                         <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-300 animate-pulse">
                           <AlertTriangle className="w-3 h-3 text-amber-600" />
-                          <span>Costos Desactualizados</span>
+                          <span>Revisar Precios</span>
                         </span>
                       )}
                     </div>
 
                     {/* Nombre del producto */}
                     <h3
-                      className={`text-sm font-bold truncate ${
+                      className={`text-sm font-bold break-words leading-tight ${
                         isActive ? "text-neutral-800" : "text-neutral-500 line-through decoration-neutral-300"
                       }`}
                     >
@@ -841,7 +947,7 @@ export default function ProductosPage() {
 
                     {/* Descripción limpia si existe */}
                     {product.meta.cleanDescription && (
-                      <p className="text-[11px] text-neutral-500 line-clamp-1 mt-0.5">
+                      <p className="text-[11px] text-neutral-500 line-clamp-2 mt-1 leading-snug">
                         {product.meta.cleanDescription}
                       </p>
                     )}
@@ -875,6 +981,15 @@ export default function ProductosPage() {
                       ) : (
                         <Copy className="w-4 h-4" />
                       )}
+                    </button>
+
+                    {/* Botón de editar producto (Punto H) */}
+                    <button
+                      onClick={() => handleOpenEdit(product)}
+                      className="p-1.5 text-neutral-400 hover:text-[#1F7A4C] hover:bg-[#DCF4D7] rounded-xl transition"
+                      title="Editar detalles del producto"
+                    >
+                      <Pencil className="w-4 h-4" />
                     </button>
 
                     {/* Botón de crear presupuesto desde producto */}
@@ -923,8 +1038,8 @@ export default function ProductosPage() {
                     </span>
                     <span className="text-[9px] block text-neutral-400 mt-0.5">
                       {product.include_labor
-                        ? `${product.work_time_minutes} min M.O.`
-                        : "Solo materiales"}
+                        ? `${product.work_time_minutes} min productivo`
+                        : "Solo insumos"}
                     </span>
                   </div>
 
@@ -997,20 +1112,78 @@ export default function ProductosPage() {
                       </div>
                     )}
 
+                    {/* Detalle de Receta / Insumos que componen el producto (Punto H) */}
+                    <div className="bg-neutral-50 p-3 rounded-2xl border border-neutral-200/60 text-xs space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider block">
+                          Insumos y Packaging que lo componen:
+                        </span>
+                        <button
+                          onClick={() => handleOpenEdit(product)}
+                          className="text-[11px] font-bold text-[#1F7A4C] hover:text-[#165837] flex items-center gap-1 transition"
+                        >
+                          <Pencil className="w-3 h-3" />
+                          <span>Editar</span>
+                        </button>
+                      </div>
+
+                      {product.product_supplies && product.product_supplies.length > 0 ? (
+                        <div className="space-y-1">
+                          {product.product_supplies.map((ps) => {
+                            if (!ps.supplies) return null;
+                            const unitCost = calculateUnitCost(
+                              ps.supplies.current_price,
+                              ps.supplies.purchase_quantity,
+                              ps.supplies.conversion_factor
+                            );
+                            const subtotal = unitCost * (ps.quantity || 0);
+
+                            return (
+                              <div
+                                key={ps.id}
+                                className="flex items-center justify-between text-[11px] bg-white p-2 rounded-xl border border-neutral-200/60"
+                              >
+                                <div>
+                                  <span className="font-semibold text-neutral-800 block">
+                                    {ps.supplies.name}
+                                  </span>
+                                  <span className="text-[10px] text-neutral-400">
+                                    {ps.quantity} {ps.supplies.use_unit} × {formatCurrency(unitCost)}
+                                  </span>
+                                </div>
+                                <span className="font-bold text-[#1F7A4C]">
+                                  {formatCurrency(subtotal)}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <p className="text-[11px] text-neutral-400 italic">
+                          Sin receta de insumos registrada.
+                        </p>
+                      )}
+                    </div>
+
                     {/* Desglose de costos */}
                     <div className="bg-neutral-50 p-3 rounded-2xl border border-neutral-200/60 text-xs space-y-1">
                       <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider block">
                         Composición del Costo:
                       </span>
                       <div className="flex justify-between text-neutral-600">
-                        <span>Materiales & Packaging:</span>
+                        <span>Total Insumos & Packaging:</span>
                         <span className="font-semibold">{formatCurrency(product.direct_cost)}</span>
                       </div>
                       {product.include_labor && (
-                        <div className="flex justify-between text-neutral-600">
-                          <span>Mano de obra ({product.work_time_minutes} min):</span>
-                          <span className="font-semibold">{formatCurrency(product.labor_cost)}</span>
-                        </div>
+                        <>
+                          <div className="flex justify-between text-neutral-600">
+                            <span>Costo productivo ({product.work_time_minutes} min):</span>
+                            <span className="font-semibold">{formatCurrency(product.labor_cost)}</span>
+                          </div>
+                          <div className="text-[10px] text-neutral-400 -mt-0.5">
+                            Incluye gastos operativos + sueldo
+                          </div>
+                        </>
                       )}
                       {product.indirect_cost > 0 && (
                         <div className="flex justify-between text-neutral-600">
@@ -1091,6 +1264,193 @@ export default function ProductosPage() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Modal para Duplicar Producto solicitando nuevo nombre (Punto I) */}
+      {duplicateModalProduct && (
+        <div className="fixed inset-0 z-[9999] bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-sm rounded-3xl p-5 shadow-2xl border border-[#EAF0E8] space-y-4 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b border-neutral-100 pb-2.5">
+              <h3 className="text-sm font-bold text-neutral-800 flex items-center gap-1.5">
+                <Copy className="w-4 h-4 text-[#3BB578]" />
+                <span>Duplicar Producto</span>
+              </h3>
+              <button
+                onClick={() => setDuplicateModalProduct(null)}
+                className="p-1 text-neutral-400 hover:text-neutral-600 rounded-full"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-neutral-500 leading-relaxed">
+              Para evitar productos duplicados con el mismo nombre, ingresá un nombre diferente para esta copia (ej: variante, color o tamaño):
+            </p>
+
+            <div className="space-y-1">
+              <label className="text-[11px] font-semibold text-neutral-700 block">
+                Nombre de la copia:
+              </label>
+              <input
+                type="text"
+                value={duplicateNewName}
+                onChange={(e) => setDuplicateNewName(e.target.value)}
+                placeholder="Ej: Cuaderno A5 Rayado"
+                className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl outline-none focus:bg-white focus:border-[#3BB578] focus:ring-2 focus:ring-[#DCF4D7]"
+                autoFocus
+              />
+              <span className="text-[10px] text-neutral-400 block mt-0.5">
+                Original: {duplicateModalProduct.name}
+              </span>
+            </div>
+
+            <div className="pt-2 flex justify-end gap-2 border-t border-neutral-100">
+              <button
+                type="button"
+                onClick={() => setDuplicateModalProduct(null)}
+                className="py-2 px-3.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 text-xs font-semibold rounded-2xl transition"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDuplicate}
+                disabled={!duplicateNewName.trim() || duplicatingId !== null}
+                className="py-2 px-4 bg-[#3BB578] hover:bg-[#2E9E65] disabled:opacity-50 text-white text-xs font-bold rounded-2xl transition flex items-center gap-1.5 shadow-sm"
+              >
+                {duplicatingId ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Duplicando...</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>Confirmar Duplicación</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal para Edición Rápida de Producto (Punto H) */}
+      {editModalProduct && (
+        <div className="fixed inset-0 z-[9999] bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-3xl p-5 shadow-2xl border border-[#EAF0E8] space-y-4 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b border-neutral-100 pb-2.5">
+              <h3 className="text-sm font-bold text-neutral-800 flex items-center gap-1.5">
+                <Pencil className="w-4 h-4 text-[#3BB578]" />
+                <span>Editar Producto</span>
+              </h3>
+              <button
+                onClick={() => setEditModalProduct(null)}
+                className="p-1 text-neutral-400 hover:text-neutral-600 rounded-full"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-[11px] font-semibold text-neutral-700 block mb-1">
+                  Nombre del Producto:
+                </label>
+                <input
+                  type="text"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl outline-none focus:bg-white focus:border-[#3BB578] focus:ring-2 focus:ring-[#DCF4D7]"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-semibold text-neutral-700 block mb-1">
+                  Categoría Artesanal:
+                </label>
+                <select
+                  value={editCategory}
+                  onChange={(e) => setEditCategory(e.target.value)}
+                  className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl outline-none focus:bg-white focus:border-[#3BB578]"
+                >
+                  {PRODUCT_CATEGORIES.map((cat) => (
+                    <option key={cat.id} value={cat.label}>
+                      {cat.icon} {cat.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-semibold text-neutral-700 block mb-1">
+                  Tiempo de producción (minutos):
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="0"
+                    value={editWorkMinutes}
+                    onChange={(e) => setEditWorkMinutes(parseInt(e.target.value) || 0)}
+                    className="w-24 px-3 py-1.5 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl text-center font-bold outline-none focus:bg-white focus:border-[#3BB578]"
+                  />
+                  <span className="text-xs text-neutral-400">minutos</span>
+                  <span className="text-[11px] text-[#1F7A4C] font-semibold ml-auto">
+                    Costo prod: {formatCurrency(Math.round(editWorkMinutes * (currentMinuteRate || 0) * 100) / 100)}
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-semibold text-neutral-700 block mb-1">
+                  Descripción o Notas:
+                </label>
+                <textarea
+                  rows={2}
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  placeholder="Detalles, medidas o variantes..."
+                  className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl outline-none focus:bg-white focus:border-[#3BB578] resize-none"
+                />
+              </div>
+
+              {/* Insumos asociados informativa */}
+              <div className="p-3 bg-neutral-50 rounded-2xl border border-neutral-200/70 text-[11px] space-y-1">
+                <span className="font-bold text-neutral-600 block">
+                  Costo de Insumos: {formatCurrency(editModalProduct.direct_cost)}
+                </span>
+                <p className="text-[10px] text-neutral-400">
+                  Si necesitás agregar o quitar insumos de la receta, podés duplicar el producto o crear una nueva versión en un clic.
+                </p>
+              </div>
+            </div>
+
+            <div className="pt-2 flex justify-end gap-2 border-t border-neutral-100">
+              <button
+                type="button"
+                onClick={() => setEditModalProduct(null)}
+                className="py-2 px-3.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 text-xs font-semibold rounded-2xl transition"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveEditProduct}
+                disabled={savingEdit || !editName.trim()}
+                className="py-2 px-4 bg-[#3BB578] hover:bg-[#2E9E65] disabled:opacity-50 text-white text-xs font-bold rounded-2xl transition flex items-center gap-1.5 shadow-sm"
+              >
+                {savingEdit ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Guardando...</span>
+                  </>
+                ) : (
+                  <span>Guardar Cambios</span>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
