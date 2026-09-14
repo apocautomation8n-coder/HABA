@@ -32,8 +32,8 @@ export default function GastosPage() {
 
   // Mano de Obra State
   const [salary, setSalary] = useState<number | string>(350000);
-  const [daysPerMonth, setDaysPerMonth] = useState<number>(20);
-  const [hoursPerDay, setHoursPerDay] = useState<number>(6);
+  const [daysPerMonth, setDaysPerMonth] = useState<number | string>(20);
+  const [hoursPerDay, setHoursPerDay] = useState<number | string>(6);
   const [savingLabor, setSavingLabor] = useState(false);
   const [laborSavedSuccess, setLaborSavedSuccess] = useState(false);
   const [laborError, setLaborError] = useState<string | null>(null);
@@ -87,7 +87,9 @@ export default function GastosPage() {
 
   // Cálculo reactivo de Mano de Obra
   const parsedSalary = typeof salary === "number" ? salary : parseFloat(salary) || 0;
-  const totalHoursPerMonth = (daysPerMonth || 1) * (hoursPerDay || 1);
+  const numDays = typeof daysPerMonth === "number" ? daysPerMonth : parseFloat(String(daysPerMonth)) || 0;
+  const numHours = typeof hoursPerDay === "number" ? hoursPerDay : parseFloat(String(hoursPerDay)) || 0;
+  const totalHoursPerMonth = numDays * numHours;
   const calculatedHourlyRate = totalHoursPerMonth > 0 ? parsedSalary / totalHoursPerMonth : 0;
   const calculatedMinuteRate = calculatedHourlyRate / 60;
 
@@ -136,15 +138,18 @@ export default function GastosPage() {
     e.preventDefault();
     setLaborError(null);
 
+    const numDays = typeof daysPerMonth === "number" ? daysPerMonth : parseFloat(String(daysPerMonth)) || 0;
+    const numHours = typeof hoursPerDay === "number" ? hoursPerDay : parseFloat(String(hoursPerDay)) || 0;
+
     if (parsedSalary < 0) {
       setLaborError("El sueldo pretendido no puede ser negativo.");
       return;
     }
-    if (daysPerMonth < 1 || daysPerMonth > 31) {
+    if (numDays < 1 || numDays > 31) {
       setLaborError("Los días trabajados al mes deben estar entre 1 y 31.");
       return;
     }
-    if (hoursPerDay <= 0 || hoursPerDay > 24) {
+    if (numHours <= 0 || numHours > 24) {
       setLaborError("Las horas diarias de producción deben ser entre 1 y 24.");
       return;
     }
@@ -167,8 +172,8 @@ export default function GastosPage() {
         {
           user_id: user.id,
           desired_monthly_salary: parsedSalary,
-          working_days_per_month: daysPerMonth,
-          working_hours_per_day: hoursPerDay,
+          working_days_per_month: numDays,
+          working_hours_per_day: numHours,
           hourly_rate: calculatedHourlyRate,
           minute_rate: calculatedMinuteRate,
           updated_at: now,
@@ -388,7 +393,8 @@ export default function GastosPage() {
                   min="1"
                   max="31"
                   value={daysPerMonth}
-                  onChange={(e) => setDaysPerMonth(parseInt(e.target.value) || 1)}
+                  onChange={(e) => setDaysPerMonth(e.target.value)}
+                  placeholder="20"
                   required
                   className="w-full px-3.5 py-2 text-sm bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B]"
                 />
@@ -402,7 +408,8 @@ export default function GastosPage() {
                   min="1"
                   max="24"
                   value={hoursPerDay}
-                  onChange={(e) => setHoursPerDay(parseFloat(e.target.value) || 1)}
+                  onChange={(e) => setHoursPerDay(e.target.value)}
+                  placeholder="6"
                   required
                   className="w-full px-3.5 py-2 text-sm bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B]"
                 />
