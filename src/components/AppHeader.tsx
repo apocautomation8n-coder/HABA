@@ -120,7 +120,6 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
         isOpen={isNotificationsOpen}
         onClose={() => {
           setIsNotificationsOpen(false);
-          setUnreadCount(0);
         }}
         onCountChange={(count) => setUnreadCount(count)}
       />
