@@ -3,10 +3,37 @@
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { User, Store, Mail, ShieldCheck, LogOut, Check, Sparkles, Smartphone, Bell, Clock, RefreshCw, Lock, Eye, EyeOff, KeyRound } from "lucide-react";
+import {
+  User,
+  Store,
+  Mail,
+  ShieldCheck,
+  LogOut,
+  Check,
+  Sparkles,
+  Smartphone,
+  Bell,
+  Clock,
+  RefreshCw,
+  Lock,
+  Eye,
+  EyeOff,
+  Camera,
+  Calendar,
+  Loader2,
+} from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
 import { checkIsAdmin } from "@/lib/auth-helpers";
+import {
+  PlanType,
+  AccountStatus,
+  PLAN_NAMES,
+  ACCOUNT_STATUS_NAMES,
+  getPlanStatusInfo,
+  formatDateDisplay,
+  calculatePlanEndDate,
+} from "@/lib/plan-helpers";
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -26,6 +53,16 @@ export default function SettingsPage() {
   const [savedNotifSuccess, setSavedNotifSuccess] = useState(false);
   const [updating, setUpdating] = useState(false);
 
+  // Foto de perfil o logo
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+
+  // Datos del Plan
+  const [planType, setPlanType] = useState<PlanType>("prueba");
+  const [planStartDate, setPlanStartDate] = useState<string>("");
+  const [planEndDate, setPlanEndDate] = useState<string>("");
+  const [accountStatus, setAccountStatus] = useState<AccountStatus>("active");
+
   useEffect(() => {
     async function loadUser() {
       try {
@@ -38,7 +75,6 @@ export default function SettingsPage() {
           setUserId(user.id);
           setEmail(user.email || "");
 
-          // 1. Detección inmediata de admin
           if (checkIsAdmin(user)) {
             setRole("admin");
           }
@@ -49,8 +85,23 @@ export default function SettingsPage() {
           if (user.user_metadata?.business_name) {
             setBusinessName(user.user_metadata.business_name);
           }
+          if (user.user_metadata?.avatar_url) {
+            setAvatarUrl(user.user_metadata.avatar_url);
+          }
+          if (user.user_metadata?.plan_type) {
+            setPlanType(user.user_metadata.plan_type);
+          }
+          if (user.user_metadata?.plan_start_date) {
+            setPlanStartDate(user.user_metadata.plan_start_date);
+          }
+          if (user.user_metadata?.plan_end_date) {
+            setPlanEndDate(user.user_metadata.plan_end_date);
+          }
+          if (user.user_metadata?.account_status) {
+            setAccountStatus(user.user_metadata.account_status);
+          }
 
-          // 2. Cargar perfil desde API segura (bypasea RLS recursivo)
+          // Cargar perfil desde API segura (bypasea RLS recursivo)
           try {
             const res = await fetch("/api/user/profile");
             if (res.ok) {
@@ -59,6 +110,11 @@ export default function SettingsPage() {
               if (data.profile?.full_name) setFullName(data.profile.full_name);
               if (data.profile?.business_name) setBusinessName(data.profile.business_name);
               if (data.profile?.role) setRole(data.profile.role);
+              if (data.profile?.avatar_url) setAvatarUrl(data.profile.avatar_url);
+              if (data.profile?.plan_type) setPlanType(data.profile.plan_type);
+              if (data.profile?.plan_start_date) setPlanStartDate(data.profile.plan_start_date);
+              if (data.profile?.plan_end_date) setPlanEndDate(data.profile.plan_end_date);
+              if (data.profile?.account_status) setAccountStatus(data.profile.account_status);
             }
           } catch {
             // ignore
@@ -76,6 +132,60 @@ export default function SettingsPage() {
     const savedDays = localStorage.getItem("haba_price_review_days");
     if (savedDays) setPriceReviewDays(parseInt(savedDays, 10) || 15);
   }, [supabase]);
+
+  // Subir foto de perfil o logo
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      alert("La imagen no debe superar los 5MB.");
+      return;
+    }
+
+    try {
+      setUploadingAvatar(true);
+      const formData = new FormData();
+      formData.append("avatar", file);
+
+      const res = await fetch("/api/user/avatar", {
+        method: "POST",
+        body: formData,
+      });
+
+      const resJson = await res.json();
+      if (!res.ok) {
+        throw new Error(resJson.error || "Error al subir la imagen");
+      }
+
+      setAvatarUrl(resJson.avatarUrl);
+    } catch (err: any) {
+      alert("Error: " + err.message);
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
+  // Quitar foto de perfil o logo
+  const handleRemoveAvatar = async () => {
+    if (!window.confirm("¿Querés quitar tu foto de perfil o logo?")) return;
+    try {
+      setUploadingAvatar(true);
+      const res = await fetch("/api/user/avatar", {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        setAvatarUrl(null);
+      } else {
+        const data = await res.json();
+        alert("Error: " + (data.error || "No se pudo quitar"));
+      }
+    } catch (err: any) {
+      alert("Error: " + err.message);
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -132,16 +242,64 @@ export default function SettingsPage() {
     );
   }
 
+  const planStatusInfo = getPlanStatusInfo(planEndDate);
+
   return (
-    <div className="w-full flex flex-col space-y-5">
-      {/* Header Perfil */}
-      <div className="flex items-center gap-3.5 bg-white p-4 rounded-3xl border border-[#EAF0E8] shadow-sm">
-        <HabaMascot size={60} />
-        <div>
-          <h2 className="text-base font-bold text-neutral-800">
-            {fullName || "Mi Perfil"}
-          </h2>
-          <p className="text-xs text-neutral-500">{email}</p>
+    <div className="w-full flex flex-col space-y-5 font-body pb-8">
+      {/* Header Perfil con Foto de Perfil o Logo */}
+      <div className="flex items-center gap-4 bg-white p-5 rounded-3xl border border-[#EAF0E8] shadow-sm">
+        <div className="relative group flex-shrink-0">
+          {avatarUrl ? (
+            <img
+              src={avatarUrl}
+              alt="Logo o Foto"
+              className="w-16 h-16 rounded-2xl object-cover border-2 border-[#3BB578] shadow-xs"
+            />
+          ) : (
+            <div className="w-16 h-16 rounded-2xl bg-[#DCF4D7] border-2 border-[#C3EBC0] flex items-center justify-center text-[#1F7A4C] font-bold text-xl shadow-xs">
+              <HabaMascot size={46} />
+            </div>
+          )}
+
+          {/* Botón interactivo de cambiar foto */}
+          <label
+            htmlFor="avatar-upload-input"
+            className="absolute -bottom-1 -right-1 w-7 h-7 bg-[#3BB578] hover:bg-[#2E9E65] text-white rounded-full flex items-center justify-center cursor-pointer shadow-md transition active:scale-95"
+            title="Elegir foto de perfil o logo"
+          >
+            {uploadingAvatar ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Camera className="w-3.5 h-3.5" />
+            )}
+          </label>
+          <input
+            id="avatar-upload-input"
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleAvatarChange}
+            disabled={uploadingAvatar}
+          />
+        </div>
+
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-base font-bold text-neutral-800 truncate font-display">
+              {fullName || businessName || "Mi Perfil"}
+            </h2>
+            {avatarUrl && (
+              <button
+                type="button"
+                onClick={handleRemoveAvatar}
+                disabled={uploadingAvatar}
+                className="text-[10.5px] text-neutral-400 hover:text-rose-600 transition"
+              >
+                Quitar foto
+              </button>
+            )}
+          </div>
+          <p className="text-xs text-neutral-500 truncate">{email}</p>
           <span className="inline-flex items-center gap-1 text-[10px] text-[#1F7A4C] bg-[#DCF4D7] px-2 py-0.5 rounded-full font-semibold mt-1">
             <ShieldCheck className="w-3 h-3" />
             {role === "admin" ? "SuperAdmin Gio" : "Cuenta Emprendedora"}
@@ -161,7 +319,7 @@ export default function SettingsPage() {
             </div>
             <div>
               <p className="text-sm font-bold text-[#1F7A4C] font-display">Panel SuperAdmin Gio</p>
-              <p className="text-xs text-[#2B2B2B]">Gestionar altas, apagar/activar y bajas de usuarias</p>
+              <p className="text-xs text-[#2B2B2B]">Gestionar usuarias, planes y vigencias</p>
             </div>
           </div>
           <span className="px-3.5 py-2 bg-[#3BB578] group-hover:bg-[#2E9E65] text-white font-bold rounded-2xl text-xs transition shadow-xs">
@@ -169,6 +327,73 @@ export default function SettingsPage() {
           </span>
         </Link>
       )}
+
+      {/* Tarjeta Estado de Mi Plan */}
+      <div className="bg-white p-5 rounded-3xl border border-[#EAF0E8] shadow-sm space-y-3 font-body">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center">
+              <Calendar className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-[10.5px] font-bold uppercase tracking-wider text-neutral-400">
+                Tu Suscripción
+              </h3>
+              <p className="text-sm font-bold text-[#2B2B2B] font-display">
+                Plan {PLAN_NAMES[planType] || planType}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {/* Badge estado del plan */}
+            <span
+              className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${planStatusInfo.badgeBg} ${planStatusInfo.badgeText} ${planStatusInfo.badgeBorder}`}
+            >
+              {planStatusInfo.label}
+            </span>
+
+            {/* Badge estado de cuenta */}
+            <span
+              className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
+                accountStatus === "active"
+                  ? "bg-[#DCF4D7] text-[#1F7A4C]"
+                  : accountStatus === "suspended"
+                  ? "bg-amber-100 text-amber-800"
+                  : "bg-rose-100 text-rose-700"
+              }`}
+            >
+              Cuenta {ACCOUNT_STATUS_NAMES[accountStatus] || accountStatus}
+            </span>
+          </div>
+        </div>
+
+        <div className="p-3 bg-[#F6F7F2] rounded-2xl border border-[#EAF0E8] space-y-2 text-xs">
+          <div className="flex items-center justify-between text-neutral-600">
+            <span className="text-[11px] text-[#7A7A7A]">Fecha de inicio:</span>
+            <span className="font-bold text-[#2B2B2B]">
+              {formatDateDisplay(planStartDate)}
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between text-neutral-600">
+            <span className="text-[11px] text-[#7A7A7A]">Fecha de vencimiento:</span>
+            <span className="font-bold text-[#2B2B2B]">
+              {formatDateDisplay(planEndDate)}
+            </span>
+          </div>
+
+          <div className="pt-2 border-t border-neutral-200/60 flex items-center justify-between">
+            <span className="text-[11px] text-[#7A7A7A] flex items-center gap-1">
+              <Clock className="w-3.5 h-3.5 text-neutral-400" />
+              Vigencia restante:
+            </span>
+            <span className={`font-bold ${planStatusInfo.badgeText}`}>
+              {planStatusInfo.rowText}
+            </span>
+          </div>
+        </div>
+      </div>
 
       {/* Formulario de Emprendimiento */}
       <div className="bg-white p-5 rounded-3xl border border-[#EAF0E8] shadow-sm">
@@ -276,7 +501,6 @@ export default function SettingsPage() {
         </h3>
 
         <div className="space-y-4">
-          {/* Recordatorio de precios */}
           <div className="space-y-2">
             <div className="flex items-center gap-2">
               <div className="w-7 h-7 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
@@ -311,7 +535,6 @@ export default function SettingsPage() {
             </p>
           </div>
 
-          {/* Botón guardar preferencias */}
           <button
             type="button"
             onClick={() => {
@@ -333,6 +556,7 @@ export default function SettingsPage() {
           </button>
         </div>
       </div>
+
       {/* Instalar App en el Celular */}
       <div className="bg-white border border-[#EAF0E8] p-4 rounded-3xl flex items-center justify-between shadow-sm">
         <div className="flex items-center gap-2.5">
@@ -352,7 +576,9 @@ export default function SettingsPage() {
             if (isRunningStandalone) {
               alert("¡Ya tenés HABA instalada como aplicación!");
             } else {
-              alert("Para instalar en iPhone: Toca el botón Compartir en Safari y luego 'Agregar a pantalla de inicio'. En Android: Toca el menú de 3 puntos y 'Instalar aplicación'.");
+              alert(
+                "Para instalar en iPhone: Toca el botón Compartir en Safari y luego 'Agregar a pantalla de inicio'. En Android: Toca el menú de 3 puntos y 'Instalar aplicación'."
+              );
             }
           }}
           className="px-3 py-1.5 bg-[#3BB578] hover:bg-[#2E9E65] text-white font-semibold rounded-xl text-xs transition"
@@ -377,21 +603,18 @@ export default function SettingsPage() {
           onClick={async () => {
             setUpdating(true);
             try {
-              // 1. Desregistrar todos los service workers
               if ("serviceWorker" in navigator) {
                 const registrations = await navigator.serviceWorker.getRegistrations();
                 for (const reg of registrations) {
                   await reg.unregister();
                 }
               }
-              // 2. Limpiar todos los caches del navegador
               if ("caches" in window) {
                 const cacheNames = await caches.keys();
                 for (const name of cacheNames) {
                   await caches.delete(name);
                 }
               }
-              // 3. Esperar un momento y hacer hard reload
               await new Promise((r) => setTimeout(r, 500));
               window.location.reload();
             } catch (err) {

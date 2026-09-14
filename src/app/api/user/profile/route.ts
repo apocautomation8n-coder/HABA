@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+import { calculatePlanEndDate } from "@/lib/plan-helpers";
 
 function getAdminClient() {
   return createSupabaseClient(
@@ -37,7 +38,7 @@ export async function GET(request: Request) {
     }
 
     const admin = getAdminClient();
-    const { data: profile, error } = await admin
+    const { data: profile } = await admin
       .from("profiles")
       .select("*")
       .eq("id", user.id)
@@ -48,16 +49,36 @@ export async function GET(request: Request) {
       user.user_metadata?.role === "admin" ||
       profile?.role === "admin";
 
+    const meta = user.user_metadata || {};
+    const planType = meta.plan_type || "prueba";
+    const planStartDate =
+      meta.plan_start_date ||
+      user.created_at?.split("T")[0] ||
+      new Date().toISOString().split("T")[0];
+    const planEndDate =
+      meta.plan_end_date || calculatePlanEndDate(planStartDate, planType);
+    const accountStatus =
+      meta.account_status || (profile?.status === "suspended" ? "suspended" : "active");
+    const avatarUrl = meta.avatar_url || null;
+
+    const fullProfile = {
+      id: user.id,
+      email: profile?.email || user.email,
+      full_name: profile?.full_name || meta.full_name || null,
+      business_name: profile?.business_name || meta.business_name || null,
+      role: isAdmin ? "admin" : profile?.role || "user",
+      status: profile?.status || "active",
+      plan_type: planType,
+      plan_start_date: planStartDate,
+      plan_end_date: planEndDate,
+      account_status: accountStatus,
+      avatar_url: avatarUrl,
+      created_at: profile?.created_at || user.created_at,
+    };
+
     return NextResponse.json({
       user,
-      profile: profile || {
-        id: user.id,
-        email: user.email,
-        full_name: user.user_metadata?.full_name || null,
-        business_name: user.user_metadata?.business_name || null,
-        role: isAdmin ? "admin" : "user",
-        status: "active",
-      },
+      profile: fullProfile,
       isAdmin,
     });
   } catch (err: any) {
@@ -86,7 +107,7 @@ export async function PATCH(request: Request) {
     }
 
     const body = await request.json();
-    const { fullName, businessName, email, password } = body;
+    const { fullName, businessName, email, password, avatarUrl } = body;
 
     const admin = getAdminClient();
     const updateData: Record<string, any> = {
@@ -102,6 +123,10 @@ export async function PATCH(request: Request) {
         business_name: businessName !== undefined ? businessName.trim() : user.user_metadata?.business_name,
       },
     };
+
+    if (avatarUrl !== undefined) {
+      authUpdate.user_metadata.avatar_url = avatarUrl;
+    }
 
     if (email && email.trim().toLowerCase() !== user.email?.toLowerCase()) {
       authUpdate.email = email.trim().toLowerCase();

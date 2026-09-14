@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   ShieldCheck,
-  Users,
   UserPlus,
   Power,
   Trash2,
@@ -14,18 +13,27 @@ import {
   Search,
   Check,
   AlertCircle,
-  Sparkles,
-  Mail,
-  Store,
   KeyRound,
   Edit2,
   X,
-  Loader2,
+  Calendar,
+  Clock,
+  Store,
+  Filter,
 } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
 import { checkIsAdmin } from "@/lib/auth-helpers";
 import { useModalThemeColor } from "@/hooks/useModalThemeColor";
+import {
+  PlanType,
+  AccountStatus,
+  PLAN_NAMES,
+  ACCOUNT_STATUS_NAMES,
+  getPlanStatusInfo,
+  formatDateDisplay,
+  calculatePlanEndDate,
+} from "@/lib/plan-helpers";
 
 interface UserProfile {
   id: string;
@@ -35,7 +43,14 @@ interface UserProfile {
   role: "admin" | "user";
   status: "active" | "suspended";
   created_at: string;
+  plan_type?: PlanType;
+  plan_start_date?: string;
+  plan_end_date?: string;
+  account_status?: AccountStatus;
+  avatar_url?: string | null;
 }
+
+type QuickFilter = "todos" | "activos" | "proximos" | "vencidos" | "desactivados";
 
 export default function AdminPage() {
   const router = useRouter();
@@ -46,6 +61,7 @@ export default function AdminPage() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [search, setSearch] = useState("");
+  const [quickFilter, setQuickFilter] = useState<QuickFilter>("todos");
 
   // Modal para dar de alta nueva usuaria
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -53,6 +69,14 @@ export default function AdminPage() {
   const [newPassword, setNewPassword] = useState("");
   const [newFullName, setNewFullName] = useState("");
   const [newBusinessName, setNewBusinessName] = useState("");
+  const [newPlanType, setNewPlanType] = useState<PlanType>("prueba");
+  const [newPlanStartDate, setNewPlanStartDate] = useState(
+    new Date().toISOString().split("T")[0]
+  );
+  const [newPlanEndDate, setNewPlanEndDate] = useState(
+    calculatePlanEndDate(new Date().toISOString().split("T")[0], "prueba")
+  );
+  const [newAccountStatus, setNewAccountStatus] = useState<AccountStatus>("active");
   const [creatingUser, setCreatingUser] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
@@ -63,11 +87,15 @@ export default function AdminPage() {
   const [resetSuccess, setResetSuccess] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
 
-  // Modal para editar datos de usuaria
+  // Modal para editar datos y plan de usuaria
   const [editModalUser, setEditModalUser] = useState<UserProfile | null>(null);
   const [editFullName, setEditFullName] = useState("");
   const [editBusinessName, setEditBusinessName] = useState("");
   const [editEmail, setEditEmail] = useState("");
+  const [editPlanType, setEditPlanType] = useState<PlanType>("prueba");
+  const [editPlanStartDate, setEditPlanStartDate] = useState("");
+  const [editPlanEndDate, setEditPlanEndDate] = useState("");
+  const [editAccountStatus, setEditAccountStatus] = useState<AccountStatus>("active");
   const [editingUserLoading, setEditingUserLoading] = useState(false);
   const [editSuccess, setEditSuccess] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
@@ -99,7 +127,7 @@ export default function AdminPage() {
     };
   }, [isCreateModalOpen, resetModalUser, editModalUser]);
 
-  // Verificar rol de admin y cargar usuarias
+  // Cargar usuarias del sistema
   const loadUsers = async () => {
     try {
       setLoading(true);
@@ -112,7 +140,7 @@ export default function AdminPage() {
         return;
       }
 
-      // Validar rol de admin de forma resiliente
+      // Validar rol de admin
       let hasAdmin = checkIsAdmin(user);
 
       if (!hasAdmin) {
@@ -135,7 +163,7 @@ export default function AdminPage() {
 
       setIsAdmin(true);
 
-      // Cargar perfiles mediante API segura (evita RLS recursivo)
+      // Cargar perfiles y planes mediante API segura
       const res = await fetch("/api/admin/users");
       if (res.ok) {
         const data = await res.json();
@@ -156,12 +184,19 @@ export default function AdminPage() {
 
   // Alternar estado activo / suspendido (apagar/encender)
   const toggleUserActive = async (targetUser: UserProfile) => {
-    const isCurrentlyActive = targetUser.status === "active";
-    const nextStatus = isCurrentlyActive ? "suspended" : "active";
-    const actionName = isCurrentlyActive ? "apagar (suspender)" : "activar";
+    const currentEffectiveStatus =
+      targetUser.account_status ||
+      (targetUser.status === "suspended" ? "suspended" : "active");
+    const isCurrentlyActive = currentEffectiveStatus === "active";
+    const nextAccountStatus: AccountStatus = isCurrentlyActive
+      ? "suspended"
+      : "active";
+    const actionName = isCurrentlyActive ? "suspender / apagar" : "activar";
 
     const confirm = window.confirm(
-      `¿Estás segura de ${actionName} la cuenta de "${targetUser.full_name || targetUser.email}"?`
+      `¿Estás segura de ${actionName} la cuenta de "${
+        targetUser.full_name || targetUser.email
+      }"?`
     );
     if (!confirm) return;
 
@@ -169,13 +204,24 @@ export default function AdminPage() {
       const res = await fetch("/api/admin/users", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: targetUser.id, status: nextStatus }),
+        body: JSON.stringify({
+          userId: targetUser.id,
+          accountStatus: nextAccountStatus,
+        }),
       });
 
       const resJson = await res.json();
       if (res.ok) {
         setUsers((prev) =>
-          prev.map((u) => (u.id === targetUser.id ? { ...u, status: nextStatus } : u))
+          prev.map((u) =>
+            u.id === targetUser.id
+              ? {
+                  ...u,
+                  account_status: nextAccountStatus,
+                  status: nextAccountStatus === "active" ? "active" : "suspended",
+                }
+              : u
+          )
         );
       } else {
         alert("Error al actualizar estado: " + (resJson.error || "No se pudo actualizar"));
@@ -193,7 +239,9 @@ export default function AdminPage() {
     }
 
     const confirm = window.confirm(
-      `¿ELIMINAR DEFINITIVAMENTE a "${targetUser.full_name || targetUser.email}"?\n\nEsta acción borrará permanentemente su cuenta y todos sus productos, insumos y presupuestos.`
+      `¿ELIMINAR DEFINITIVAMENTE a "${
+        targetUser.full_name || targetUser.email
+      }"?\n\nEsta acción borrará permanentemente su cuenta y todos sus productos, insumos y presupuestos.`
     );
     if (!confirm) return;
 
@@ -215,7 +263,7 @@ export default function AdminPage() {
     }
   };
 
-  // Crear nueva usuaria
+  // Crear nueva usuaria con plan
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setCreateError(null);
@@ -230,6 +278,10 @@ export default function AdminPage() {
           password: newPassword,
           fullName: newFullName.trim(),
           businessName: newBusinessName.trim(),
+          planType: newPlanType,
+          planStartDate: newPlanStartDate,
+          planEndDate: newPlanEndDate,
+          accountStatus: newAccountStatus,
         }),
       });
 
@@ -238,13 +290,17 @@ export default function AdminPage() {
         throw new Error(resJson.error || "Error al crear usuaria");
       }
 
-      // Éxito: recargar lista y limpiar form
       await loadUsers();
       setIsCreateModalOpen(false);
       setNewEmail("");
       setNewPassword("");
       setNewFullName("");
       setNewBusinessName("");
+      setNewPlanType("prueba");
+      const today = new Date().toISOString().split("T")[0];
+      setNewPlanStartDate(today);
+      setNewPlanEndDate(calculatePlanEndDate(today, "prueba"));
+      setNewAccountStatus("active");
     } catch (err: any) {
       setCreateError(err.message);
     } finally {
@@ -287,7 +343,7 @@ export default function AdminPage() {
     }
   };
 
-  // Guardar cambios de datos de usuaria
+  // Guardar cambios de datos y plan de usuaria
   const handleEditUserSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editModalUser) return;
@@ -303,6 +359,10 @@ export default function AdminPage() {
           fullName: editFullName.trim(),
           businessName: editBusinessName.trim(),
           email: editEmail.trim(),
+          planType: editPlanType,
+          planStartDate: editPlanStartDate,
+          planEndDate: editPlanEndDate,
+          accountStatus: editAccountStatus,
         }),
       });
 
@@ -324,12 +384,77 @@ export default function AdminPage() {
     }
   };
 
-  const filteredUsers = users.filter(
-    (u) =>
+  // Abrir modal de edición prellenando todos los campos
+  const openEditModal = (u: UserProfile) => {
+    setEditModalUser(u);
+    setEditFullName(u.full_name || "");
+    setEditBusinessName(u.business_name || "");
+    setEditEmail(u.email || "");
+
+    const planType = u.plan_type || "prueba";
+    const startDate =
+      u.plan_start_date ||
+      u.created_at?.split("T")[0] ||
+      new Date().toISOString().split("T")[0];
+    const endDate =
+      u.plan_end_date || calculatePlanEndDate(startDate, planType);
+    const accStatus =
+      u.account_status || (u.status === "suspended" ? "suspended" : "active");
+
+    setEditPlanType(planType);
+    setEditPlanStartDate(startDate);
+    setEditPlanEndDate(endDate);
+    setEditAccountStatus(accStatus);
+    setEditError(null);
+    setEditSuccess(false);
+  };
+
+  // Calcular contadores de filtros rápidos
+  const userStats = users.reduce(
+    (acc, u) => {
+      const info = getPlanStatusInfo(u.plan_end_date);
+      const accStatus =
+        u.account_status || (u.status === "suspended" ? "suspended" : "active");
+
+      acc.todos++;
+      if (accStatus === "active" && info.status !== "vencido") acc.activos++;
+      if (info.status === "proximo_a_vencer") acc.proximos++;
+      if (info.status === "vencido") acc.vencidos++;
+      if (accStatus === "deactivated" || accStatus === "suspended") acc.desactivados++;
+
+      return acc;
+    },
+    { todos: 0, activos: 0, proximos: 0, vencidos: 0, desactivados: 0 }
+  );
+
+  // Filtrar usuarias por texto y filtro rápido
+  const filteredUsers = users.filter((u) => {
+    const matchesSearch =
       u.email.toLowerCase().includes(search.toLowerCase()) ||
       (u.full_name && u.full_name.toLowerCase().includes(search.toLowerCase())) ||
-      (u.business_name && u.business_name.toLowerCase().includes(search.toLowerCase()))
-  );
+      (u.business_name && u.business_name.toLowerCase().includes(search.toLowerCase()));
+
+    if (!matchesSearch) return false;
+
+    const info = getPlanStatusInfo(u.plan_end_date);
+    const accStatus =
+      u.account_status || (u.status === "suspended" ? "suspended" : "active");
+
+    if (quickFilter === "activos") {
+      return accStatus === "active" && info.status !== "vencido";
+    }
+    if (quickFilter === "proximos") {
+      return info.status === "proximo_a_vencer";
+    }
+    if (quickFilter === "vencidos") {
+      return info.status === "vencido";
+    }
+    if (quickFilter === "desactivados") {
+      return accStatus === "deactivated" || accStatus === "suspended";
+    }
+
+    return true;
+  });
 
   if (loading) {
     return (
@@ -375,12 +500,24 @@ export default function AdminPage() {
                 SuperAdmin
               </span>
             </h2>
-            <p className="text-xs text-[#7A7A7A]">Gestión de altas, apagado y bajas de usuarias</p>
+            <p className="text-xs text-[#7A7A7A]">Gestión de planes, estado y altas de usuarias</p>
           </div>
         </div>
 
         <button
-          onClick={() => setIsCreateModalOpen(true)}
+          onClick={() => {
+            const today = new Date().toISOString().split("T")[0];
+            setNewEmail("");
+            setNewPassword("");
+            setNewFullName("");
+            setNewBusinessName("");
+            setNewPlanType("prueba");
+            setNewPlanStartDate(today);
+            setNewPlanEndDate(calculatePlanEndDate(today, "prueba"));
+            setNewAccountStatus("active");
+            setCreateError(null);
+            setIsCreateModalOpen(true);
+          }}
           className="py-2.5 px-3.5 bg-[#3BB578] hover:bg-[#2E9E65] text-white rounded-2xl shadow-xs transition flex items-center gap-1.5 text-xs font-bold active:scale-[0.98]"
         >
           <UserPlus className="w-4 h-4" />
@@ -402,66 +539,198 @@ export default function AdminPage() {
         />
       </div>
 
+      {/* Filtros Rápidos */}
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar text-xs">
+        <button
+          onClick={() => setQuickFilter("todos")}
+          className={`px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1.5 whitespace-nowrap ${
+            quickFilter === "todos"
+              ? "bg-[#2B2B2B] text-white shadow-xs"
+              : "bg-white text-[#7A7A7A] hover:bg-neutral-50 border border-[#EAF0E8]"
+          }`}
+        >
+          <span>Todos</span>
+          <span
+            className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+              quickFilter === "todos" ? "bg-white/25 text-white" : "bg-neutral-100 text-[#2B2B2B]"
+            }`}
+          >
+            {userStats.todos}
+          </span>
+        </button>
+
+        <button
+          onClick={() => setQuickFilter("activos")}
+          className={`px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1.5 whitespace-nowrap ${
+            quickFilter === "activos"
+              ? "bg-[#1F7A4C] text-white shadow-xs"
+              : "bg-white text-[#7A7A7A] hover:bg-neutral-50 border border-[#EAF0E8]"
+          }`}
+        >
+          <span>Activos</span>
+          <span
+            className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+              quickFilter === "activos"
+                ? "bg-white/25 text-white"
+                : "bg-[#DCF4D7] text-[#1F7A4C]"
+            }`}
+          >
+            {userStats.activos}
+          </span>
+        </button>
+
+        <button
+          onClick={() => setQuickFilter("proximos")}
+          className={`px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1.5 whitespace-nowrap ${
+            quickFilter === "proximos"
+              ? "bg-amber-600 text-white shadow-xs"
+              : "bg-white text-[#7A7A7A] hover:bg-neutral-50 border border-[#EAF0E8]"
+          }`}
+        >
+          <span>Próximos a vencer</span>
+          <span
+            className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+              quickFilter === "proximos"
+                ? "bg-white/25 text-white"
+                : "bg-amber-100 text-amber-800"
+            }`}
+          >
+            {userStats.proximos}
+          </span>
+        </button>
+
+        <button
+          onClick={() => setQuickFilter("vencidos")}
+          className={`px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1.5 whitespace-nowrap ${
+            quickFilter === "vencidos"
+              ? "bg-rose-600 text-white shadow-xs"
+              : "bg-white text-[#7A7A7A] hover:bg-neutral-50 border border-[#EAF0E8]"
+          }`}
+        >
+          <span>Vencidos</span>
+          <span
+            className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+              quickFilter === "vencidos"
+                ? "bg-white/25 text-white"
+                : "bg-rose-100 text-rose-700"
+            }`}
+          >
+            {userStats.vencidos}
+          </span>
+        </button>
+
+        <button
+          onClick={() => setQuickFilter("desactivados")}
+          className={`px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1.5 whitespace-nowrap ${
+            quickFilter === "desactivados"
+              ? "bg-neutral-700 text-white shadow-xs"
+              : "bg-white text-[#7A7A7A] hover:bg-neutral-50 border border-[#EAF0E8]"
+          }`}
+        >
+          <span>Desactivados</span>
+          <span
+            className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+              quickFilter === "desactivados"
+                ? "bg-white/25 text-white"
+                : "bg-neutral-100 text-neutral-600"
+            }`}
+          >
+            {userStats.desactivados}
+          </span>
+        </button>
+      </div>
+
       {/* Lista de Usuarias */}
       <div className="space-y-3">
         {filteredUsers.length === 0 ? (
           <div className="bg-white rounded-3xl p-6 border border-[#EAF0E8] text-center text-xs text-[#7A7A7A]">
-            No se encontraron usuarias registradas.
+            No se encontraron usuarias con los filtros seleccionados.
           </div>
         ) : (
           filteredUsers.map((u) => {
-            const isActive = u.status === "active";
+            const planStatusInfo = getPlanStatusInfo(u.plan_end_date);
+            const accountStatus =
+              u.account_status || (u.status === "suspended" ? "suspended" : "active");
+            const isAccountActive = accountStatus === "active";
+            const planType = u.plan_type || "prueba";
 
             return (
               <div
                 key={u.id}
                 className={`bg-white rounded-3xl p-4 border shadow-xs transition flex flex-col space-y-3 ${
-                  isActive ? "border-[#EAF0E8]" : "border-rose-200 bg-rose-50/20"
+                  isAccountActive ? "border-[#EAF0E8]" : "border-rose-200 bg-rose-50/15"
                 }`}
               >
                 <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-bold text-[#2B2B2B]">
-                        {u.full_name || "Sin nombre"}
-                      </span>
-                      <span
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                          isActive
-                            ? "bg-[#DCF4D7] text-[#1F7A4C]"
-                            : "bg-rose-100 text-rose-700"
-                        }`}
-                      >
-                        {isActive ? "Activa" : "Apagada / Suspendida"}
-                      </span>
-                      {u.role === "admin" && (
-                        <span className="text-[10px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">
-                          Admin
+                  <div className="flex items-start gap-3">
+                    {/* Avatar / Logo */}
+                    {u.avatar_url ? (
+                      <img
+                        src={u.avatar_url}
+                        alt={u.full_name || u.email}
+                        className="w-10 h-10 rounded-2xl object-cover border border-[#EAF0E8] flex-shrink-0"
+                      />
+                    ) : (
+                      <div className="w-10 h-10 rounded-2xl bg-[#DCF4D7] text-[#1F7A4C] font-bold flex items-center justify-center text-sm flex-shrink-0">
+                        {(u.full_name || u.email || "U").charAt(0).toUpperCase()}
+                      </div>
+                    )}
+
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-bold text-[#2B2B2B]">
+                          {u.full_name || "Sin nombre"}
                         </span>
+
+                        {/* Badge PLAN */}
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                          Plan {PLAN_NAMES[planType] || planType}
+                        </span>
+
+                        {/* Badge ESTADO DEL PLAN */}
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${planStatusInfo.badgeBg} ${planStatusInfo.badgeText} ${planStatusInfo.badgeBorder}`}
+                        >
+                          {planStatusInfo.label}
+                        </span>
+
+                        {/* Badge ESTADO DE CUENTA */}
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            accountStatus === "active"
+                              ? "bg-[#DCF4D7] text-[#1F7A4C]"
+                              : accountStatus === "suspended"
+                              ? "bg-amber-100 text-amber-800"
+                              : "bg-rose-100 text-rose-700"
+                          }`}
+                        >
+                          {ACCOUNT_STATUS_NAMES[accountStatus] || accountStatus}
+                        </span>
+
+                        {u.role === "admin" && (
+                          <span className="text-[10px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">
+                            Admin
+                          </span>
+                        )}
+                      </div>
+
+                      <p className="text-xs text-[#7A7A7A] mt-0.5">{u.email}</p>
+
+                      {u.business_name && (
+                        <p className="text-[11px] text-[#7A7A7A] mt-0.5">
+                          Emprendimiento: <strong>{u.business_name}</strong>
+                        </p>
                       )}
                     </div>
-                    <p className="text-xs text-[#7A7A7A] mt-0.5">{u.email}</p>
-                    {u.business_name && (
-                      <p className="text-[11px] text-[#7A7A7A] mt-0.5">
-                        Emprendimiento: <strong>{u.business_name}</strong>
-                      </p>
-                    )}
                   </div>
 
                   {/* Acciones de Gio */}
-                  <div className="flex items-center gap-1.5">
-                    {/* Botón Editar Datos */}
+                  <div className="flex items-center gap-1">
+                    {/* Botón Editar Datos y Plan */}
                     <button
-                      onClick={() => {
-                        setEditModalUser(u);
-                        setEditFullName(u.full_name || "");
-                        setEditBusinessName(u.business_name || "");
-                        setEditEmail(u.email || "");
-                        setEditError(null);
-                        setEditSuccess(false);
-                      }}
+                      onClick={() => openEditModal(u)}
                       className="p-2 text-neutral-400 hover:text-[#3BB578] hover:bg-[#DCF4D7]/50 rounded-xl transition"
-                      title="Editar datos de esta usuaria"
+                      title="Editar datos y plan de esta usuaria"
                     >
                       <Edit2 className="w-4 h-4" />
                     </button>
@@ -484,14 +753,14 @@ export default function AdminPage() {
                     <button
                       onClick={() => toggleUserActive(u)}
                       className={`py-1.5 px-2.5 rounded-xl text-xs font-bold transition flex items-center gap-1 ${
-                        isActive
+                        isAccountActive
                           ? "bg-amber-50 hover:bg-amber-100 text-amber-700"
                           : "bg-[#DCF4D7] hover:bg-[#C3EBC0] text-[#1F7A4C]"
                       }`}
-                      title={isActive ? "Apagar cuenta" : "Encender cuenta"}
+                      title={isAccountActive ? "Apagar / Suspender cuenta" : "Activar cuenta"}
                     >
                       <Power className="w-3.5 h-3.5" />
-                      <span>{isActive ? "Apagar" : "Activar"}</span>
+                      <span>{isAccountActive ? "Apagar" : "Activar"}</span>
                     </button>
 
                     {/* Botón Eliminar */}
@@ -506,13 +775,32 @@ export default function AdminPage() {
                     )}
                   </div>
                 </div>
+
+                {/* Vigencia y Fechas del Plan */}
+                <div className="pt-2 border-t border-neutral-100 flex items-center justify-between flex-wrap gap-2 text-[11px] text-[#7A7A7A]">
+                  <div className="flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 text-neutral-400" />
+                    <span>
+                      Inicio: <strong>{formatDateDisplay(u.plan_start_date)}</strong>
+                    </span>
+                    <span>·</span>
+                    <span>
+                      Finaliza: <strong>{formatDateDisplay(u.plan_end_date)}</strong>
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1 font-semibold">
+                    <Clock className="w-3.5 h-3.5 text-neutral-400" />
+                    <span className={planStatusInfo.badgeText}>{planStatusInfo.rowText}</span>
+                  </div>
+                </div>
               </div>
             );
           })
         )}
       </div>
 
-      {/* Modal para Crear Usuaria montado en Portal con cobertura completa de notch / status bar */}
+      {/* Modal para Crear Usuaria montado en Portal */}
       {isCreateModalOpen &&
         mounted &&
         createPortal(
@@ -596,6 +884,80 @@ export default function AdminPage() {
                     placeholder="Ej: Amaoto Craft"
                     className="w-full px-3.5 py-2 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B]"
                   />
+                </div>
+
+                {/* Configuración del Plan */}
+                <div className="p-3 bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl space-y-2.5">
+                  <p className="text-[11px] font-bold text-[#1F7A4C] uppercase tracking-wider">
+                    Configuración de Plan y Estado
+                  </p>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-semibold text-[#2B2B2B]">Plan *</label>
+                      <select
+                        value={newPlanType}
+                        onChange={(e) => {
+                          const p = e.target.value as PlanType;
+                          setNewPlanType(p);
+                          setNewPlanEndDate(calculatePlanEndDate(newPlanStartDate, p));
+                        }}
+                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#EAF0E8] rounded-xl focus:border-[#3BB578] outline-none text-[#2B2B2B]"
+                      >
+                        <option value="prueba">Prueba (15 días)</option>
+                        <option value="mensual">Mensual (1 mes)</option>
+                        <option value="trimestral">Trimestral (3 meses)</option>
+                        <option value="anual">Anual (1 año)</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-semibold text-[#2B2B2B]">
+                        Estado de Cuenta *
+                      </label>
+                      <select
+                        value={newAccountStatus}
+                        onChange={(e) => setNewAccountStatus(e.target.value as AccountStatus)}
+                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#EAF0E8] rounded-xl focus:border-[#3BB578] outline-none text-[#2B2B2B]"
+                      >
+                        <option value="active">Activa</option>
+                        <option value="suspended">Suspendida</option>
+                        <option value="deactivated">Desactivada</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-semibold text-[#2B2B2B]">
+                        Fecha de Inicio *
+                      </label>
+                      <input
+                        type="date"
+                        value={newPlanStartDate}
+                        onChange={(e) => {
+                          const d = e.target.value;
+                          setNewPlanStartDate(d);
+                          setNewPlanEndDate(calculatePlanEndDate(d, newPlanType));
+                        }}
+                        required
+                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#EAF0E8] rounded-xl focus:border-[#3BB578] outline-none text-[#2B2B2B]"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-semibold text-[#2B2B2B]">
+                        Fecha de Fin *
+                      </label>
+                      <input
+                        type="date"
+                        value={newPlanEndDate}
+                        onChange={(e) => setNewPlanEndDate(e.target.value)}
+                        required
+                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#EAF0E8] rounded-xl focus:border-[#3BB578] outline-none text-[#2B2B2B]"
+                      />
+                    </div>
+                  </div>
                 </div>
 
                 <div
@@ -710,7 +1072,7 @@ export default function AdminPage() {
           document.body
         )}
 
-      {/* Modal para Editar Datos de Usuaria montado en Portal */}
+      {/* Modal para Editar Datos y Plan de Usuaria montado en Portal */}
       {editModalUser &&
         mounted &&
         createPortal(
@@ -731,7 +1093,7 @@ export default function AdminPage() {
                     <Edit2 className="w-4 h-4" />
                   </div>
                   <h3 className="text-sm font-bold text-[#2B2B2B] font-display">
-                    Editar Datos de Usuaria
+                    Editar Datos y Plan de Usuaria
                   </h3>
                 </div>
                 <button
@@ -752,7 +1114,7 @@ export default function AdminPage() {
               {editSuccess && (
                 <div className="mt-3 p-2.5 bg-[#DCF4D7] border border-[#C3EBC0] rounded-xl text-[#1F7A4C] text-xs flex items-center gap-2 font-bold">
                   <Check className="w-4 h-4 flex-shrink-0" />
-                  <span>¡Datos actualizados con éxito!</span>
+                  <span>¡Datos y plan actualizados con éxito!</span>
                 </div>
               )}
 
@@ -789,6 +1151,80 @@ export default function AdminPage() {
                     required
                     className="w-full px-3.5 py-2 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B]"
                   />
+                </div>
+
+                {/* Configuración del Plan */}
+                <div className="p-3 bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl space-y-2.5">
+                  <p className="text-[11px] font-bold text-[#1F7A4C] uppercase tracking-wider">
+                    Configuración de Plan y Estado
+                  </p>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-semibold text-[#2B2B2B]">Plan *</label>
+                      <select
+                        value={editPlanType}
+                        onChange={(e) => {
+                          const p = e.target.value as PlanType;
+                          setEditPlanType(p);
+                          setEditPlanEndDate(calculatePlanEndDate(editPlanStartDate, p));
+                        }}
+                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#EAF0E8] rounded-xl focus:border-[#3BB578] outline-none text-[#2B2B2B]"
+                      >
+                        <option value="prueba">Prueba (15 días)</option>
+                        <option value="mensual">Mensual (1 mes)</option>
+                        <option value="trimestral">Trimestral (3 meses)</option>
+                        <option value="anual">Anual (1 año)</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-semibold text-[#2B2B2B]">
+                        Estado de Cuenta *
+                      </label>
+                      <select
+                        value={editAccountStatus}
+                        onChange={(e) => setEditAccountStatus(e.target.value as AccountStatus)}
+                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#EAF0E8] rounded-xl focus:border-[#3BB578] outline-none text-[#2B2B2B]"
+                      >
+                        <option value="active">Activa</option>
+                        <option value="suspended">Suspendida</option>
+                        <option value="deactivated">Desactivada</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-semibold text-[#2B2B2B]">
+                        Fecha de Inicio *
+                      </label>
+                      <input
+                        type="date"
+                        value={editPlanStartDate}
+                        onChange={(e) => {
+                          const d = e.target.value;
+                          setEditPlanStartDate(d);
+                          setEditPlanEndDate(calculatePlanEndDate(d, editPlanType));
+                        }}
+                        required
+                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#EAF0E8] rounded-xl focus:border-[#3BB578] outline-none text-[#2B2B2B]"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-semibold text-[#2B2B2B]">
+                        Fecha de Fin *
+                      </label>
+                      <input
+                        type="date"
+                        value={editPlanEndDate}
+                        onChange={(e) => setEditPlanEndDate(e.target.value)}
+                        required
+                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#EAF0E8] rounded-xl focus:border-[#3BB578] outline-none text-[#2B2B2B]"
+                      />
+                    </div>
+                  </div>
                 </div>
 
                 <div

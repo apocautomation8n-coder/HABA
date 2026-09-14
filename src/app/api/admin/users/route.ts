@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { checkIsAdmin } from "@/lib/auth-helpers";
+import { calculatePlanEndDate, PlanType } from "@/lib/plan-helpers";
 
 function getAdminClient() {
   return createSupabaseClient(
@@ -57,23 +58,54 @@ async function verifyAdminCaller(request: Request) {
   }
 }
 
-// GET: Listar todas las usuarias del sistema
+// GET: Listar todas las usuarias del sistema enriquecidas con plan y estado de cuenta
 export async function GET(request: Request) {
   try {
     const auth = await verifyAdminCaller(request);
     if (!auth.authorized) return auth.response;
 
     const supabaseAdmin = getAdminClient();
-    const { data: profiles, error } = await supabaseAdmin
+
+    // 1. Obtener perfiles de la base de datos
+    const { data: profiles, error: profilesError } = await supabaseAdmin
       .from("profiles")
       .select("*")
       .order("created_at", { ascending: false });
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
+    if (profilesError) {
+      return NextResponse.json({ error: profilesError.message }, { status: 400 });
     }
 
-    return NextResponse.json({ users: profiles || [] });
+    // 2. Obtener usuarios de Auth para recuperar user_metadata (planes, fechas, avatar)
+    const { data: authData } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
+    const authMap = new Map(authData?.users?.map((u) => [u.id, u]) || []);
+
+    const users = (profiles || []).map((p) => {
+      const authUser = authMap.get(p.id);
+      const meta = authUser?.user_metadata || {};
+
+      const planType: PlanType = meta.plan_type || "prueba";
+      const planStartDate =
+        meta.plan_start_date ||
+        p.created_at?.split("T")[0] ||
+        new Date().toISOString().split("T")[0];
+      const planEndDate =
+        meta.plan_end_date || calculatePlanEndDate(planStartDate, planType);
+      const accountStatus =
+        meta.account_status || (p.status === "suspended" ? "suspended" : "active");
+      const avatarUrl = meta.avatar_url || null;
+
+      return {
+        ...p,
+        plan_type: planType,
+        plan_start_date: planStartDate,
+        plan_end_date: planEndDate,
+        account_status: accountStatus,
+        avatar_url: avatarUrl,
+      };
+    });
+
+    return NextResponse.json({ users });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
@@ -87,7 +119,16 @@ export async function POST(request: Request) {
 
     const supabaseAdmin = getAdminClient();
     const body = await request.json();
-    const { email, password, fullName, businessName } = body;
+    const {
+      email,
+      password,
+      fullName,
+      businessName,
+      planType = "prueba",
+      planStartDate,
+      planEndDate,
+      accountStatus = "active",
+    } = body;
 
     if (!email || !password) {
       return NextResponse.json(
@@ -96,7 +137,12 @@ export async function POST(request: Request) {
       );
     }
 
-    // 1. Crear usuario en Auth con confirmación automática
+    const startDate =
+      planStartDate?.trim() || new Date().toISOString().split("T")[0];
+    const endDate =
+      planEndDate?.trim() || calculatePlanEndDate(startDate, planType as PlanType);
+
+    // 1. Crear usuario en Auth con confirmación automática y metadata de plan
     const { data: authData, error: authError } =
       await supabaseAdmin.auth.admin.createUser({
         email: email.trim().toLowerCase(),
@@ -105,6 +151,10 @@ export async function POST(request: Request) {
         user_metadata: {
           full_name: fullName?.trim() || null,
           business_name: businessName?.trim() || null,
+          plan_type: planType,
+          plan_start_date: startDate,
+          plan_end_date: endDate,
+          account_status: accountStatus,
         },
       });
 
@@ -116,13 +166,16 @@ export async function POST(request: Request) {
     }
 
     // 2. Insertar o actualizar su perfil en public.profiles
+    // Compatible con check constraint: si accountStatus es active -> 'active', si no -> 'suspended'
+    const profileStatus = accountStatus === "active" ? "active" : "suspended";
+
     const { error: profileError } = await supabaseAdmin.from("profiles").upsert({
       id: authData.user.id,
       email: email.trim().toLowerCase(),
       full_name: fullName?.trim() || null,
       business_name: businessName?.trim() || null,
       role: "user",
-      status: "active",
+      status: profileStatus,
       updated_at: new Date().toISOString(),
     });
 
@@ -139,7 +192,7 @@ export async function POST(request: Request) {
   }
 }
 
-// PATCH: Cambiar estado (active / suspended) o actualizar datos del usuario
+// PATCH: Cambiar estado o actualizar datos del usuario y de su plan
 export async function PATCH(request: Request) {
   try {
     const auth = await verifyAdminCaller(request);
@@ -147,11 +200,36 @@ export async function PATCH(request: Request) {
 
     const supabaseAdmin = getAdminClient();
     const body = await request.json();
-    const { userId, status, password, fullName, businessName, email } = body;
+    const {
+      userId,
+      status,
+      password,
+      fullName,
+      businessName,
+      email,
+      planType,
+      planStartDate,
+      planEndDate,
+      accountStatus,
+      avatarUrl,
+    } = body;
 
     if (!userId) {
       return NextResponse.json({ error: "userId es requerido" }, { status: 400 });
     }
+
+    // Obtener metadata actual del usuario para hacer merge seguro
+    const { data: userAuthData, error: fetchAuthError } =
+      await supabaseAdmin.auth.admin.getUserById(userId);
+
+    if (fetchAuthError || !userAuthData.user) {
+      return NextResponse.json(
+        { error: "Usuario no encontrado en Auth: " + (fetchAuthError?.message || "") },
+        { status: 404 }
+      );
+    }
+
+    const currentMetadata = userAuthData.user.user_metadata || {};
 
     // 1. Actualizaciones en Auth (email, password, metadata)
     const authUpdates: Record<string, any> = {};
@@ -162,22 +240,36 @@ export async function PATCH(request: Request) {
     if (password) {
       authUpdates.password = password;
     }
-    if (fullName !== undefined || businessName !== undefined) {
-      authUpdates.user_metadata = {};
-      if (fullName !== undefined) authUpdates.user_metadata.full_name = fullName?.trim() || null;
-      if (businessName !== undefined) authUpdates.user_metadata.business_name = businessName?.trim() || null;
+
+    const updatedMetadata = { ...currentMetadata };
+    if (fullName !== undefined) updatedMetadata.full_name = fullName?.trim() || null;
+    if (businessName !== undefined) updatedMetadata.business_name = businessName?.trim() || null;
+    if (planType !== undefined) updatedMetadata.plan_type = planType;
+    if (planStartDate !== undefined) updatedMetadata.plan_start_date = planStartDate;
+    if (planEndDate !== undefined) updatedMetadata.plan_end_date = planEndDate;
+    if (accountStatus !== undefined) updatedMetadata.account_status = accountStatus;
+    if (avatarUrl !== undefined) updatedMetadata.avatar_url = avatarUrl;
+
+    // Si viene solo status legacy (toggle active/suspended), sincronizar account_status
+    if (status !== undefined && accountStatus === undefined) {
+      updatedMetadata.account_status = status === "suspended" ? "suspended" : "active";
     }
 
-    if (Object.keys(authUpdates).length > 0) {
-      const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(userId, authUpdates);
-      if (authError) {
-        return NextResponse.json({ error: authError.message }, { status: 400 });
-      }
+    authUpdates.user_metadata = updatedMetadata;
+
+    const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(userId, authUpdates);
+    if (authError) {
+      return NextResponse.json({ error: authError.message }, { status: 400 });
     }
 
     // 2. Actualizaciones en public.profiles
     const profileUpdates: Record<string, any> = { updated_at: new Date().toISOString() };
-    if (status !== undefined) profileUpdates.status = status;
+    if (accountStatus !== undefined) {
+      profileUpdates.status = accountStatus === "active" ? "active" : "suspended";
+    } else if (status !== undefined) {
+      profileUpdates.status = status;
+    }
+
     if (fullName !== undefined) profileUpdates.full_name = fullName?.trim() || null;
     if (businessName !== undefined) profileUpdates.business_name = businessName?.trim() || null;
     if (email !== undefined && email.trim()) profileUpdates.email = email.trim().toLowerCase();
@@ -226,3 +318,4 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
+
