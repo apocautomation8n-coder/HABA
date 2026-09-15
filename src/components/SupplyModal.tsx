@@ -113,11 +113,18 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
       setUseUnit(initialSupply.use_unit || "g");
       setConversionFactor(initialSupply.conversion_factor ?? 1000);
 
-      // Detect matched preset if any
+      // Detect matched preset if any (normalizando superíndices m² / cm² y m2 / cm2)
+      const normalizeUnit = (u?: string | null) =>
+        (u || "")
+          .toLowerCase()
+          .replace(/²/g, "2")
+          .replace(/\s+/g, "")
+          .trim();
+
       const matchingPreset = UNIT_PRESETS.find(
         (p) =>
-          p.purchaseUnit.toLowerCase() === (initialSupply.purchase_unit || "").toLowerCase() &&
-          p.useUnit.toLowerCase() === (initialSupply.use_unit || "").toLowerCase() &&
+          normalizeUnit(p.purchaseUnit) === normalizeUnit(initialSupply.purchase_unit) &&
+          normalizeUnit(p.useUnit) === normalizeUnit(initialSupply.use_unit) &&
           p.defaultFactor === initialSupply.conversion_factor
       );
       setSelectedPresetId(matchingPreset ? matchingPreset.id : "custom");
@@ -462,14 +469,79 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
                 onChange={(e) => handlePresetChange(e.target.value)}
                 className="w-full px-3 py-2 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none transition text-[#2B2B2B]"
               >
-                {UNIT_PRESETS.map((preset) => (
-                  <option key={preset.id} value={preset.id}>
-                    {preset.name}
-                  </option>
-                ))}
+                <optgroup label="⚖️ Peso">
+                  {UNIT_PRESETS.filter((p) => p.category === "peso").map((preset) => (
+                    <option key={preset.id} value={preset.id}>
+                      {preset.name}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="📏 Longitud">
+                  {UNIT_PRESETS.filter((p) => p.category === "longitud").map((preset) => (
+                    <option key={preset.id} value={preset.id}>
+                      {preset.name}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="📐 Superficie (cm2 y m2)">
+                  {UNIT_PRESETS.filter((p) => p.category === "superficie").map((preset) => (
+                    <option key={preset.id} value={preset.id}>
+                      {preset.name}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="🧪 Volumen">
+                  {UNIT_PRESETS.filter((p) => p.category === "volumen").map((preset) => (
+                    <option key={preset.id} value={preset.id}>
+                      {preset.name}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="📦 Unidades y Empaques">
+                  {UNIT_PRESETS.filter((p) => p.category === "unidad" && p.id !== "custom").map((preset) => (
+                    <option key={preset.id} value={preset.id}>
+                      {preset.name}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="⚙️ Ajuste Manual">
+                  {UNIT_PRESETS.filter((p) => p.id === "custom").map((preset) => (
+                    <option key={preset.id} value={preset.id}>
+                      {preset.name}
+                    </option>
+                  ))}
+                </optgroup>
               </select>
+
+              {/* Atajos rápidos para conversiones comunes incluyendo cm2 y m2 */}
+              <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                <span className="text-[10px] text-[#7A7A7A] font-medium mr-0.5">Atajos:</span>
+                {[
+                  { id: "kg-g", label: "kg → g" },
+                  { id: "m2-cm2", label: "m2 → cm2" },
+                  { id: "m2-m2", label: "m2 → m2" },
+                  { id: "cm2-cm2", label: "cm2 → cm2" },
+                  { id: "m-cm", label: "m → cm" },
+                  { id: "l-ml", label: "l → ml" },
+                  { id: "u-u", label: "u → u" },
+                ].map((chip) => (
+                  <button
+                    key={chip.id}
+                    type="button"
+                    onClick={() => handlePresetChange(chip.id)}
+                    className={`px-2 py-0.5 rounded-lg text-[10.5px] font-medium border transition-colors ${
+                      selectedPresetId === chip.id
+                        ? "bg-[#3BB578] text-white border-[#3BB578] shadow-xs"
+                        : "bg-white text-[#555] border-[#EAF0E8] hover:bg-[#F0F4EC] hover:text-[#2B2B2B]"
+                    }`}
+                  >
+                    {chip.label}
+                  </button>
+                ))}
+              </div>
+
               {activePreset && activePreset.example && (
-                <p className="text-[10.5px] text-[#7A7A7A] italic px-1 flex items-center gap-1 mt-0.5">
+                <p className="text-[10.5px] text-[#7A7A7A] italic px-1 flex items-center gap-1 mt-1">
                   <Info className="w-3 h-3 text-[#3BB578] flex-shrink-0" />
                   <span>{activePreset.example}</span>
                 </p>
@@ -502,7 +574,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
                     setPurchaseUnit(e.target.value);
                     setSelectedPresetId("custom");
                   }}
-                  placeholder="kg, metro, pack..."
+                  placeholder="kg, m2, metro, pack..."
                   required
                   className="w-full px-3 py-2 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B]"
                 />
@@ -551,7 +623,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
                       setUseUnit(e.target.value);
                       setSelectedPresetId("custom");
                     }}
-                    placeholder="g, cm, u..."
+                    placeholder="g, cm2, cm, u..."
                     required
                     className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#EAF0E8] rounded-xl outline-none text-[#2B2B2B]"
                   />
