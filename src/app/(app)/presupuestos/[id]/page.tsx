@@ -18,6 +18,9 @@ import {
   AlertCircle,
   CheckCircle2,
   ChevronRight,
+  Mail,
+  MapPin,
+  AtSign,
 } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
@@ -51,6 +54,11 @@ interface UserProfile {
   business_name?: string | null;
   full_name?: string | null;
   email?: string | null;
+  phone?: string | null;
+  business_phone?: string | null;
+  business_email?: string | null;
+  instagram?: string | null;
+  address?: string | null;
 }
 
 export default function PresupuestoPreviewPage() {
@@ -88,16 +96,43 @@ export default function PresupuestoPreviewPage() {
 
         setQuote(quoteData as Quote);
 
-        // 2. Cargar perfil del emisor para branding (taller / nombre)
+        // 2. Cargar perfil del emisor para branding y datos de contacto
         if (quoteData.user_id) {
-          const { data: profileData } = await supabase
-            .from("profiles")
-            .select("business_name, full_name, email")
-            .eq("id", quoteData.user_id)
-            .maybeSingle();
+          let pData: any = null;
+          try {
+            const { data: fullProfileData } = await supabase
+              .from("profiles")
+              .select("business_name, full_name, email, phone, business_phone, business_email, instagram, address")
+              .eq("id", quoteData.user_id)
+              .maybeSingle();
+            pData = fullProfileData;
+          } catch {
+            const { data: baseProfileData } = await supabase
+              .from("profiles")
+              .select("business_name, full_name, email")
+              .eq("id", quoteData.user_id)
+              .maybeSingle();
+            pData = baseProfileData;
+          }
 
-          if (profileData) {
-            setProfile(profileData);
+          // Si el usuario logueado es el mismo emisor, enriquecer con user_metadata
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user && user.id === quoteData.user_id) {
+            const meta = user.user_metadata || {};
+            pData = {
+              ...(pData || {}),
+              business_name: pData?.business_name || meta.business_name || null,
+              full_name: pData?.full_name || meta.full_name || null,
+              phone: pData?.business_phone || pData?.phone || meta.business_phone || meta.phone || null,
+              business_phone: pData?.business_phone || meta.business_phone || meta.phone || null,
+              business_email: pData?.business_email || meta.business_email || null,
+              instagram: pData?.instagram || meta.instagram || null,
+              address: pData?.address || meta.address || null,
+            };
+          }
+
+          if (pData) {
+            setProfile(pData);
           }
         }
       } catch (err: any) {
@@ -152,6 +187,27 @@ export default function PresupuestoPreviewPage() {
       ? `\n\n📝 *Condiciones / Entrega:*\n${cleanNotes}`
       : "";
 
+    // Datos de contacto del emprendimiento para el mensaje
+    const contactLines: string[] = [];
+    const bName = profile?.business_name || (profile?.full_name ? `Taller ${profile.full_name}` : "");
+    if (bName) contactLines.push(`🌸 *${bName}*`);
+    if (profile?.business_phone || profile?.phone) {
+      contactLines.push(`📞 WhatsApp: ${profile.business_phone || profile.phone}`);
+    }
+    if (profile?.instagram) {
+      contactLines.push(`📷 Instagram: ${profile.instagram}`);
+    }
+    if (profile?.business_email || profile?.email) {
+      contactLines.push(`✉️ Email: ${profile.business_email || profile.email}`);
+    }
+    if (profile?.address) {
+      contactLines.push(`📍 Ubicación: ${profile.address}`);
+    }
+
+    const contactFooter = contactLines.length > 0
+      ? `\n\n💬 *Contacto:*\n${contactLines.join("\n")}`
+      : "";
+
     const fullMessage =
       `*PRESUPUESTO #${quote.quote_number}* 🌸\n\n` +
       `*Cliente:* ${quote.client_name}\n` +
@@ -159,8 +215,9 @@ export default function PresupuestoPreviewPage() {
       `*Detalle de Productos:*\n${itemsText}\n\n` +
       `*Subtotal:* ${formatCurrency(quote.subtotal)}${discountText}${shippingText}\n` +
       `*TOTAL FINAL:* ${formatCurrency(quote.total)}${notesText}\n\n` +
-      `⏳ *Vigencia:* 15 días corridos con precios congelados.\n\n` +
-      `¡Muchas gracias por tu consulta!`;
+      `⏳ *Vigencia:* 15 días corridos con precios congelados.` +
+      contactFooter +
+      `\n\n¡Muchas gracias por tu consulta!`;
 
     // 1. Intentar con Web Share API (SIN url separada para evitar que WhatsApp duplique el enlace al final)
     if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
@@ -394,9 +451,32 @@ export default function PresupuestoPreviewPage() {
                   "Taller Artesanal & Confección"
                 )}
               </p>
-              {profile?.email && (
-                <p className="text-[10.5px] text-neutral-400">{profile.email}</p>
-              )}
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10.5px] text-neutral-500 pt-0.5">
+                {(profile?.business_phone || profile?.phone) && (
+                  <span className="flex items-center gap-1">
+                    <Phone className="w-3 h-3 text-[#3BB578]" />
+                    <span>{profile.business_phone || profile.phone}</span>
+                  </span>
+                )}
+                {(profile?.business_email || profile?.email) && (
+                  <span className="flex items-center gap-1">
+                    <Mail className="w-3 h-3 text-[#3BB578]" />
+                    <span>{profile.business_email || profile.email}</span>
+                  </span>
+                )}
+                {profile?.instagram && (
+                  <span className="flex items-center gap-1">
+                    <AtSign className="w-3 h-3 text-[#3BB578]" />
+                    <span>{profile.instagram}</span>
+                  </span>
+                )}
+                {profile?.address && (
+                  <span className="flex items-center gap-1">
+                    <MapPin className="w-3 h-3 text-[#3BB578]" />
+                    <span>{profile.address}</span>
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 

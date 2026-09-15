@@ -66,6 +66,11 @@ export async function GET(request: Request) {
       email: profile?.email || user.email,
       full_name: profile?.full_name || meta.full_name || null,
       business_name: profile?.business_name || meta.business_name || null,
+      phone: profile?.phone || profile?.business_phone || meta.phone || meta.business_phone || null,
+      business_phone: profile?.business_phone || profile?.phone || meta.business_phone || meta.phone || null,
+      business_email: profile?.business_email || meta.business_email || null,
+      instagram: profile?.instagram || meta.instagram || null,
+      address: profile?.address || meta.address || null,
       role: isAdmin ? "admin" : profile?.role || "user",
       status: profile?.status || "active",
       plan_type: planType,
@@ -107,7 +112,28 @@ export async function PATCH(request: Request) {
     }
 
     const body = await request.json();
-    const { fullName, businessName, email, password, avatarUrl } = body;
+    const {
+      fullName,
+      businessName,
+      phone,
+      businessPhone,
+      businessEmail,
+      instagram,
+      address,
+      email,
+      password,
+      avatarUrl,
+    } = body;
+
+    const finalPhone =
+      businessPhone !== undefined
+        ? businessPhone?.trim() || null
+        : phone !== undefined
+        ? phone?.trim() || null
+        : undefined;
+    const finalEmail = businessEmail !== undefined ? businessEmail?.trim() || null : undefined;
+    const finalInstagram = instagram !== undefined ? instagram?.trim() || null : undefined;
+    const finalAddress = address !== undefined ? address?.trim() || null : undefined;
 
     const admin = getAdminClient();
     const updateData: Record<string, any> = {
@@ -123,6 +149,20 @@ export async function PATCH(request: Request) {
         business_name: businessName !== undefined ? businessName.trim() : user.user_metadata?.business_name,
       },
     };
+
+    if (finalPhone !== undefined) {
+      authUpdate.user_metadata.phone = finalPhone;
+      authUpdate.user_metadata.business_phone = finalPhone;
+    }
+    if (finalEmail !== undefined) {
+      authUpdate.user_metadata.business_email = finalEmail;
+    }
+    if (finalInstagram !== undefined) {
+      authUpdate.user_metadata.instagram = finalInstagram;
+    }
+    if (finalAddress !== undefined) {
+      authUpdate.user_metadata.address = finalAddress;
+    }
 
     if (avatarUrl !== undefined) {
       authUpdate.user_metadata.avatar_url = avatarUrl;
@@ -144,17 +184,37 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: authUpdateError.message }, { status: 400 });
     }
 
-    // 2. Actualizar en profiles
+    // 2. Intentar actualizar en profiles
+    const profileUpdate: Record<string, any> = {
+      id: user.id,
+      email: updateData.email || user.email,
+      ...updateData,
+    };
+    if (finalPhone !== undefined) {
+      profileUpdate.phone = finalPhone;
+      profileUpdate.business_phone = finalPhone;
+    }
+    if (finalEmail !== undefined) {
+      profileUpdate.business_email = finalEmail;
+    }
+    if (finalInstagram !== undefined) {
+      profileUpdate.instagram = finalInstagram;
+    }
+    if (finalAddress !== undefined) {
+      profileUpdate.address = finalAddress;
+    }
+
     const { error: profileError } = await admin
       .from("profiles")
-      .upsert({
+      .upsert(profileUpdate);
+
+    if (profileError) {
+      // Fallback seguro si la tabla profiles aún no tiene las nuevas columnas
+      await admin.from("profiles").upsert({
         id: user.id,
         email: updateData.email || user.email,
         ...updateData,
       });
-
-    if (profileError) {
-      return NextResponse.json({ error: profileError.message }, { status: 400 });
     }
 
     return NextResponse.json({ success: true });

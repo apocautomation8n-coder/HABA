@@ -48,10 +48,22 @@ interface Quote {
   quote_items?: QuoteItem[];
 }
 
+interface UserProfile {
+  business_name?: string | null;
+  full_name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  business_phone?: string | null;
+  business_email?: string | null;
+  instagram?: string | null;
+  address?: string | null;
+}
+
 export default function PresupuestosPage() {
   const supabase = createClient();
 
   const [quotes, setQuotes] = useState<Quote[]>([]);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [expandedQuoteId, setExpandedQuoteId] = useState<string | null>(null);
@@ -77,8 +89,48 @@ export default function PresupuestosPage() {
     }
   };
 
+  const loadUserProfile = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        let pData: any = null;
+        try {
+          const { data: profileData } = await supabase
+            .from("profiles")
+            .select("business_name, full_name, email, phone, business_phone, business_email, instagram, address")
+            .eq("id", user.id)
+            .maybeSingle();
+          pData = profileData;
+        } catch {
+          const { data: baseData } = await supabase
+            .from("profiles")
+            .select("business_name, full_name, email")
+            .eq("id", user.id)
+            .maybeSingle();
+          pData = baseData;
+        }
+
+        const meta = user.user_metadata || {};
+        pData = {
+          ...(pData || {}),
+          business_name: pData?.business_name || meta.business_name || null,
+          full_name: pData?.full_name || meta.full_name || null,
+          phone: pData?.business_phone || pData?.phone || meta.business_phone || meta.phone || null,
+          business_phone: pData?.business_phone || meta.business_phone || meta.phone || null,
+          business_email: pData?.business_email || meta.business_email || null,
+          instagram: pData?.instagram || meta.instagram || null,
+          address: pData?.address || meta.address || null,
+        };
+        setUserProfile(pData);
+      }
+    } catch (err) {
+      console.error("Error loading profile for quotes:", err);
+    }
+  };
+
   useEffect(() => {
     loadQuotes();
+    loadUserProfile();
   }, []);
 
   const handleDelete = async (quote: Quote) => {
@@ -121,6 +173,27 @@ export default function PresupuestosPage() {
 
     const notesText = quote.notes ? `\n\n📝 *Condiciones / Notas:*\n${quote.notes}` : "";
 
+    // Datos de contacto del emprendimiento para el mensaje
+    const contactLines: string[] = [];
+    const bName = userProfile?.business_name || (userProfile?.full_name ? `Taller ${userProfile.full_name}` : "");
+    if (bName) contactLines.push(`🌸 *${bName}*`);
+    if (userProfile?.business_phone || userProfile?.phone) {
+      contactLines.push(`📞 WhatsApp: ${userProfile.business_phone || userProfile.phone}`);
+    }
+    if (userProfile?.instagram) {
+      contactLines.push(`📷 Instagram: ${userProfile.instagram}`);
+    }
+    if (userProfile?.business_email || userProfile?.email) {
+      contactLines.push(`✉️ Email: ${userProfile.business_email || userProfile.email}`);
+    }
+    if (userProfile?.address) {
+      contactLines.push(`📍 Ubicación: ${userProfile.address}`);
+    }
+
+    const contactFooter = contactLines.length > 0
+      ? `\n\n💬 *Contacto:*\n${contactLines.join("\n")}`
+      : "";
+
     const fullMessage =
       `*PRESUPUESTO #${quote.quote_number}* 🌸\n\n` +
       `*Cliente:* ${quote.client_name}\n` +
@@ -128,8 +201,9 @@ export default function PresupuestosPage() {
       `*Detalle de Productos:*\n${itemsText}\n\n` +
       `*Subtotal:* ${formatCurrency(quote.subtotal)}${discountText}\n` +
       `*TOTAL FINAL:* ${formatCurrency(quote.total)}${notesText}\n\n` +
-      `⏳ *Vigencia:* 15 días corridos con precios congelados.\n\n` +
-      `¡Muchas gracias por tu consulta!`;
+      `⏳ *Vigencia:* 15 días corridos con precios congelados.` +
+      contactFooter +
+      `\n\n¡Muchas gracias por tu consulta!`;
 
     // 1. Intentar con Web Share API primero si el navegador lo soporta
     if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
@@ -350,8 +424,14 @@ export default function PresupuestosPage() {
           <div class="sheet">
             <div class="header">
               <div>
-                <h1 class="brand-title">HABA</h1>
-                <p class="brand-sub">Costos & Presupuestos</p>
+                <h1 class="brand-title">${userProfile?.business_name || "HABA"}</h1>
+                <p class="brand-sub">${userProfile?.full_name ? `Taller de ${userProfile.full_name}` : "Costos & Presupuestos"}</p>
+                <div style="font-size: 10px; color: #555; margin-top: 3px; display: flex; flex-wrap: wrap; gap: 8px;">
+                  ${(userProfile?.business_phone || userProfile?.phone) ? `<span>📞 ${userProfile.business_phone || userProfile.phone}</span>` : ""}
+                  ${(userProfile?.business_email || userProfile?.email) ? `<span>✉️ ${userProfile.business_email || userProfile.email}</span>` : ""}
+                  ${userProfile?.instagram ? `<span>📷 ${userProfile.instagram}</span>` : ""}
+                  ${userProfile?.address ? `<span>📍 ${userProfile.address}</span>` : ""}
+                </div>
               </div>
               <div style="text-align: right;">
                 <span class="quote-badge">Presupuesto Oficial</span>

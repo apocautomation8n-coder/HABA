@@ -24,6 +24,9 @@ import {
   DollarSign,
   Calculator,
   AlertCircle,
+  Phone,
+  MapPin,
+  AtSign,
 } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
@@ -50,6 +53,10 @@ export default function SettingsPage() {
   const [email, setEmail] = useState<string>("");
   const [fullName, setFullName] = useState<string>("");
   const [businessName, setBusinessName] = useState<string>("");
+  const [businessPhone, setBusinessPhone] = useState<string>("");
+  const [businessEmail, setBusinessEmail] = useState<string>("");
+  const [instagram, setInstagram] = useState<string>("");
+  const [address, setAddress] = useState<string>("");
   const [newPassword, setNewPassword] = useState<string>("");
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [role, setRole] = useState<string>("user");
@@ -98,6 +105,18 @@ export default function SettingsPage() {
           if (user.user_metadata?.business_name) {
             setBusinessName(user.user_metadata.business_name);
           }
+          if (user.user_metadata?.business_phone || user.user_metadata?.phone) {
+            setBusinessPhone(user.user_metadata.business_phone || user.user_metadata.phone);
+          }
+          if (user.user_metadata?.business_email) {
+            setBusinessEmail(user.user_metadata.business_email);
+          }
+          if (user.user_metadata?.instagram) {
+            setInstagram(user.user_metadata.instagram);
+          }
+          if (user.user_metadata?.address) {
+            setAddress(user.user_metadata.address);
+          }
           if (user.user_metadata?.avatar_url) {
             setAvatarUrl(user.user_metadata.avatar_url);
           }
@@ -122,6 +141,18 @@ export default function SettingsPage() {
               if (data.isAdmin) setRole("admin");
               if (data.profile?.full_name) setFullName(data.profile.full_name);
               if (data.profile?.business_name) setBusinessName(data.profile.business_name);
+              if (data.profile?.business_phone || data.profile?.phone) {
+                setBusinessPhone(data.profile.business_phone || data.profile.phone);
+              }
+              if (data.profile?.business_email) {
+                setBusinessEmail(data.profile.business_email);
+              }
+              if (data.profile?.instagram) {
+                setInstagram(data.profile.instagram);
+              }
+              if (data.profile?.address) {
+                setAddress(data.profile.address);
+              }
               if (data.profile?.role) setRole(data.profile.role);
               if (data.profile?.avatar_url) setAvatarUrl(data.profile.avatar_url);
               if (data.profile?.plan_type) setPlanType(data.profile.plan_type);
@@ -315,6 +346,10 @@ export default function SettingsPage() {
         fullName: fullName.trim(),
         businessName: businessName.trim(),
         email: email.trim(),
+        businessPhone: businessPhone.trim(),
+        businessEmail: businessEmail.trim(),
+        instagram: instagram.trim(),
+        address: address.trim(),
       };
       if (newPassword.trim()) {
         payload.password = newPassword.trim();
@@ -542,6 +577,80 @@ export default function SettingsPage() {
               placeholder="Ej: Giulianna Penna"
               className="w-full px-3.5 py-2.5 text-sm bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] focus:ring-2 focus:ring-[#DCF4D7] outline-none transition"
             />
+          </div>
+
+          {/* Datos de Contacto del Emprendimiento (Para Presupuestos y PDF) */}
+          <div className="pt-3 border-t border-neutral-100 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[#1F7A4C] flex items-center gap-1.5">
+                <Phone className="w-3.5 h-3.5 text-[#3BB578]" />
+                Datos de Contacto Comercial
+              </span>
+              <span className="text-[9.5px] bg-[#DCF4D7] text-[#1F7A4C] font-bold px-2 py-0.5 rounded-full border border-[#C3EBC0]">
+                Presupuestos & PDF
+              </span>
+            </div>
+            <p className="text-[10.5px] text-neutral-500">
+              Estos datos se usarán en la carátula de presupuestos, la descarga en PDF y el mensaje enviado por WhatsApp.
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-neutral-700 flex items-center gap-1.5">
+                  <Smartphone className="w-3.5 h-3.5 text-[#3BB578]" />
+                  Teléfono / WhatsApp Comercial
+                </label>
+                <input
+                  type="text"
+                  value={businessPhone}
+                  onChange={(e) => setBusinessPhone(e.target.value)}
+                  placeholder="Ej: +54 9 11 1234-5678"
+                  className="w-full px-3.5 py-2 text-sm bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] focus:ring-2 focus:ring-[#DCF4D7] outline-none transition"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-neutral-700 flex items-center gap-1.5">
+                  <Mail className="w-3.5 h-3.5 text-[#3BB578]" />
+                  Email Comercial de Contacto
+                </label>
+                <input
+                  type="email"
+                  value={businessEmail}
+                  onChange={(e) => setBusinessEmail(e.target.value)}
+                  placeholder="Ej: ventas@taller.com (opcional)"
+                  className="w-full px-3.5 py-2 text-sm bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] focus:ring-2 focus:ring-[#DCF4D7] outline-none transition"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-neutral-700 flex items-center gap-1.5">
+                  <AtSign className="w-3.5 h-3.5 text-[#3BB578]" />
+                  Instagram / Red Social
+                </label>
+                <input
+                  type="text"
+                  value={instagram}
+                  onChange={(e) => setInstagram(e.target.value)}
+                  placeholder="Ej: @amaoto.craft"
+                  className="w-full px-3.5 py-2 text-sm bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] focus:ring-2 focus:ring-[#DCF4D7] outline-none transition"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-neutral-700 flex items-center gap-1.5">
+                  <MapPin className="w-3.5 h-3.5 text-[#3BB578]" />
+                  Ubicación o Dirección del Taller
+                </label>
+                <input
+                  type="text"
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  placeholder="Ej: Palermo, CABA / Buenos Aires"
+                  className="w-full px-3.5 py-2 text-sm bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] focus:ring-2 focus:ring-[#DCF4D7] outline-none transition"
+                />
+              </div>
+            </div>
           </div>
 
           <div className="space-y-1">
