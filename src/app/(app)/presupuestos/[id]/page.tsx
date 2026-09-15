@@ -127,9 +127,6 @@ export default function PresupuestoPreviewPage() {
   const handleShareWhatsApp = async () => {
     if (!quote) return;
 
-    const origin = typeof window !== "undefined" ? window.location.origin : "";
-    const previewUrl = `${origin}/presupuestos/${quote.id}`;
-
     const itemsText = (quote.quote_items || [])
       .map(
         (item) =>
@@ -162,8 +159,7 @@ export default function PresupuestoPreviewPage() {
       `*Detalle de Productos:*\n${itemsText}\n\n` +
       `*Subtotal:* ${formatCurrency(quote.subtotal)}${discountText}${shippingText}\n` +
       `*TOTAL FINAL:* ${formatCurrency(quote.total)}${notesText}\n\n` +
-      `⏳ *Vigencia:* 15 días corridos con precios congelados.\n` +
-      `📄 *Ver y descargar presupuesto oficial:*\n${previewUrl}\n\n` +
+      `⏳ *Vigencia:* 15 días corridos con precios congelados.\n\n` +
       `¡Muchas gracias por tu consulta!`;
 
     // 1. Intentar con Web Share API (SIN url separada para evitar que WhatsApp duplique el enlace al final)

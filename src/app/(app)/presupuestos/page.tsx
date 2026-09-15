@@ -103,9 +103,6 @@ export default function PresupuestosPage() {
 
   // Generar mensaje y compartir por Web Share API / WhatsApp
   const shareViaWhatsApp = async (quote: Quote) => {
-    const origin = typeof window !== "undefined" ? window.location.origin : "";
-    const previewUrl = `${origin}/presupuestos/${quote.id}`;
-
     const itemsText = (quote.quote_items || [])
       .map(
         (item) =>
@@ -131,8 +128,7 @@ export default function PresupuestosPage() {
       `*Detalle de Productos:*\n${itemsText}\n\n` +
       `*Subtotal:* ${formatCurrency(quote.subtotal)}${discountText}\n` +
       `*TOTAL FINAL:* ${formatCurrency(quote.total)}${notesText}\n\n` +
-      `⏳ *Vigencia:* 15 días corridos con precios congelados.\n` +
-      `📄 *Ver y descargar presupuesto oficial:*\n${previewUrl}\n\n` +
+      `⏳ *Vigencia:* 15 días corridos con precios congelados.\n\n` +
       `¡Muchas gracias por tu consulta!`;
 
     // 1. Intentar con Web Share API primero si el navegador lo soporta
@@ -141,7 +137,6 @@ export default function PresupuestosPage() {
         await navigator.share({
           title: `Presupuesto #${quote.quote_number} - ${quote.client_name}`,
           text: fullMessage,
-          url: previewUrl,
         });
         return;
       } catch (err: any) {
