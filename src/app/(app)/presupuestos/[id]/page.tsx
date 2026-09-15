@@ -284,7 +284,7 @@ export default function PresupuestoPreviewPage() {
       <style jsx global>{`
         @page {
           size: A4 portrait;
-          margin: 10mm 12mm;
+          margin: 0;
         }
         @media print {
           * {
@@ -296,7 +296,7 @@ export default function PresupuestoPreviewPage() {
             background-color: #ffffff !important;
             color: #1a1a1a !important;
             margin: 0 !important;
-            padding: 0 !important;
+            padding: 10mm 12mm !important;
             width: 100% !important;
             height: auto !important;
           }
@@ -590,8 +590,7 @@ export default function PresupuestoPreviewPage() {
         {/* Panel de Totales y Descuentos */}
         <div className="quote-totals flex flex-col sm:flex-row items-end justify-between gap-4 pt-2">
           {/* Sello de Seguridad / Garantía de Precios */}
-          <div className="w-full sm:w-auto p-3 bg-[#F0FAF4] border border-[#DCF4D7] rounded-2xl flex items-center gap-2 text-xs text-[#1F7A4C]">
-            <ShieldCheck className="w-4 h-4 text-[#3BB578] flex-shrink-0" />
+          <div className="w-full sm:w-auto p-3 bg-[#F0FAF4] border border-[#DCF4D7] rounded-2xl text-xs text-[#1F7A4C]">
             <div>
               <span className="font-bold block">Precios Congelados</span>
               <span className="text-[10px] text-neutral-500">

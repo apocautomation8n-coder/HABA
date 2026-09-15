@@ -84,8 +84,19 @@ export default function GastosPage() {
     return expenses.reduce((acc, curr) => acc + Number(curr.monthly_equivalent || 0), 0);
   }, [expenses]);
 
+  // Formateo con puntos de miles para valores monetarios enteros (ej: 1000000 -> "1.000.000")
+  const formatThousands = (val: number | string) => {
+    if (val === "" || val === null || val === undefined) return "";
+    const clean = String(val).replace(/\D/g, "");
+    if (!clean) return "";
+    return parseInt(clean, 10).toLocaleString("es-AR");
+  };
+
   // Cálculo reactivo de Mano de Obra
-  const parsedSalary = typeof salary === "number" ? salary : parseFloat(String(salary)) || 0;
+  const parsedSalary =
+    typeof salary === "number"
+      ? salary
+      : parseFloat(String(salary).replace(/\./g, "").replace(/,/g, ".")) || 0;
   const numDays = typeof daysPerMonth === "number" ? daysPerMonth : parseFloat(String(daysPerMonth)) || 0;
   const numHours = typeof hoursPerDay === "number" ? hoursPerDay : parseFloat(String(hoursPerDay)) || 0;
   const totalHoursPerMonth = numDays * numHours;
@@ -320,11 +331,13 @@ export default function GastosPage() {
                   $
                 </span>
                 <input
-                  type="number"
-                  min="0"
-                  step="1000"
-                  value={salary === 0 ? "" : salary}
-                  onChange={(e) => setSalary(e.target.value)}
+                  type="text"
+                  inputMode="numeric"
+                  value={salary !== "" && salary !== null && salary !== undefined && salary !== 0 ? formatThousands(salary) : ""}
+                  onChange={(e) => {
+                    const raw = e.target.value.replace(/\D/g, "");
+                    setSalary(raw ? parseInt(raw, 10) : "");
+                  }}
                   placeholder="0"
                   required
                   className="w-full pl-8 pr-4 py-2.5 text-sm font-bold text-[#2B2B2B] bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none"

@@ -261,7 +261,17 @@ export default function PresupuestosPage() {
           <style>
             @page {
               size: A4 portrait;
-              margin: 10mm 12mm;
+              margin: 0;
+            }
+            @media print {
+              @page {
+                size: A4 portrait;
+                margin: 0;
+              }
+              body {
+                margin: 0 !important;
+                padding: 10mm 12mm !important;
+              }
             }
             * {
               box-sizing: border-box;
@@ -270,7 +280,7 @@ export default function PresupuestosPage() {
             }
             html, body {
               margin: 0;
-              padding: 0;
+              padding: 10mm 12mm;
               background: #ffffff;
               color: #1a1a1a;
               font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -472,7 +482,7 @@ export default function PresupuestosPage() {
 
             <div class="totals-wrap">
               <div class="guarantee-box">
-                <strong style="display: block; margin-bottom: 2px;">🛡️ Precios Congelados</strong>
+                <strong style="display: block; margin-bottom: 2px;">Precios Congelados</strong>
                 Los valores quedan asegurados durante el período de vigencia de 15 días corridos.
               </div>
 
