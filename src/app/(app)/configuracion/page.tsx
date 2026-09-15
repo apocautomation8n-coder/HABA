@@ -213,8 +213,19 @@ export default function SettingsPage() {
     if (savedDays) setPriceReviewDays(parseInt(savedDays, 10) || 15);
   }, [supabase]);
 
+  // Formateo con puntos de miles para valores monetarios enteros (ej: 1000000 -> "1.000.000")
+  const formatThousands = (val: number | string) => {
+    if (val === "" || val === null || val === undefined) return "";
+    const clean = String(val).replace(/\D/g, "");
+    if (!clean) return "";
+    return parseInt(clean, 10).toLocaleString("es-AR");
+  };
+
   // Cálculos de Objetivo Mensual y Valor Hora/Minuto
-  const parsedSalary = typeof salary === "number" ? salary : parseFloat(String(salary)) || 0;
+  const parsedSalary =
+    typeof salary === "number"
+      ? salary
+      : parseFloat(String(salary).replace(/\./g, "").replace(/,/g, ".")) || 0;
   const numDays = typeof daysPerMonth === "number" ? daysPerMonth : parseFloat(String(daysPerMonth)) || 0;
   const numHours = typeof hoursPerDay === "number" ? hoursPerDay : parseFloat(String(hoursPerDay)) || 0;
   const totalHoursPerMonth = numDays * numHours;
@@ -762,11 +773,13 @@ export default function SettingsPage() {
                 $
               </span>
               <input
-                type="number"
-                min="0"
-                step="1000"
-                value={salary === 0 ? "" : salary}
-                onChange={(e) => setSalary(e.target.value)}
+                type="text"
+                inputMode="numeric"
+                value={salary !== "" && salary !== null && salary !== undefined && salary !== 0 ? formatThousands(salary) : ""}
+                onChange={(e) => {
+                  const raw = e.target.value.replace(/\D/g, "");
+                  setSalary(raw ? parseInt(raw, 10) : "");
+                }}
                 placeholder="0"
                 required
                 className="w-full pl-8 pr-3.5 py-2.5 text-sm font-bold text-neutral-800 bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] focus:ring-2 focus:ring-[#DCF4D7] outline-none transition"
