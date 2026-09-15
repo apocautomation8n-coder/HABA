@@ -1,7 +1,7 @@
 export interface UnitPreset {
   id: string;
   name: string;
-  category: "peso" | "longitud" | "volumen" | "unidad";
+  category: "peso" | "longitud" | "superficie" | "volumen" | "unidad";
   purchaseUnit: string;
   useUnit: string;
   defaultFactor: number; // Cuántas useUnit hay en 1 purchaseUnit
@@ -62,6 +62,33 @@ export const UNIT_PRESETS: UnitPreset[] = [
     useUnit: "cm",
     defaultFactor: 1,
     example: "Ej: Tira de 50 cm",
+  },
+  {
+    id: "m2-cm2",
+    name: "Metros cuadrados a Centímetros cuadrados (m² → cm²)",
+    category: "superficie",
+    purchaseUnit: "m²",
+    useUnit: "cm²",
+    defaultFactor: 10000,
+    example: "Ej: 1 m² de vinilo, cuero o madera = 10.000 cm²",
+  },
+  {
+    id: "m2-m2",
+    name: "Metros cuadrados directos (m² → m²)",
+    category: "superficie",
+    purchaseUnit: "m²",
+    useUnit: "m²",
+    defaultFactor: 1,
+    example: "Ej: Plancha de 1 m² = 1 m²",
+  },
+  {
+    id: "cm2-cm2",
+    name: "Centímetros cuadrados directos (cm² → cm²)",
+    category: "superficie",
+    purchaseUnit: "cm²",
+    useUnit: "cm²",
+    defaultFactor: 1,
+    example: "Ej: Recorte o sticker de 100 cm²",
   },
   {
     id: "l-ml",

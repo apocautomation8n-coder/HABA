@@ -21,10 +21,14 @@ import {
   Camera,
   Calendar,
   Loader2,
+  DollarSign,
+  Calculator,
+  AlertCircle,
 } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
 import { checkIsAdmin } from "@/lib/auth-helpers";
+import { formatCurrency } from "@/lib/units";
 import {
   PlanType,
   AccountStatus,
@@ -62,6 +66,15 @@ export default function SettingsPage() {
   const [planStartDate, setPlanStartDate] = useState<string>("");
   const [planEndDate, setPlanEndDate] = useState<string>("");
   const [accountStatus, setAccountStatus] = useState<AccountStatus>("active");
+
+  // Mano de Obra y Sueldo Pretendido (Punto 4)
+  const [salary, setSalary] = useState<number | string>(350000);
+  const [daysPerMonth, setDaysPerMonth] = useState<number | string>(20);
+  const [hoursPerDay, setHoursPerDay] = useState<number | string>(6);
+  const [fixedExpensesTotal, setFixedExpensesTotal] = useState<number>(0);
+  const [savingLabor, setSavingLabor] = useState<boolean>(false);
+  const [laborSavedSuccess, setLaborSavedSuccess] = useState<boolean>(false);
+  const [laborError, setLaborError] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadUser() {
@@ -119,6 +132,42 @@ export default function SettingsPage() {
           } catch {
             // ignore
           }
+
+          // Cargar configuración de mano de obra
+          try {
+            const { data: laborData } = await supabase
+              .from("labor_settings")
+              .select("*")
+              .eq("user_id", user.id)
+              .maybeSingle();
+
+            if (laborData) {
+              if (laborData.desired_monthly_salary !== undefined && laborData.desired_monthly_salary !== null) {
+                setSalary(laborData.desired_monthly_salary);
+              }
+              if (laborData.working_days_per_month) {
+                setDaysPerMonth(laborData.working_days_per_month);
+              }
+              if (laborData.working_hours_per_day) {
+                setHoursPerDay(laborData.working_hours_per_day);
+              }
+            }
+          } catch {
+            // ignore
+          }
+
+          // Cargar total de gastos fijos para calcular objetivo mensual real
+          try {
+            const { data: expData } = await supabase
+              .from("fixed_expenses")
+              .select("monthly_equivalent");
+            if (expData) {
+              const totalExp = expData.reduce((acc, curr) => acc + Number(curr.monthly_equivalent || 0), 0);
+              setFixedExpensesTotal(totalExp);
+            }
+          } catch {
+            // ignore
+          }
         }
       } catch (err) {
         console.error("Error loading profile:", err);
@@ -132,6 +181,69 @@ export default function SettingsPage() {
     const savedDays = localStorage.getItem("haba_price_review_days");
     if (savedDays) setPriceReviewDays(parseInt(savedDays, 10) || 15);
   }, [supabase]);
+
+  // Cálculos de Objetivo Mensual y Valor Hora/Minuto
+  const parsedSalary = typeof salary === "number" ? salary : parseFloat(String(salary)) || 0;
+  const numDays = typeof daysPerMonth === "number" ? daysPerMonth : parseFloat(String(daysPerMonth)) || 0;
+  const numHours = typeof hoursPerDay === "number" ? hoursPerDay : parseFloat(String(hoursPerDay)) || 0;
+  const totalHoursPerMonth = numDays * numHours;
+  const objetivoMensual = parsedSalary + fixedExpensesTotal;
+  const calculatedHourlyRate = totalHoursPerMonth > 0 ? objetivoMensual / totalHoursPerMonth : 0;
+  const calculatedMinuteRate = calculatedHourlyRate / 60;
+
+  // Guardar mano de obra y sueldo pretendido
+  const handleSaveLabor = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLaborError(null);
+
+    if (parsedSalary < 0) {
+      setLaborError("El sueldo pretendido no puede ser negativo.");
+      return;
+    }
+    if (numDays < 1 || numDays > 31) {
+      setLaborError("Los días trabajados al mes deben estar entre 1 y 31.");
+      return;
+    }
+    if (numHours <= 0 || numHours > 24) {
+      setLaborError("Las horas diarias de trabajo deben estar entre 1 y 24.");
+      return;
+    }
+
+    try {
+      setSavingLabor(true);
+      setLaborSavedSuccess(false);
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) throw new Error("No hay una sesión activa.");
+
+      const now = new Date().toISOString();
+      const { error: upsertError } = await supabase.from("labor_settings").upsert(
+        {
+          user_id: user.id,
+          desired_monthly_salary: parsedSalary,
+          working_days_per_month: numDays,
+          working_hours_per_day: numHours,
+          hourly_rate: calculatedHourlyRate,
+          minute_rate: calculatedMinuteRate,
+          updated_at: now,
+        },
+        { onConflict: "user_id" }
+      );
+
+      if (upsertError) throw upsertError;
+
+      setLaborSavedSuccess(true);
+      setTimeout(() => setLaborSavedSuccess(false), 3000);
+    } catch (err: any) {
+      console.error("Error saving labor settings:", err);
+      setLaborError(err.message || "Error al guardar configuración.");
+    } finally {
+      setSavingLabor(false);
+    }
+  };
 
   // Subir foto de perfil o logo
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -489,6 +601,144 @@ export default function SettingsPage() {
               </span>
             ) : (
               <span>Guardar cambios</span>
+            )}
+          </button>
+        </form>
+      </div>
+
+      {/* Tarjeta: Objetivo Mensual & Sueldo Pretendido (Punto 4) */}
+      <div className="bg-white p-5 rounded-3xl border border-[#EAF0E8] shadow-sm space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-2xl bg-[#DCF4D7] text-[#1F7A4C] flex items-center justify-center font-bold">
+              <DollarSign className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-400">
+                Mano de Obra
+              </h3>
+              <p className="text-sm font-bold text-[#2B2B2B] font-display">
+                Sueldo Pretendido & Costo por Hora
+              </p>
+            </div>
+          </div>
+          <Link
+            href="/gastos"
+            className="text-[11px] font-bold text-[#3BB578] hover:text-[#2E9E65] underline"
+          >
+            Ver Gastos Fijos →
+          </Link>
+        </div>
+
+        <p className="text-xs text-neutral-500 leading-snug">
+          Indicá cuánto querés ganar por mes y tu jornada habitual. HABA sumará tus gastos operativos y tu sueldo para calcular automáticamente el valor de tu hora y minuto de trabajo.
+        </p>
+
+        {laborError && (
+          <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl text-rose-700 text-xs flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+            <span>{laborError}</span>
+          </div>
+        )}
+
+        <form onSubmit={handleSaveLabor} className="space-y-3.5">
+          {/* Sueldo Pretendido Mensual */}
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-neutral-700 flex items-center gap-1">
+              <span>Sueldo Pretendido Mensual ($)</span>
+              <span className="text-rose-500">*</span>
+            </label>
+            <div className="relative">
+              <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-neutral-400 font-bold text-xs">
+                $
+              </span>
+              <input
+                type="number"
+                min="0"
+                step="1000"
+                value={salary === 0 ? "" : salary}
+                onChange={(e) => setSalary(e.target.value)}
+                placeholder="0"
+                required
+                className="w-full pl-8 pr-3.5 py-2.5 text-sm font-bold text-neutral-800 bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] focus:ring-2 focus:ring-[#DCF4D7] outline-none transition"
+              />
+            </div>
+            <p className="text-[10px] text-neutral-400">
+              Lo que querés ganar de bolsillo por mes trabajando en tus creaciones.
+            </p>
+          </div>
+
+          {/* Días al mes y Horas por día */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-neutral-700">
+                Días al mes
+              </label>
+              <input
+                type="number"
+                min="1"
+                max="31"
+                value={daysPerMonth === 0 ? "" : daysPerMonth}
+                onChange={(e) => setDaysPerMonth(e.target.value)}
+                placeholder="20"
+                required
+                className="w-full px-3.5 py-2 text-sm bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] focus:ring-2 focus:ring-[#DCF4D7] outline-none text-neutral-800 text-center font-bold"
+              />
+              <span className="text-[10px] text-neutral-400 block text-center">Habitual: 20 a 24 días</span>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-neutral-700">
+                Horas por día
+              </label>
+              <input
+                type="number"
+                min="1"
+                max="24"
+                value={hoursPerDay === 0 ? "" : hoursPerDay}
+                onChange={(e) => setHoursPerDay(e.target.value)}
+                placeholder="6"
+                required
+                className="w-full px-3.5 py-2 text-sm bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] focus:ring-2 focus:ring-[#DCF4D7] outline-none text-neutral-800 text-center font-bold"
+              />
+              <span className="text-[10px] text-neutral-400 block text-center">Habitual: 4 a 8 hs</span>
+            </div>
+          </div>
+
+          {/* Tarjeta de Resumen en Tiempo Real */}
+          <div className="bg-[#DCF4D7]/70 border border-[#C3EBC0] rounded-2xl p-3.5 space-y-2 text-xs text-[#1F7A4C]">
+            <div className="flex items-center justify-between text-[11px]">
+              <span>Gastos Fijos ({formatCurrency(fixedExpensesTotal)}) + Sueldo ({formatCurrency(parsedSalary)}):</span>
+            </div>
+            <div className="flex items-center justify-between font-bold pt-1 border-t border-[#C3EBC0]">
+              <span>Objetivo Mensual Unificado:</span>
+              <span className="text-sm font-black text-[#1F7A4C]">{formatCurrency(objetivoMensual)}</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2 pt-1 border-t border-[#C3EBC0] text-center">
+              <div className="bg-white/80 p-2 rounded-xl border border-[#C3EBC0]/60">
+                <span className="text-[9.5px] text-neutral-500 block font-semibold">Valor por Hora</span>
+                <span className="text-xs font-bold text-[#1F7A4C]">{formatCurrency(calculatedHourlyRate)}/h</span>
+              </div>
+              <div className="bg-white/80 p-2 rounded-xl border border-[#C3EBC0]/60">
+                <span className="text-[9.5px] text-neutral-500 block font-semibold">Valor por Minuto</span>
+                <span className="text-xs font-bold text-[#1F7A4C]">{formatCurrency(calculatedMinuteRate)}/min</span>
+              </div>
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            disabled={savingLabor}
+            className="w-full py-2.5 px-4 bg-[#3BB578] hover:bg-[#2E9E65] text-white font-semibold rounded-2xl text-xs transition flex items-center justify-center gap-1.5 disabled:opacity-60 shadow-sm"
+          >
+            {savingLabor ? (
+              <span>Guardando sueldo...</span>
+            ) : laborSavedSuccess ? (
+              <span className="flex items-center gap-1 text-white">
+                <Check className="w-4 h-4" /> ¡Sueldo y horas actualizados!
+              </span>
+            ) : (
+              <span>Guardar Sueldo y Horas</span>
             )}
           </button>
         </form>

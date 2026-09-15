@@ -85,7 +85,7 @@ export default function GastosPage() {
   }, [expenses]);
 
   // Cálculo reactivo de Mano de Obra
-  const parsedSalary = typeof salary === "number" ? salary : parseFloat(salary) || 0;
+  const parsedSalary = typeof salary === "number" ? salary : parseFloat(String(salary)) || 0;
   const numDays = typeof daysPerMonth === "number" ? daysPerMonth : parseFloat(String(daysPerMonth)) || 0;
   const numHours = typeof hoursPerDay === "number" ? hoursPerDay : parseFloat(String(hoursPerDay)) || 0;
   const totalHoursPerMonth = numDays * numHours;
@@ -323,9 +323,9 @@ export default function GastosPage() {
                   type="number"
                   min="0"
                   step="1000"
-                  value={salary}
+                  value={salary === 0 ? "" : salary}
                   onChange={(e) => setSalary(e.target.value)}
-                  placeholder="350000"
+                  placeholder="0"
                   required
                   className="w-full pl-8 pr-4 py-2.5 text-sm font-bold text-[#2B2B2B] bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none"
                 />
@@ -342,7 +342,7 @@ export default function GastosPage() {
                   type="number"
                   min="1"
                   max="31"
-                  value={daysPerMonth}
+                  value={daysPerMonth === 0 ? "" : daysPerMonth}
                   onChange={(e) => setDaysPerMonth(e.target.value)}
                   placeholder="20"
                   required
@@ -357,7 +357,7 @@ export default function GastosPage() {
                   type="number"
                   min="1"
                   max="24"
-                  value={hoursPerDay}
+                  value={hoursPerDay === 0 ? "" : hoursPerDay}
                   onChange={(e) => setHoursPerDay(e.target.value)}
                   placeholder="6"
                   required

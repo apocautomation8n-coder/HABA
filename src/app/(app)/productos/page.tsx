@@ -79,6 +79,27 @@ interface Product {
   product_supplies?: ProductSupplyItem[];
 }
 
+export interface CatalogSupply {
+  id: string;
+  name: string;
+  category?: string;
+  current_price: number;
+  use_unit?: string;
+  purchase_unit?: string;
+  purchase_quantity?: number;
+  conversion_factor?: number;
+}
+
+export interface EditSupplyLine {
+  id?: string;
+  supply_id: string;
+  name: string;
+  use_unit: string;
+  unit_cost: number;
+  quantity: number | string;
+  waste_percent: number | string;
+}
+
 export default function ProductosPage() {
   const supabase = createClient();
 
@@ -89,6 +110,11 @@ export default function ProductosPage() {
   const [recalculatingId, setRecalculatingId] = useState<string | null>(null);
   const [successToast, setSuccessToast] = useState<string | null>(null);
   const [currentMinuteRate, setCurrentMinuteRate] = useState<number>(0);
+
+  // Insumos disponibles en el catálogo para editar recetas
+  const [allSupplies, setAllSupplies] = useState<CatalogSupply[]>([]);
+  const [editSupplies, setEditSupplies] = useState<EditSupplyLine[]>([]);
+  const [selectedSupplyToAdd, setSelectedSupplyToAdd] = useState<string>("");
 
   // Filtros
   const [search, setSearch] = useState("");
@@ -103,43 +129,53 @@ export default function ProductosPage() {
   const [duplicateModalProduct, setDuplicateModalProduct] = useState<Product | null>(null);
   const [duplicateNewName, setDuplicateNewName] = useState("");
 
-  // Modal para editar producto (nombre, descripción, minutos y categoría)
+  // Modal para editar producto (nombre, descripción, minutos, categoría e insumos)
   const [editModalProduct, setEditModalProduct] = useState<Product | null>(null);
   const [editName, setEditName] = useState("");
   const [editDescription, setEditDescription] = useState("");
   const [editCategory, setEditCategory] = useState("");
-  const [editWorkMinutes, setEditWorkMinutes] = useState<number>(0);
+  const [editWorkMinutes, setEditWorkMinutes] = useState<number | string>(0);
   const [savingEdit, setSavingEdit] = useState(false);
 
   // Cargar productos con sus precios asociados y recetas de insumos
   const loadProducts = useCallback(async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from("products")
-        .select(`
-          *,
-          product_prices (*),
-          product_supplies (
-            id,
-            quantity,
-            supply_id,
-            supplies (
+      const [productsRes, suppliesRes] = await Promise.all([
+        supabase
+          .from("products")
+          .select(`
+            *,
+            product_prices (*),
+            product_supplies (
               id,
-              name,
-              category,
-              current_price,
-              use_unit,
-              purchase_unit,
-              purchase_quantity,
-              conversion_factor
+              quantity,
+              supply_id,
+              supplies (
+                id,
+                name,
+                category,
+                current_price,
+                use_unit,
+                purchase_unit,
+                purchase_quantity,
+                conversion_factor
+              )
             )
-          )
-        `)
-        .order("created_at", { ascending: false });
+          `)
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("supplies")
+          .select("id, name, category, current_price, use_unit, purchase_unit, purchase_quantity, conversion_factor")
+          .order("name", { ascending: true }),
+      ]);
 
-      if (!error && data) {
-        setProducts(data as Product[]);
+      if (suppliesRes.data) {
+        setAllSupplies(suppliesRes.data as CatalogSupply[]);
+      }
+
+      if (!productsRes.error && productsRes.data) {
+        setProducts(productsRes.data as Product[]);
         
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
@@ -152,8 +188,8 @@ export default function ProductosPage() {
             setCurrentMinuteRate(laborData.minute_rate);
           }
         }
-      } else if (error) {
-        console.error("Error fetching products:", error);
+      } else if (productsRes.error) {
+        console.error("Error fetching products:", productsRes.error);
       }
     } catch (err) {
       console.error("Error loading products:", err);
@@ -351,7 +387,7 @@ export default function ProductosPage() {
     }
   };
 
-  // Abrir modal de edición rápida de producto (Punto H)
+  // Abrir modal de edición de producto con receta e insumos (Punto 5)
   const handleOpenEdit = (product: Product) => {
     const meta = parseProductMeta(product.description);
     setEditModalProduct(product);
@@ -359,9 +395,83 @@ export default function ProductosPage() {
     setEditDescription(meta.cleanDescription || "");
     setEditCategory(meta.category || "");
     setEditWorkMinutes(product.work_time_minutes || 0);
+
+    // Cargar insumos actuales de la receta
+    const initialSupplies: EditSupplyLine[] = (product.product_supplies || []).map((ps) => {
+      const s = ps.supplies;
+      const unitCost = s
+        ? calculateUnitCost(s.current_price, s.purchase_quantity || 1, s.conversion_factor || 1)
+        : 0;
+      return {
+        id: ps.id,
+        supply_id: ps.supply_id || s?.id || "",
+        name: s?.name || "Insumo",
+        use_unit: s?.use_unit || "u",
+        unit_cost: unitCost,
+        quantity: ps.quantity || 1,
+        waste_percent: 0,
+      };
+    });
+    setEditSupplies(initialSupplies);
+    setSelectedSupplyToAdd("");
   };
 
-  // Guardar cambios del modal de edición
+  // Agregar insumo a la receta en edición
+  const handleAddSupplyToRecipe = (supplyId: string) => {
+    if (!supplyId) return;
+    const supply = allSupplies.find((s) => s.id === supplyId);
+    if (!supply) return;
+    if (editSupplies.some((es) => es.supply_id === supplyId)) {
+      alert("Este insumo ya está en la receta del producto.");
+      return;
+    }
+    const unitCost = calculateUnitCost(
+      supply.current_price,
+      supply.purchase_quantity || 1,
+      supply.conversion_factor || 1
+    );
+    setEditSupplies((prev) => [
+      ...prev,
+      {
+        supply_id: supply.id,
+        name: supply.name,
+        use_unit: supply.use_unit || "u",
+        unit_cost: unitCost,
+        quantity: 1,
+        waste_percent: 0,
+      },
+    ]);
+    setSelectedSupplyToAdd("");
+  };
+
+  // Quitar insumo de la receta
+  const handleRemoveSupplyFromRecipe = (index: number) => {
+    setEditSupplies((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  // Actualizar cantidad de insumo en edición
+  const handleUpdateEditSupplyQty = (index: number, qty: number | string) => {
+    setEditSupplies((prev) => {
+      const updated = [...prev];
+      updated[index].quantity = qty;
+      return updated;
+    });
+  };
+
+  // Costos reactivos del modal de edición
+  const editDirectCost = useMemo(() => {
+    return editSupplies.reduce((acc, curr) => {
+      const qty = typeof curr.quantity === "number" ? curr.quantity : parseFloat(String(curr.quantity)) || 0;
+      const waste = typeof curr.waste_percent === "number" ? curr.waste_percent : parseFloat(String(curr.waste_percent)) || 0;
+      return acc + curr.unit_cost * qty * (1 + waste / 100);
+    }, 0);
+  }, [editSupplies]);
+
+  const editMins = typeof editWorkMinutes === "number" ? editWorkMinutes : parseFloat(String(editWorkMinutes)) || 0;
+  const editLaborCost = Math.round(editMins * (currentMinuteRate || 0) * 100) / 100;
+  const editTotalCost = Math.round((editDirectCost + editLaborCost) * 100) / 100;
+
+  // Guardar cambios del modal de edición incluyendo insumos y receta
   const handleSaveEditProduct = async () => {
     if (!editModalProduct || savingEdit) return;
     if (!editName.trim()) {
@@ -379,27 +489,45 @@ export default function ProductosPage() {
         isActive: meta.isActive,
       });
 
-      // Recalcular costo productivo y costo total con los nuevos minutos
-      const newLaborCost = Math.round((editWorkMinutes || 0) * (currentMinuteRate || 0) * 100) / 100;
-      const newTotalCost = Math.round(((editModalProduct.direct_cost || 0) + newLaborCost) * 100) / 100;
-
-      const { error } = await supabase
+      // 1. Actualizar tabla products
+      const { error: prodErr } = await supabase
         .from("products")
         .update({
           name: editName.trim(),
           description: newDescription,
-          work_time_minutes: editWorkMinutes,
-          labor_cost: newLaborCost,
-          total_cost: newTotalCost,
+          work_time_minutes: editMins,
+          direct_cost: editDirectCost,
+          labor_cost: editLaborCost,
+          indirect_cost: 0,
+          total_cost: editTotalCost,
+          needs_price_review: false,
         })
         .eq("id", editModalProduct.id);
 
-      if (error) throw error;
+      if (prodErr) throw prodErr;
 
-      // Actualizar precios por canal manteniendo margen %
+      // 2. Reemplazar insumos de la receta en product_supplies
+      await supabase.from("product_supplies").delete().eq("product_id", editModalProduct.id);
+
+      if (editSupplies.length > 0) {
+        const suppliesToInsert = editSupplies.map((s) => {
+          const qty = typeof s.quantity === "number" ? s.quantity : parseFloat(String(s.quantity)) || 0;
+          return {
+            product_id: editModalProduct.id,
+            supply_id: s.supply_id,
+            quantity: qty,
+          };
+        });
+        const { error: insSuppliesErr } = await supabase.from("product_supplies").insert(suppliesToInsert);
+        if (insSuppliesErr) {
+          console.error("Error updating product supplies:", insSuppliesErr);
+        }
+      }
+
+      // 3. Actualizar precios por canal manteniendo margen %
       if (editModalProduct.product_prices && editModalProduct.product_prices.length > 0) {
         for (const price of editModalProduct.product_prices) {
-          const newSelling = Math.round(newTotalCost * (1 + (price.profit_margin_percent || 0) / 100));
+          const newSelling = Math.round(editTotalCost * (1 + (price.profit_margin_percent || 0) / 100));
           await supabase
             .from("product_prices")
             .update({ selling_price: newSelling })
@@ -409,7 +537,7 @@ export default function ProductosPage() {
 
       setEditModalProduct(null);
       await loadProducts();
-      setSuccessToast(`¡Producto "${editName.trim()}" actualizado correctamente!`);
+      setSuccessToast(`¡Producto "${editName.trim()}" actualizado correctamente con sus insumos!`);
       setTimeout(() => {
         setSuccessToast(null);
       }, 4000);
@@ -1194,12 +1322,6 @@ export default function ProductosPage() {
                           </div>
                         </>
                       )}
-                      {product.indirect_cost > 0 && (
-                        <div className="flex justify-between text-neutral-600">
-                          <span>Gastos fijos prorrateados:</span>
-                          <span className="font-semibold">{formatCurrency(product.indirect_cost)}</span>
-                        </div>
-                      )}
                     </div>
 
                     {/* Desglose de Insumos y Materiales de la Receta */}
@@ -1407,27 +1529,30 @@ export default function ProductosPage() {
         </div>
       )}
 
-      {/* Modal para Edición Rápida de Producto (Punto H) */}
+      {/* Modal para Edición Rápida y Receta de Producto (Punto 5) */}
       {editModalProduct && (
-        <div className="fixed inset-0 z-[9999] bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-md rounded-3xl p-5 shadow-2xl border border-[#EAF0E8] space-y-4 animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between border-b border-neutral-100 pb-2.5">
-              <h3 className="text-sm font-bold text-neutral-800 flex items-center gap-1.5">
+        <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white w-full max-w-lg max-h-[90vh] rounded-3xl p-5 shadow-2xl border border-[#EAF0E8] flex flex-col animate-in fade-in zoom-in-95 duration-200">
+            {/* Header del Modal */}
+            <div className="flex items-center justify-between border-b border-neutral-100 pb-3 flex-shrink-0">
+              <h3 className="text-sm font-bold text-neutral-800 flex items-center gap-2 font-display">
                 <Pencil className="w-4 h-4 text-[#3BB578]" />
-                <span>Editar Producto</span>
+                <span>Editar Producto & Receta</span>
               </h3>
               <button
                 onClick={() => setEditModalProduct(null)}
-                className="p-1 text-neutral-400 hover:text-neutral-600 rounded-full"
+                className="p-1 text-neutral-400 hover:text-neutral-600 rounded-full text-sm font-bold"
               >
                 ✕
               </button>
             </div>
 
-            <div className="space-y-3">
+            {/* Contenido con Scroll */}
+            <div className="overflow-y-auto pr-1 py-3 space-y-4 flex-1">
+              {/* Nombre del Producto */}
               <div>
                 <label className="text-[11px] font-semibold text-neutral-700 block mb-1">
-                  Nombre del Producto:
+                  Nombre del Producto: <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="text"
@@ -1437,42 +1562,49 @@ export default function ProductosPage() {
                 />
               </div>
 
-              <div>
-                <label className="text-[11px] font-semibold text-neutral-700 block mb-1">
-                  Categoría Artesanal:
-                </label>
-                <select
-                  value={editCategory}
-                  onChange={(e) => setEditCategory(e.target.value)}
-                  className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl outline-none focus:bg-white focus:border-[#3BB578]"
-                >
-                  {PRODUCT_CATEGORIES.map((cat) => (
-                    <option key={cat.id} value={cat.label}>
-                      {cat.icon} {cat.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {/* Categoría y Tiempo de producción */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-semibold text-neutral-700 block mb-1">
+                    Categoría:
+                  </label>
+                  <select
+                    value={editCategory}
+                    onChange={(e) => setEditCategory(e.target.value)}
+                    className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl outline-none focus:bg-white focus:border-[#3BB578]"
+                  >
+                    {PRODUCT_CATEGORIES.map((cat) => (
+                      <option key={cat.id} value={cat.label}>
+                        {cat.icon} {cat.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-              <div>
-                <label className="text-[11px] font-semibold text-neutral-700 block mb-1">
-                  Tiempo de producción (minutos):
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    min="0"
-                    value={editWorkMinutes}
-                    onChange={(e) => setEditWorkMinutes(parseInt(e.target.value) || 0)}
-                    className="w-24 px-3 py-1.5 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl text-center font-bold outline-none focus:bg-white focus:border-[#3BB578]"
-                  />
-                  <span className="text-xs text-neutral-400">minutos</span>
-                  <span className="text-[11px] text-[#1F7A4C] font-semibold ml-auto">
-                    Costo prod: {formatCurrency(Math.round(editWorkMinutes * (currentMinuteRate || 0) * 100) / 100)}
-                  </span>
+                <div>
+                  <label className="text-[11px] font-semibold text-neutral-700 block mb-1">
+                    Tiempo de producción:
+                  </label>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="number"
+                      min="0"
+                      value={editWorkMinutes === 0 ? "" : editWorkMinutes}
+                      onChange={(e) => setEditWorkMinutes(e.target.value === "" ? "" : parseFloat(e.target.value) || 0)}
+                      placeholder="0"
+                      className="w-20 px-2.5 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl text-center font-bold outline-none focus:bg-white focus:border-[#3BB578]"
+                    />
+                    <span className="text-xs text-neutral-400">min</span>
+                    {Number(editWorkMinutes) >= 60 && (
+                      <span className="text-[10px] text-[#1F7A4C] bg-[#DCF4D7] px-1.5 py-0.5 rounded-md font-semibold">
+                        ~{(Number(editWorkMinutes) / 60).toFixed(1)} hs
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 
+              {/* Descripción */}
               <div>
                 <label className="text-[11px] font-semibold text-neutral-700 block mb-1">
                   Descripción o Notas:
@@ -1486,22 +1618,127 @@ export default function ProductosPage() {
                 />
               </div>
 
-              {/* Insumos asociados informativa */}
-              <div className="p-3 bg-neutral-50 rounded-2xl border border-neutral-200/70 text-[11px] space-y-1">
-                <span className="font-bold text-neutral-600 block">
-                  Costo de Insumos: {formatCurrency(editModalProduct.direct_cost)}
-                </span>
-                <p className="text-[10px] text-neutral-400">
-                  Si necesitás agregar o quitar insumos de la receta, podés duplicar el producto o crear una nueva versión en un clic.
+              {/* SECCIÓN DE INSUMOS DE LA RECETA (Punto 5) */}
+              <div className="p-3.5 bg-neutral-50 rounded-2xl border border-neutral-200/80 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <Boxes className="w-4 h-4 text-[#3BB578]" />
+                    <span className="text-xs font-bold text-neutral-800">
+                      Insumos de la Receta ({editSupplies.length})
+                    </span>
+                  </div>
+                  <span className="text-xs font-bold text-[#1F7A4C]">
+                    Subtotal: {formatCurrency(editDirectCost)}
+                  </span>
+                </div>
+
+                {/* Selector para agregar insumo del catálogo */}
+                <div className="flex items-center gap-2 pt-1 border-t border-neutral-200/60">
+                  <select
+                    value={selectedSupplyToAdd}
+                    onChange={(e) => setSelectedSupplyToAdd(e.target.value)}
+                    className="flex-1 px-3 py-1.5 text-xs bg-white border border-neutral-200 rounded-xl outline-none focus:border-[#3BB578]"
+                  >
+                    <option value="">+ Seleccionar insumo para agregar...</option>
+                    {allSupplies
+                      .filter((s) => !editSupplies.some((es) => es.supply_id === s.id))
+                      .map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name} ({s.category === "packaging" ? "📦 Packaging" : "🧵 Materia"}) - {formatCurrency(s.current_price)}/{s.purchase_unit || "u"}
+                        </option>
+                      ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => handleAddSupplyToRecipe(selectedSupplyToAdd)}
+                    disabled={!selectedSupplyToAdd}
+                    className="px-3 py-1.5 bg-[#3BB578] hover:bg-[#2E9E65] disabled:opacity-50 text-white text-xs font-bold rounded-xl transition flex items-center gap-1 shadow-xs"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Agregar</span>
+                  </button>
+                </div>
+
+                {/* Lista de insumos cargados */}
+                {editSupplies.length === 0 ? (
+                  <p className="text-[11px] text-neutral-400 italic py-2 text-center bg-white rounded-xl border border-dashed border-neutral-200">
+                    No hay insumos asignados a este producto. Elegí uno arriba para sumarlo.
+                  </p>
+                ) : (
+                  <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                    {editSupplies.map((item, idx) => {
+                      const qty = typeof item.quantity === "number" ? item.quantity : parseFloat(String(item.quantity)) || 0;
+                      const lineSubtotal = item.unit_cost * qty;
+
+                      return (
+                        <div
+                          key={item.supply_id || idx}
+                          className="bg-white p-2.5 rounded-xl border border-neutral-200 flex items-center justify-between gap-2 text-xs"
+                        >
+                          <div className="flex-1 min-w-0">
+                            <span className="font-bold text-neutral-800 truncate block">
+                              {item.name}
+                            </span>
+                            <span className="text-[10px] text-neutral-400">
+                              {formatCurrency(item.unit_cost)} / {item.use_unit}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
+                            <input
+                              type="number"
+                              step="any"
+                              min="0.0001"
+                              value={item.quantity === 0 ? "" : item.quantity}
+                              onChange={(e) => handleUpdateEditSupplyQty(idx, e.target.value)}
+                              placeholder="1"
+                              className="w-16 px-2 py-1 text-xs bg-neutral-50 border border-neutral-200 rounded-lg text-center font-bold outline-none focus:border-[#3BB578]"
+                            />
+                            <span className="text-[10.5px] text-neutral-500 font-semibold w-8">
+                              {item.use_unit}
+                            </span>
+                            <span className="text-xs font-bold text-[#1F7A4C] min-w-[65px] text-right">
+                              {formatCurrency(lineSubtotal)}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveSupplyFromRecipe(idx)}
+                              className="p-1 text-neutral-400 hover:text-rose-500 transition ml-1"
+                              title="Quitar insumo"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Resumen Total Actualizado */}
+              <div className="bg-[#DCF4D7] border border-[#C3EBC0] p-3 rounded-2xl space-y-1 text-xs text-[#1F7A4C]">
+                <div className="flex justify-between items-center text-[11px]">
+                  <span>
+                    Insumos: <strong>{formatCurrency(editDirectCost)}</strong> + M.O ({editMins} min): <strong>{formatCurrency(editLaborCost)}</strong>
+                  </span>
+                </div>
+                <div className="flex justify-between items-center font-bold pt-1 border-t border-[#C3EBC0]">
+                  <span>Costo Total de Fabricación:</span>
+                  <span className="text-sm font-black text-[#1F7A4C]">{formatCurrency(editTotalCost)}</span>
+                </div>
+                <p className="text-[9.5px] text-[#2E9E65] pt-0.5">
+                  Los precios de venta de tus canales se actualizarán automáticamente manteniendo tus márgenes de ganancia.
                 </p>
               </div>
             </div>
 
-            <div className="pt-2 flex justify-end gap-2 border-t border-neutral-100">
+            {/* Footer con Acciones */}
+            <div className="pt-3 flex justify-end gap-2 border-t border-neutral-100 flex-shrink-0">
               <button
                 type="button"
                 onClick={() => setEditModalProduct(null)}
-                className="py-2 px-3.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 text-xs font-semibold rounded-2xl transition"
+                className="py-2 px-4 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 text-xs font-semibold rounded-2xl transition"
               >
                 Cancelar
               </button>
@@ -1509,7 +1746,7 @@ export default function ProductosPage() {
                 type="button"
                 onClick={handleSaveEditProduct}
                 disabled={savingEdit || !editName.trim()}
-                className="py-2 px-4 bg-[#3BB578] hover:bg-[#2E9E65] disabled:opacity-50 text-white text-xs font-bold rounded-2xl transition flex items-center gap-1.5 shadow-sm"
+                className="py-2 px-5 bg-[#3BB578] hover:bg-[#2E9E65] disabled:opacity-50 text-white text-xs font-bold rounded-2xl transition flex items-center gap-1.5 shadow-sm"
               >
                 {savingEdit ? (
                   <>

@@ -492,7 +492,7 @@ function NuevoPresupuestoContent() {
           <span className="text-xs text-[#1F7A4C]">
             Subtotal: {formatCurrency(subtotal)}
             {Number(discountPercent) > 0 && ` | Dcto: -${discountPercent}%`}
-            {shippingCost > 0 && ` | Envío: +${formatCurrency(shippingCost)}`}
+            {Number(shippingCost) > 0 && ` | Envío: +${formatCurrency(shippingCost)}`}
           </span>
         </div>
         <div className="text-right">
@@ -618,95 +618,95 @@ function NuevoPresupuestoContent() {
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2 pt-1 border-t border-neutral-200/50">
-                    <div className="flex items-center gap-1.5">
-                      <label className="text-[11px] font-semibold text-neutral-600">Cant:</label>
-                      <input
-                        type="number"
-                        min="1"
-                        value={item.quantity}
-                        onChange={(e) =>
-                          handleUpdateItemQty(idx, e.target.value)
-                        }
-                        placeholder="1"
-                        className="w-16 px-2 py-1 text-xs bg-white border border-neutral-200 rounded-xl text-center font-bold outline-none focus:border-[#3BB578]"
-                      />
+                    <div className="grid grid-cols-2 gap-2 pt-1 border-t border-neutral-200/50">
+                      <div className="flex items-center gap-1.5">
+                        <label className="text-[11px] font-semibold text-neutral-600">Cant:</label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={item.quantity === 0 ? "" : item.quantity}
+                          onChange={(e) =>
+                            handleUpdateItemQty(idx, e.target.value)
+                          }
+                          placeholder="1"
+                          className="w-16 px-2 py-1 text-xs bg-white border border-neutral-200 rounded-xl text-center font-bold outline-none focus:border-[#3BB578]"
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-end gap-1.5">
+                        <label className="text-[11px] font-semibold text-neutral-600">Unit ($):</label>
+                        <input
+                          type="number"
+                          step="any"
+                          value={item.unitPrice === 0 ? "" : item.unitPrice}
+                          onChange={(e) =>
+                            handleUpdateItemPrice(idx, e.target.value)
+                          }
+                          placeholder="0.00"
+                          className="w-24 px-2 py-1 text-xs bg-white border border-neutral-200 rounded-xl text-right font-bold outline-none focus:border-[#3BB578]"
+                        />
+                      </div>
                     </div>
 
-                    <div className="flex items-center justify-end gap-1.5">
-                      <label className="text-[11px] font-semibold text-neutral-600">Unit ($):</label>
-                      <input
-                        type="number"
-                        step="any"
-                        value={item.unitPrice}
-                        onChange={(e) =>
-                          handleUpdateItemPrice(idx, e.target.value)
-                        }
-                        placeholder="0.00"
-                        className="w-24 px-2 py-1 text-xs bg-white border border-neutral-200 rounded-xl text-right font-bold outline-none focus:border-[#3BB578]"
-                      />
+                    <div className="text-right pt-1 border-t border-neutral-200/40">
+                      <span className="text-[11px] text-neutral-400 mr-1">Subtotal ítem:</span>
+                      <span className="text-xs font-black text-[#1F7A4C]">
+                        {formatCurrency(lineTotal)}
+                      </span>
                     </div>
                   </div>
-
-                  <div className="text-right pt-1 border-t border-neutral-200/40">
-                    <span className="text-[11px] text-neutral-400 mr-1">Subtotal ítem:</span>
-                    <span className="text-xs font-black text-[#1F7A4C]">
-                      {formatCurrency(lineTotal)}
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Costo de Envío (Punto B) */}
-        <div className="pt-3 border-t border-neutral-100 space-y-2">
-          <div className="flex items-center justify-between">
-            <label className="text-xs font-semibold text-neutral-700 flex items-center gap-1.5">
-              <Truck className="w-3.5 h-3.5 text-[#3BB578]" />
-              <span>Costo de Envío ($)</span>
-            </label>
-            <div className="relative">
-              <span className="absolute left-2.5 top-1.5 text-xs text-neutral-400 font-bold">$</span>
-              <input
-                type="number"
-                min="0"
-                step="any"
-                value={shippingCost || ""}
-                onChange={(e) => setShippingCost(Math.max(0, parseFloat(e.target.value) || 0))}
-                placeholder="0"
-                className="w-28 pl-6 pr-2.5 py-1 text-xs bg-neutral-50 border border-neutral-200 rounded-xl text-right font-bold outline-none focus:border-[#3BB578]"
-              />
+                );
+              })}
             </div>
-          </div>
-          <p className="text-[10.5px] text-neutral-400 italic bg-neutral-50/70 p-2 rounded-xl border border-neutral-200/50">
-            🚚 Cotización al momento de presupuestar, sujeta a cambio de tarifa por la empresa de envío.
-          </p>
-        </div>
+          )}
 
-        {/* Descuento y Notas */}
-        <div className="pt-3 border-t border-neutral-100 space-y-3">
-          <div className="flex items-center justify-between">
-            <label className="text-xs font-semibold text-neutral-700 flex items-center gap-1">
-              <Percent className="w-3.5 h-3.5 text-neutral-400" />
-              <span>Descuento global (%)</span>
-            </label>
-            <div className="relative">
-              <input
-                type="number"
-                min="0"
-                max="100"
-                value={discountPercent}
-                onChange={(e) => setDiscountPercent(e.target.value)}
-                placeholder="0"
-                className="w-20 px-2.5 py-1 text-xs bg-neutral-50 border border-neutral-200 rounded-xl text-center font-bold outline-none focus:border-[#3BB578]"
-              />
-              <span className="absolute right-2.5 top-1 text-xs text-neutral-400 font-bold">
-                %
-              </span>
+          {/* Costo de Envío (Punto B) */}
+          <div className="pt-3 border-t border-neutral-100 space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold text-neutral-700 flex items-center gap-1.5">
+                <Truck className="w-3.5 h-3.5 text-[#3BB578]" />
+                <span>Costo de Envío ($)</span>
+              </label>
+              <div className="relative">
+                <span className="absolute left-2.5 top-1.5 text-xs text-neutral-400 font-bold">$</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={shippingCost === 0 ? "" : shippingCost}
+                  onChange={(e) => setShippingCost(e.target.value === "" ? 0 : Math.max(0, parseFloat(e.target.value) || 0))}
+                  placeholder="0"
+                  className="w-28 pl-6 pr-2.5 py-1 text-xs bg-neutral-50 border border-neutral-200 rounded-xl text-right font-bold outline-none focus:border-[#3BB578]"
+                />
+              </div>
             </div>
+            <p className="text-[10.5px] text-neutral-400 italic bg-neutral-50/70 p-2 rounded-xl border border-neutral-200/50">
+              🚚 Cotización al momento de presupuestar, sujeta a cambio de tarifa por la empresa de envío.
+            </p>
           </div>
+
+          {/* Descuento y Notas */}
+          <div className="pt-3 border-t border-neutral-100 space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold text-neutral-700 flex items-center gap-1">
+                <Percent className="w-3.5 h-3.5 text-neutral-400" />
+                <span>Descuento global (%)</span>
+              </label>
+              <div className="relative">
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={discountPercent === 0 ? "" : discountPercent}
+                  onChange={(e) => setDiscountPercent(e.target.value === "" ? "" : Math.min(100, Math.max(0, parseFloat(e.target.value) || 0)))}
+                  placeholder="0"
+                  className="w-20 px-2.5 py-1 text-xs bg-neutral-50 border border-neutral-200 rounded-xl text-center font-bold outline-none focus:border-[#3BB578]"
+                />
+                <span className="absolute right-2.5 top-1 text-xs text-neutral-400 font-bold">
+                  %
+                </span>
+              </div>
+            </div>
 
           <div className="space-y-1">
             <label className="text-xs font-semibold text-neutral-700 flex items-center gap-1">

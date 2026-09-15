@@ -85,11 +85,15 @@ export default function NuevoProductoPage() {
   const [showWasteInfo, setShowWasteInfo] = useState(false);
   const [supplySearch, setSupplyPickerSearch] = useState("");
 
-  // Paso 3: Tiempo
+  // Paso 3: Tiempo / Mano de Obra (Opcional)
+  const [includeLabor, setIncludeLabor] = useState(true);
   const [workTimeMinutes, setWorkTimeMinutes] = useState<number | string>(30);
   const [showTimeInfo, setShowTimeInfo] = useState(false);
 
-  // Paso 4: Precios Multicanal
+  // Paso 4: Gastos Indirectos / Fijos (Opcional prorrateo sugerido)
+  const [indirectCost, setIndirectCost] = useState<number | string>("");
+
+  // Paso 5: Precios Multicanal
   const [channelPrices, setChannelPrices] = useState<ChannelPrice[]>(
     DEFAULT_CHANNELS.map((ch) => ({
       id: ch.id,
@@ -100,7 +104,7 @@ export default function NuevoProductoPage() {
   );
   const [isAddingChannel, setIsAddingChannel] = useState(false);
   const [newChannelName, setNewChannelName] = useState("");
-  const [newChannelMargin, setNewChannelMargin] = useState<number | string>(100);
+  const [newChannelMargin, setNewChannelMargin] = useState(100);
   const [showChannelInfo, setShowChannelInfo] = useState(false);
 
   // Cargar insumos, mano de obra y gastos fijos
@@ -200,23 +204,20 @@ export default function NuevoProductoPage() {
         item.supply.purchase_quantity,
         item.supply.conversion_factor
       );
-      const wasteVal = typeof item.waste_percent === "number" ? item.waste_percent : parseFloat(String(item.waste_percent)) || 0;
-      const wasteFactor = 1 + wasteVal / 100;
       const q = typeof item.quantity === "number" ? item.quantity : parseFloat(String(item.quantity)) || 0;
+      const wasteFactor = 1 + (Number(item.waste_percent) || 0) / 100;
       return acc + unitCost * q * wasteFactor;
     }, 0);
   }, [selectedSupplies]);
 
   // 2. Costo de Mano de Obra
   const laborCost = useMemo(() => {
+    if (!includeLabor) return 0;
     const mins = typeof workTimeMinutes === "number" ? workTimeMinutes : parseFloat(String(workTimeMinutes)) || 0;
     return mins * (laborMinuteRate || 0);
-  }, [workTimeMinutes, laborMinuteRate]);
+  }, [includeLabor, workTimeMinutes, laborMinuteRate]);
 
-  // 3. Cuota de Gastos Fijos (Prorrateo % o Manual)
-  const indirectCost = 0;
-
-  // 4. Costo Total Unitario
+  // 3. Costo Total Unitario (Materiales + Mano de obra según tiempo y objetivo mensual)
   const totalCost = useMemo(() => {
     return directCost + laborCost;
   }, [directCost, laborCost]);
@@ -235,7 +236,7 @@ export default function NuevoProductoPage() {
     );
   }, [totalCost]);
 
-  // Modificar margen con slider o input y recalcular precio de un canal
+  // Modificar margen y recalcular precio de un canal
   const handleMarginChange = (index: number, marginVal: number | string) => {
     setChannelPrices((prev) => {
       const updated = [...prev];
@@ -258,7 +259,7 @@ export default function NuevoProductoPage() {
     });
   };
 
-  // Modificar precio final manualmente y recalcular margen de un canal
+  // Modificar precio final y recalcular margen de un canal
   const handlePriceChange = (index: number, priceVal: number | string) => {
     setChannelPrices((prev) => {
       const updated = [...prev];
@@ -296,14 +297,13 @@ export default function NuevoProductoPage() {
   // Agregar nuevo canal de precio
   const handleAddChannel = () => {
     if (!newChannelName.trim()) return;
-    const marginNum = typeof newChannelMargin === "number" ? newChannelMargin : parseFloat(String(newChannelMargin)) || 0;
-    const calculatedPrice = Math.round(totalCost * (1 + marginNum / 100));
+    const calculatedPrice = Math.round(totalCost * (1 + newChannelMargin / 100));
     setChannelPrices((prev) => [
       ...prev,
       {
         id: `custom-${Date.now()}`,
         channel_name: newChannelName.trim(),
-        profit_margin_percent: marginNum,
+        profit_margin_percent: newChannelMargin,
         selling_price: calculatedPrice,
       },
     ]);
@@ -421,17 +421,19 @@ export default function NuevoProductoPage() {
       });
 
       // 1. Insertar en tabla products
+      const mins = typeof workTimeMinutes === "number" ? workTimeMinutes : parseFloat(String(workTimeMinutes)) || 0;
+      const ind = typeof indirectCost === "number" ? indirectCost : parseFloat(String(indirectCost)) || 0;
       const { data: productData, error: productError } = await supabase
         .from("products")
         .insert({
           user_id: user.id,
           name: name.trim(),
           description: finalDescription || null,
-          work_time_minutes: typeof workTimeMinutes === "number" ? workTimeMinutes : parseFloat(String(workTimeMinutes)) || 0,
-          include_labor: true,
+          work_time_minutes: includeLabor ? mins : 0,
+          include_labor: includeLabor,
           direct_cost: directCost,
           labor_cost: laborCost,
-          indirect_cost: 0,
+          indirect_cost: ind,
           total_cost: totalCost,
           needs_price_review: false,
         })
@@ -794,9 +796,9 @@ export default function NuevoProductoPage() {
                   item.supply.purchase_quantity,
                   item.supply.conversion_factor
                 );
-                const wastePercent = typeof item.waste_percent === "number" ? item.waste_percent : parseFloat(String(item.waste_percent)) || 0;
-                const wasteMultiplier = 1 + wastePercent / 100;
                 const itemQty = typeof item.quantity === "number" ? item.quantity : parseFloat(String(item.quantity)) || 0;
+                const wastePercent = Number(item.waste_percent) || 0;
+                const wasteMultiplier = 1 + wastePercent / 100;
                 const subtotal = unitCost * itemQty * wasteMultiplier;
 
                 return (
@@ -833,7 +835,7 @@ export default function NuevoProductoPage() {
                             type="number"
                             step="any"
                             min="0.0001"
-                            value={item.quantity}
+                            value={item.quantity === 0 ? "" : item.quantity}
                             onChange={(e) =>
                               handleUpdateSupplyQty(idx, e.target.value)
                             }
@@ -858,9 +860,9 @@ export default function NuevoProductoPage() {
                             step="any"
                             min="0"
                             max="100"
-                            value={item.waste_percent ?? ""}
+                            value={item.waste_percent === 0 ? "" : (item.waste_percent ?? "")}
                             onChange={(e) =>
-                              handleUpdateSupplyWaste(idx, e.target.value)
+                              handleUpdateSupplyWaste(idx, e.target.value === "" ? 0 : parseFloat(e.target.value) || 0)
                             }
                             placeholder="0"
                             className="w-full px-2 py-1 text-xs bg-white border border-neutral-200 rounded-xl text-center font-bold outline-none focus:border-[#3BB578]"
@@ -872,7 +874,7 @@ export default function NuevoProductoPage() {
 
                     <div className="flex items-center justify-between pt-1 border-t border-neutral-200/40 text-[10.5px]">
                       <span className="text-neutral-500">
-                        {itemQty} {item.supply.use_unit}
+                        {item.quantity} {item.supply.use_unit}
                         {wastePercent > 0 && ` (+${wastePercent}% merma)`}
                       </span>
                       <span className="font-bold text-[#1F7A4C] text-xs">
@@ -960,12 +962,17 @@ export default function NuevoProductoPage() {
                 <input
                   type="number"
                   min="0"
-                  value={workTimeMinutes}
-                  onChange={(e) => setWorkTimeMinutes(e.target.value)}
+                  value={workTimeMinutes === 0 ? "" : workTimeMinutes}
+                  onChange={(e) => setWorkTimeMinutes(e.target.value === "" ? "" : parseFloat(e.target.value) || 0)}
                   placeholder="0"
                   className="w-24 px-3 py-2 text-sm bg-white border border-neutral-200 rounded-xl text-center font-bold outline-none focus:border-[#3BB578]"
                 />
                 <span className="text-sm text-neutral-500 font-medium">minutos</span>
+                {Number(workTimeMinutes) >= 60 && (
+                  <span className="text-xs text-[#1F7A4C] bg-[#DCF4D7] px-2 py-0.5 rounded-md font-semibold">
+                    ~{(Number(workTimeMinutes) / 60).toFixed(1)} hs
+                  </span>
+                )}
               </div>
             </div>
 
@@ -974,7 +981,7 @@ export default function NuevoProductoPage() {
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-[#1F7A4C] font-semibold">Cálculo:</span>
                   <span className="font-mono text-[#1F7A4C]">
-                    {(typeof workTimeMinutes === "number" ? workTimeMinutes : parseFloat(String(workTimeMinutes)) || 0)} min × {formatCurrency(laborMinuteRate)}/min
+                    {workTimeMinutes || 0} min × {formatCurrency(laborMinuteRate)}/min
                   </span>
                 </div>
                 <div className="flex items-center justify-between pt-1 border-t border-[#C3EBC0]">
@@ -985,7 +992,7 @@ export default function NuevoProductoPage() {
                 </div>
               </div>
               <p className="text-[10px] text-neutral-500 mt-2 leading-relaxed">
-                Este costo ya incluye proporcionalmente tus gastos operativos + tu sueldo pretendido, calculados a partir de tu Objetivo Mensual configurado en Gastos.
+                Este costo ya incluye proporcionalmente tus gastos operativos + tu sueldo pretendido, calculados a partir de tu Objetivo Mensual unificado.
               </p>
             </div>
 
@@ -1017,7 +1024,7 @@ export default function NuevoProductoPage() {
                 </div>
                 <div className="space-y-1.5 text-[11px] leading-relaxed">
                   <p>
-                    1️⃣ <strong>Tu costo por minuto:</strong> Se calcula en el módulo <em>Gastos &gt; Mano de Obra</em> dividiendo tu <strong>Objetivo Mensual</strong> (Sueldo + Gastos Operativos) entre las <strong>horas de taller</strong> que trabajás por mes:
+                    1️⃣ <strong>Tu costo por minuto:</strong> Se calcula dividiendo tu <strong>Objetivo Mensual</strong> (Sueldo Pretendido + Gastos Operativos) entre las <strong>horas de taller</strong> que trabajás por mes:
                   </p>
                   <div className="bg-white p-2 rounded-xl border border-[#DCF4D7] font-mono text-[10.5px] text-[#1F7A4C]">
                     Objetivo Mensual ÷ (Días × Horas diarias × 60) = <strong>{formatCurrency(laborMinuteRate)}/minuto</strong>
@@ -1031,6 +1038,17 @@ export default function NuevoProductoPage() {
                 </div>
               </div>
             )}
+
+            {/* Resumen Total Unitario de Producción */}
+            <div className="p-3 bg-[#DCF4D7]/70 border border-[#C3EBC0] rounded-2xl flex flex-col gap-1.5 text-xs text-[#1F7A4C]">
+              <div className="flex justify-between items-center text-[11px]">
+                <span>Insumos: <strong>{formatCurrency(directCost)}</strong> + Costo Productivo ({workTimeMinutes || 0} min): <strong>{formatCurrency(laborCost)}</strong></span>
+              </div>
+              <div className="flex justify-between items-center font-bold pt-1.5 border-t border-[#C3EBC0]">
+                <span className="text-xs">Costo Total de Fabricación (1 unidad):</span>
+                <span className="text-sm font-black text-[#1F7A4C] font-display">{formatCurrency(totalCost)}</span>
+              </div>
+            </div>
           </div>
 
           <div className="pt-3 border-t border-neutral-100 flex items-center justify-between">
@@ -1094,8 +1112,8 @@ export default function NuevoProductoPage() {
           <div className="space-y-3">
             {channelPrices.map((channel, idx) => {
               const channelSellingPrice = typeof channel.selling_price === "number" ? channel.selling_price : parseFloat(String(channel.selling_price)) || 0;
-              const profitAmount = channelSellingPrice - totalCost;
               const marginNum = typeof channel.profit_margin_percent === "number" ? channel.profit_margin_percent : parseFloat(String(channel.profit_margin_percent)) || 0;
+              const profitAmount = channelSellingPrice - totalCost;
               const suggestedPrice = Math.round(totalCost * (1 + marginNum / 100));
 
               return (
@@ -1150,7 +1168,7 @@ export default function NuevoProductoPage() {
                           step="5"
                           min="0"
                           max="500"
-                          value={channel.profit_margin_percent}
+                          value={channel.profit_margin_percent === 0 ? "" : channel.profit_margin_percent}
                           onChange={(e) =>
                             handleMarginChange(idx, e.target.value)
                           }
@@ -1165,7 +1183,7 @@ export default function NuevoProductoPage() {
                       min="0"
                       max="300"
                       step="5"
-                      value={typeof channel.profit_margin_percent === "number" ? channel.profit_margin_percent : parseFloat(String(channel.profit_margin_percent)) || 0}
+                      value={channel.profit_margin_percent}
                       onChange={(e) =>
                         handleMarginChange(idx, parseFloat(e.target.value) || 0)
                       }
@@ -1191,7 +1209,7 @@ export default function NuevoProductoPage() {
                       <input
                         type="number"
                         step="any"
-                        value={channel.selling_price}
+                        value={channel.selling_price === 0 ? "" : channel.selling_price}
                         onChange={(e) =>
                           handlePriceChange(idx, e.target.value)
                         }
@@ -1253,7 +1271,7 @@ export default function NuevoProductoPage() {
                     <input
                       type="number"
                       value={newChannelMargin}
-                      onChange={(e) => setNewChannelMargin(e.target.value)}
+                      onChange={(e) => setNewChannelMargin(parseFloat(e.target.value) || 0)}
                       placeholder="100"
                       className="w-full px-3 py-1.5 text-xs bg-white border border-neutral-200 rounded-xl outline-none focus:border-[#3BB578]"
                     />
