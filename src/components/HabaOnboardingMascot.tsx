@@ -18,17 +18,17 @@ export const HabaOnboardingMascot: React.FC<HabaOnboardingMascotProps> = ({
   const [isWinking, setIsWinking] = useState(false);
   const [isDismissing, setIsDismissing] = useState(false);
 
-  // 2. Secuencia de Animación (Entrance)
+  // 2. Secuencia de Animación (Entrance) - Más lenta y pausada
   useEffect(() => {
-    // Step 1: Slide Up Mascota con leve rebote (spring/overshoot)
+    // Step 1: Slide Up Mascota con ritmo pausado y rebote orgánico suave
     const mascotTimer = setTimeout(() => {
       setMascotEntered(true);
-    }, 60);
+    }, 250);
 
-    // Step 2: Fade/Scale Globo (inmediatamente después de que aterriza, delay ~300ms)
+    // Step 2: Fade/Scale Globo (aparece una vez que Haba se acomoda arriba)
     const bubbleTimer = setTimeout(() => {
       setBubbleEntered(true);
-    }, 360);
+    }, 950);
 
     return () => {
       clearTimeout(mascotTimer);
@@ -61,16 +61,16 @@ export const HabaOnboardingMascot: React.FC<HabaOnboardingMascotProps> = ({
     // Globo hace fade-out y scale-down
     setBubbleEntered(false);
 
-    // Mascota hace slide-down escondiéndose detrás de la barra de navegación
+    // Mascota hace slide-down suave escondiéndose detrás de la barra de navegación
     const mascotSlideTimer = setTimeout(() => {
       setMascotEntered(false);
-    }, 80);
+    }, 120);
 
     // Desmontar el componente tras completarse la animación de salida
     const unmountTimer = setTimeout(() => {
       setIsMounted(false);
       onDismiss?.();
-    }, 450);
+    }, 600);
 
     return () => {
       clearTimeout(mascotSlideTimer);
@@ -104,8 +104,8 @@ export const HabaOnboardingMascot: React.FC<HabaOnboardingMascotProps> = ({
           height: "76px",
           transform: mascotEntered ? "translateY(0)" : "translateY(110%)",
           transition: isDismissing
-            ? "transform 350ms cubic-bezier(0.4, 0, 1, 1)"
-            : "transform 420ms cubic-bezier(0.34, 1.56, 0.64, 1)",
+            ? "transform 450ms cubic-bezier(0.4, 0, 1, 1)"
+            : "transform 850ms cubic-bezier(0.34, 1.3, 0.64, 1)",
         }}
       >
         {/* Mascota con ojos abiertos */}
@@ -137,8 +137,8 @@ export const HabaOnboardingMascot: React.FC<HabaOnboardingMascotProps> = ({
           transform: bubbleEntered ? "scale(1)" : "scale(0)",
           opacity: bubbleEntered ? 1 : 0,
           transition: isDismissing
-            ? "transform 180ms ease-in, opacity 160ms ease-in"
-            : "transform 220ms cubic-bezier(0.16, 1, 0.3, 1), opacity 200ms ease-out",
+            ? "transform 220ms ease-in, opacity 200ms ease-in"
+            : "transform 350ms cubic-bezier(0.34, 1.25, 0.64, 1), opacity 320ms ease-out",
         }}
       >
         {/* Pseudo-elemento / Colita del globo apuntando hacia Haba */}

@@ -2,16 +2,14 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { PlusCircle, ShoppingBag, Receipt, Sparkles, DollarSign, ArrowRight, ShieldCheck } from "lucide-react";
-import { HabaMascot } from "@/components/HabaMascot";
+import { PlusCircle, ShoppingBag, Receipt, Sparkles, DollarSign, ArrowRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { InstallPwaModal } from "@/components/InstallPwaModal";
-import { checkIsAdmin, getUserDisplayName } from "@/lib/auth-helpers";
+import { getUserDisplayName } from "@/lib/auth-helpers";
 
 export default function DashboardPage() {
   const supabase = createClient();
   const [userName, setUserName] = useState<string>("");
-  const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [counts, setCounts] = useState({ supplies: 0, products: 0, quotes: 0 });
 
   useEffect(() => {
@@ -21,11 +19,6 @@ export default function DashboardPage() {
       } = await supabase.auth.getUser();
 
       if (user) {
-        // 1. Verificación inmediata de Admin
-        if (checkIsAdmin(user)) {
-          setIsAdmin(true);
-        }
-
         const initialName = getUserDisplayName(user).split(" ")[0];
         setUserName(initialName);
 
@@ -34,7 +27,6 @@ export default function DashboardPage() {
           const res = await fetch("/api/user/profile");
           if (res.ok) {
             const data = await res.json();
-            if (data.isAdmin) setIsAdmin(true);
             if (data.profile?.full_name) {
               setUserName(data.profile.full_name.split(" ")[0]);
             }
@@ -64,34 +56,6 @@ export default function DashboardPage() {
     <div className="w-full flex flex-col space-y-3 pb-24">
       {/* Botón / Banner de Descarga PWA */}
       <InstallPwaModal />
-
-      {/* Banner Especial SuperAdmin si es Gio / Admin */}
-      {isAdmin && (
-        <Link
-          href="/admin"
-          className="bg-gradient-to-r from-emerald-500 to-[#1F7A4C] rounded-3xl p-3.5 text-white shadow-md hover:shadow-lg transition-all flex items-center justify-between group"
-        >
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-2xl bg-white/20 backdrop-blur-xs flex items-center justify-center font-bold">
-              <ShieldCheck className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <p className="text-xs font-bold font-display flex items-center gap-1.5">
-                <span>Panel SuperAdmin</span>
-                <span className="text-[9.5px] bg-white/25 px-1.5 py-0.2 rounded-full font-body">
-                  Gio
-                </span>
-              </p>
-              <p className="text-[10.5px] text-white/90 font-body">
-                Crear usuarias, pausar/activar cuentas y bajas
-              </p>
-            </div>
-          </div>
-          <span className="px-3 py-1.5 bg-white text-[#1F7A4C] font-bold rounded-xl text-xs group-hover:scale-105 transition-transform shadow-xs">
-            Gestionar →
-          </span>
-        </Link>
-      )}
 
       {/* Accesos directos — 4 pasteles oficiales */}
       <div className="grid grid-cols-2 gap-2.5">
