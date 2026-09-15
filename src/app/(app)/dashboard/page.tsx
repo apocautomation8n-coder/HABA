@@ -4,7 +4,6 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { PlusCircle, ShoppingBag, Receipt, Sparkles, DollarSign, ArrowRight, ShieldCheck } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
-import { HabaBottomGreeting } from "@/components/HabaBottomGreeting";
 import { createClient } from "@/lib/supabase/client";
 import { InstallPwaModal } from "@/components/InstallPwaModal";
 import { checkIsAdmin, getUserDisplayName } from "@/lib/auth-helpers";
@@ -182,9 +181,6 @@ export default function DashboardPage() {
           <ArrowRight className="w-4 h-4" />
         </div>
       </Link>
-
-      {/* Mascota HABA asomada con saludo interactivo en barra inferior */}
-      <HabaBottomGreeting userName={userName} />
     </div>
   );
 }

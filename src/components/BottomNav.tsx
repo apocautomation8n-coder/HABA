@@ -6,8 +6,9 @@ import { usePathname } from "next/navigation";
 import { Home, Boxes, ShoppingBag, Receipt, Settings, ShieldCheck } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
-import { checkIsAdmin } from "@/lib/auth-helpers";
+import { checkIsAdmin, getUserDisplayName } from "@/lib/auth-helpers";
 import { getOutdatedProductsCount } from "@/lib/products";
+import { HabaOnboardingMascot } from "@/components/HabaOnboardingMascot";
 
 interface NavItem {
   label: string;
@@ -28,6 +29,7 @@ export const BottomNav: React.FC = () => {
   const supabase = createClient();
   const [isAdmin, setIsAdmin] = useState(false);
   const [productAlertsCount, setProductAlertsCount] = useState(0);
+  const [userName, setUserName] = useState<string>("");
 
   useEffect(() => {
     async function checkAdminAndAlerts() {
@@ -37,6 +39,9 @@ export const BottomNav: React.FC = () => {
         } = await supabase.auth.getUser();
 
         if (user) {
+          const name = getUserDisplayName(user).split(" ")[0];
+          setUserName(name);
+
           // 1. Verificación inmediata por email o metadata de Auth
           if (checkIsAdmin(user)) {
             setIsAdmin(true);
@@ -75,6 +80,11 @@ export const BottomNav: React.FC = () => {
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 max-w-md mx-auto bg-white/95 backdrop-blur-md border-t border-[#EAF0E8] shadow-[0_-4px_20px_rgba(59,181,120,0.05)] px-2 pt-1.5 pb-[max(env(safe-area-inset-bottom),8px)] transition-all">
+      {/* Mascota Onboarding anclada de forma absoluta sobre el ítem Inicio */}
+      {pathname === "/dashboard" && (
+        <HabaOnboardingMascot userName={userName} />
+      )}
+
       <ul className="flex items-center justify-around">
         {navItems.map((item) => {
           const Icon = item.icon;
