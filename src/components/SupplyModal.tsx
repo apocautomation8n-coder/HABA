@@ -335,6 +335,16 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
   const modalContent = (
     <div
       className="fixed inset-0 z-[99999] bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200"
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        width: '100vw',
+        height: '100dvh',
+        minHeight: '100vh',
+      }}
       onClick={(e) => {
         if (e.target === e.currentTarget) {
           onClose();

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useMemo, useCallback } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import {
   ShoppingBag,
@@ -1722,9 +1723,29 @@ export default function ProductosPage() {
       )}
 
       {/* Modal para Duplicar Producto solicitando nuevo nombre (Punto I) */}
-      {duplicateModalProduct && (
-        <div className="fixed inset-0 z-[9999] bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-sm rounded-3xl p-5 shadow-2xl border border-[#EAF0E8] space-y-4 animate-in fade-in zoom-in-95 duration-200">
+      {duplicateModalProduct && typeof document !== "undefined" && createPortal(
+        <div
+          className="fixed inset-0 z-[99999] bg-black/50 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200"
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            width: "100vw",
+            height: "100dvh",
+            minHeight: "100vh",
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setDuplicateModalProduct(null);
+            }
+          }}
+        >
+          <div
+            className="bg-white w-full max-w-sm rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl border border-[#EAF0E8] space-y-4 animate-in slide-in-from-bottom-6 sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between border-b border-neutral-100 pb-2.5">
               <h3 className="text-sm font-bold text-neutral-800 flex items-center gap-1.5">
                 <Copy className="w-4 h-4 text-[#3BB578]" />
@@ -1787,13 +1808,38 @@ export default function ProductosPage() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Modal para Edición Rápida y Receta de Producto (Punto 5) */}
-      {editModalProduct && (
-        <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
-          <div className="bg-white w-full max-w-lg max-h-[90vh] rounded-3xl p-5 shadow-2xl border border-[#EAF0E8] flex flex-col animate-in fade-in zoom-in-95 duration-200">
+      {editModalProduct && typeof document !== "undefined" && createPortal(
+        <div
+          className="fixed inset-0 z-[99999] bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200"
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            width: "100vw",
+            height: "100dvh",
+            minHeight: "100vh",
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setEditModalProduct(null);
+            }
+          }}
+        >
+          <div
+            className="bg-white w-full max-w-lg rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl border border-[#EAF0E8] flex flex-col animate-in slide-in-from-bottom-6 sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-200 overflow-hidden"
+            style={{
+              height: "min(92vh, 760px)",
+              maxHeight: "calc(100dvh - env(safe-area-inset-top, 20px) - 10px)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
             {/* Header del Modal */}
             <div className="flex items-center justify-between border-b border-neutral-100 pb-3 flex-shrink-0">
               <h3 className="text-sm font-bold text-neutral-800 flex items-center gap-2 font-display">
@@ -1881,8 +1927,8 @@ export default function ProductosPage() {
 
               {/* SECCIÓN DE INSUMOS Y SUBPRODUCTOS EN EDICIÓN */}
               <div className="p-3.5 bg-neutral-50 rounded-2xl border border-neutral-200/80 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex rounded-xl bg-neutral-200/60 p-0.5 gap-1">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex rounded-xl bg-neutral-200/60 p-0.5 gap-1 flex-shrink-0">
                     <button
                       type="button"
                       onClick={() => setEditRecipeTab("supplies")}
@@ -1908,9 +1954,11 @@ export default function ProductosPage() {
                       <span>Subproductos ({editComponents.length})</span>
                     </button>
                   </div>
-                  <span className="text-xs font-bold text-[#1F7A4C]">
-                    Materiales: {formatCurrency(editDirectCost)}
-                  </span>
+                  <div className="ml-auto text-right flex-shrink-0">
+                    <span className="text-xs font-bold text-[#1F7A4C] bg-emerald-50/80 px-2.5 py-1 rounded-xl border border-emerald-100/80 whitespace-nowrap inline-block shadow-2xs">
+                      Materiales: {formatCurrency(editDirectCost)}
+                    </span>
+                  </div>
                 </div>
 
                 {/* CONTENIDO PESTAÑA INSUMOS EN EDICIÓN */}
@@ -2144,7 +2192,8 @@ export default function ProductosPage() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Toast de Notificación Kawaii */}

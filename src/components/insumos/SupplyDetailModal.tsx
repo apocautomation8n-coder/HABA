@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { createPortal } from "react-dom";
 import { X, Edit2, TrendingUp, Sparkles, Package, Layers, Calculator } from "lucide-react";
 import { SupplyItem } from "@/components/SupplyModal";
 import { formatCurrency, calculateUnitCost } from "@/lib/units";
@@ -29,13 +30,26 @@ export const SupplyDetailModal: React.FC<SupplyDetailModalProps> = ({
   );
   const totalUseUnits = (supply.purchase_quantity || 1) * (supply.conversion_factor || 1);
 
-  return (
+  const modalContent = (
     <div
       className="fixed inset-0 z-[99998] bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200"
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        width: "100vw",
+        height: "100dvh",
+        minHeight: "100vh",
+      }}
       onClick={onClose}
     >
       <div
-        className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col border border-[#EAF0E8] animate-in slide-in-from-bottom-6 duration-200 overflow-hidden max-h-[90vh]"
+        className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col border border-[#EAF0E8] animate-in slide-in-from-bottom-6 duration-200 overflow-hidden"
+        style={{
+          maxHeight: "calc(100dvh - env(safe-area-inset-top, 20px) - 10px)",
+        }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -176,4 +190,6 @@ export const SupplyDetailModal: React.FC<SupplyDetailModalProps> = ({
       </div>
     </div>
   );
+
+  return typeof document !== "undefined" ? createPortal(modalContent, document.body) : null;
 };
