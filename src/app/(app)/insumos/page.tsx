@@ -158,12 +158,18 @@ export default function InsumosPage() {
         })
         .eq("id", insumoId);
 
-      // 2. Insertar en supply_price_history con columna changed_at
-      await supabase.from("supply_price_history").insert({
-        supply_id: insumoId,
-        price: newRecordData.price,
-        changed_at: isoDate,
-      });
+      // 2. Insertar en supply_price_history con columna changed_at y obtener ID real
+      const { data: insertedHistory, error: insertError } = await supabase
+        .from("supply_price_history")
+        .insert({
+          supply_id: insumoId,
+          price: newRecordData.price,
+          changed_at: isoDate,
+        })
+        .select()
+        .single();
+
+      if (insertError) throw insertError;
 
       // Recargar lista y actualizar estado local
       await loadSupplies();
@@ -172,7 +178,7 @@ export default function InsumosPage() {
         const newRecord: PriceRecord = {
           ...newRecordData,
           date: isoDate,
-          id: "rec-" + Date.now(),
+          id: insertedHistory ? String(insertedHistory.id) : "rec-" + Date.now(),
         };
         setSelectedInsumoForDrawer({
           ...selectedInsumoForDrawer,
@@ -191,6 +197,15 @@ export default function InsumosPage() {
     try {
       if (!selectedInsumoForDrawer) return;
 
+      const currentHistory = [...selectedInsumoForDrawer.history].sort(
+        (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+      );
+
+      const recordToDelete = currentHistory.find((r) => r.id === recordId);
+      if (!recordToDelete) return;
+
+      const isLatestRecord = currentHistory[currentHistory.length - 1].id === recordId;
+
       // 1. Eliminar de supply_price_history si es un registro persistido en BD
       if (!recordId.startsWith("init-") && !recordId.startsWith("current-")) {
         const { error } = await supabase
@@ -201,30 +216,19 @@ export default function InsumosPage() {
         if (error) throw error;
       }
 
-      // 2. Traer el historial actualizado restante
-      const { data: updatedHistoryData } = await supabase
-        .from("supply_price_history")
-        .select("*")
-        .eq("supply_id", insumoId)
-        .order("changed_at", { ascending: true });
+      // 2. Historial remanente tras eliminar
+      const remainingHistory = currentHistory.filter((r) => r.id !== recordId);
 
-      let newHistory: PriceRecord[] = [];
       let newCurrentPrice = selectedInsumoForDrawer.current_price;
       let newUpdatedAt = selectedInsumoForDrawer.updated_at;
 
-      if (updatedHistoryData && updatedHistoryData.length > 0) {
-        newHistory = updatedHistoryData.map((h: any) => ({
-          id: String(h.id),
-          price: Number(h.price),
-          date: h.changed_at || new Date().toISOString(),
-        }));
+      // REGLA CLAVE: Si el registro eliminado correspondía al precio "Actual" (el último de reposición),
+      // el sistema debe actualizar el precio actual del insumo asignándole el valor del registro cronológico inmediatamente anterior.
+      if (isLatestRecord && remainingHistory.length > 0) {
+        const newLatest = remainingHistory[remainingHistory.length - 1];
+        newCurrentPrice = newLatest.price;
+        newUpdatedAt = newLatest.date;
 
-        // El precio actual pasa a ser el último registro que quedó en el historial
-        const latestRemaining = newHistory[newHistory.length - 1];
-        newCurrentPrice = latestRemaining.price;
-        newUpdatedAt = latestRemaining.date;
-
-        // Si cambió el precio activo, actualizar la tabla supplies
         await supabase
           .from("supplies")
           .update({
@@ -232,28 +236,24 @@ export default function InsumosPage() {
             updated_at: newUpdatedAt,
           })
           .eq("id", insumoId);
-      } else {
-        newHistory = [
-          {
-            id: "init-" + insumoId,
-            price: Number(selectedInsumoForDrawer.current_price),
-            date: new Date().toISOString(),
-            note: "Precio de reposición actual",
-          },
-        ];
       }
 
+      // 3. Actualizar estado local del drawer para refrescar lista, gráfico y métricas
       setSelectedInsumoForDrawer({
         ...selectedInsumoForDrawer,
         current_price: newCurrentPrice,
         updated_at: newUpdatedAt,
-        history: newHistory,
+        history: remainingHistory,
       });
 
+      // 4. Recargar catálogo general de insumos para actualizar tabla y tarjetas
       await loadSupplies();
+
+      // 5. Mostrar feedback visual con toast
       setToastMessage("Registro de precio eliminado correctamente.");
-      setTimeout(() => setToastMessage(null), 3000);
+      setTimeout(() => setToastMessage(null), 3500);
     } catch (err: any) {
+      console.error("Error al eliminar registro de precio:", err);
       alert("Error al eliminar el registro de precio: " + err.message);
     }
   };
@@ -511,9 +511,14 @@ export default function InsumosPage() {
 
       {/* Notificación flotante de confirmación (Toast Kawaii) */}
       {toastMessage && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-[#244228] text-white px-4 py-2.5 rounded-2xl shadow-xl flex items-center gap-2 text-xs font-semibold animate-in fade-in slide-in-from-bottom-3 duration-200">
-          <Sparkles className="w-4 h-4 text-emerald-300" />
-          <span>{toastMessage}</span>
+        <div
+          className="fixed left-1/2 -translate-x-1/2 z-[70] bg-[#1F7A4C] text-white px-4 py-2.5 rounded-2xl shadow-xl flex items-center gap-2 text-xs font-bold border border-emerald-400/30 animate-in fade-in slide-in-from-bottom-3 duration-200 pointer-events-auto w-max max-w-[calc(100vw-2rem)]"
+          style={{
+            bottom: "calc(4.5rem + env(safe-area-inset-bottom, 0px) + 1rem)",
+          }}
+        >
+          <Sparkles className="w-4 h-4 text-emerald-200 flex-shrink-0" />
+          <span className="leading-tight">{toastMessage}</span>
         </div>
       )}
 

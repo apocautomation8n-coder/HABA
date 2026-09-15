@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
-import { X, Calendar, TrendingUp, DollarSign, Plus, ArrowUpDown, Tag, Sparkles, Trash2 } from "lucide-react";
+import { X, Calendar, TrendingUp, DollarSign, Plus, ArrowUpDown, Tag, Sparkles, Trash2, Loader2 } from "lucide-react";
 import { Insumo, PriceRecord } from "@/types/insumo";
 import { PriceHistoryChart } from "./PriceHistoryChart";
 import { HabaMascot } from "@/components/HabaMascot";
@@ -30,7 +30,6 @@ export function PriceHistoryDrawer({
   const [newDate, setNewDate] = useState<string>("");
   const [newNote, setNewNote] = useState<string>("");
   const [formError, setFormError] = useState<string | null>(null);
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Inicializar fecha por defecto al abrir
@@ -357,49 +356,38 @@ export function PriceHistoryDrawer({
                       {onDeletePriceRecord && chronologicalList.length > 1 && (
                         <button
                           type="button"
-                          onClick={() => setConfirmDeleteId(confirmDeleteId === item.id ? null : item.id)}
-                          className="text-neutral-300 hover:text-rose-500 hover:bg-rose-50 p-1.5 rounded-xl transition-all active:scale-95"
+                          disabled={deletingId === item.id}
+                          onClick={async () => {
+                            if (!onDeletePriceRecord || !insumo) return;
+                            const formattedDate = new Date(item.date).toLocaleDateString("es-AR", {
+                              day: "numeric",
+                              month: "short",
+                              year: "numeric",
+                            });
+                            const confirmed = window.confirm(
+                              `¿Estás seguro de eliminar el registro de precio de ${formatCurrency(item.price)} (${formattedDate})?`
+                            );
+                            if (!confirmed) return;
+
+                            setDeletingId(item.id);
+                            try {
+                              await onDeletePriceRecord(insumo.id, item.id);
+                            } finally {
+                              setDeletingId(null);
+                            }
+                          }}
+                          className="text-neutral-300 hover:text-rose-500 hover:bg-rose-50 p-1.5 rounded-xl transition-all active:scale-95 disabled:opacity-50"
                           title="Eliminar este precio del historial"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          {deletingId === item.id ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-500" />
+                          ) : (
+                            <Trash2 className="w-3.5 h-3.5" />
+                          )}
                         </button>
                       )}
                     </div>
                   </div>
-
-                  {/* Confirmación inline para eliminar */}
-                  {confirmDeleteId === item.id && (
-                    <div className="mt-2.5 pt-2.5 border-t border-rose-100 flex items-center justify-between text-xs bg-rose-50/70 -mx-3.5 -mb-3.5 p-3 rounded-b-2xl animate-in fade-in duration-150">
-                      <span className="text-rose-700 font-medium text-[11px]">
-                        ¿Eliminar este registro de {formatCurrency(item.price)}?
-                      </span>
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => setConfirmDeleteId(null)}
-                          className="px-2.5 py-1 text-[10px] font-semibold text-neutral-600 hover:bg-neutral-200/60 rounded-lg transition"
-                        >
-                          Cancelar
-                        </button>
-                        <button
-                          type="button"
-                          disabled={deletingId === item.id}
-                          onClick={async () => {
-                            setDeletingId(item.id);
-                            try {
-                              await onDeletePriceRecord?.(insumo.id, item.id);
-                            } finally {
-                              setDeletingId(null);
-                              setConfirmDeleteId(null);
-                            }
-                          }}
-                          className="px-2.5 py-1 text-[10px] font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-lg transition shadow-xs flex items-center gap-1 disabled:opacity-50"
-                        >
-                          {deletingId === item.id ? "Eliminando..." : "Sí, eliminar"}
-                        </button>
-                      </div>
-                    </div>
-                  )}
 
                   {item.note && (
                     <div className="mt-2 pt-2 border-t border-neutral-100 flex items-center gap-1.5 text-[11px] text-neutral-600">
