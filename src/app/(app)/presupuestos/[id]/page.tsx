@@ -223,27 +223,31 @@ export default function PresupuestoPreviewPage() {
 
   return (
     <div className="w-full flex flex-col space-y-4 pb-16">
-      {/* Estilos específicos para impresión impecable en hoja A4 (Punto F) */}
+      {/* Estilos específicos para impresión impecable en hoja A4 cubriendo el total de la hoja y ajustando en una sola carátula */}
       <style jsx global>{`
         @page {
           size: A4 portrait;
-          margin: 12mm 15mm;
+          margin: 10mm 12mm;
         }
         @media print {
+          * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            box-sizing: border-box !important;
+          }
           html, body {
             background-color: #ffffff !important;
             color: #1a1a1a !important;
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
             margin: 0 !important;
             padding: 0 !important;
             width: 100% !important;
+            height: auto !important;
           }
-          main {
-            max-width: 100% !important;
-            width: 100% !important;
-            padding: 0 !important;
-            margin: 0 !important;
+          main,
+          div[class*="pb-"],
+          div[class*="space-y-"] {
+            padding-bottom: 0 !important;
+            margin-bottom: 0 !important;
           }
           header,
           nav,
@@ -252,14 +256,63 @@ export default function PresupuestoPreviewPage() {
           [role="navigation"] {
             display: none !important;
           }
+          /* La hoja del presupuesto cubre el 100% del ancho A4 disponible */
           .quote-sheet {
             box-shadow: none !important;
-            border: 1px solid #e5e7eb !important;
-            padding: 24px !important;
-            margin: 0 auto !important;
+            border: 1.5px solid #d1d5db !important;
+            border-radius: 12px !important;
+            padding: 14px 18px !important;
+            margin: 0 !important;
             max-width: 100% !important;
             width: 100% !important;
-            border-radius: 12px !important;
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+            page-break-after: avoid !important;
+          }
+          /* Ajuste vertical compacto para garantizar una sola hoja si corresponde */
+          .quote-sheet > * + * {
+            margin-top: 8px !important;
+          }
+          .quote-header {
+            padding-bottom: 8px !important;
+          }
+          .quote-client {
+            padding: 8px 12px !important;
+            gap: 8px !important;
+          }
+          .quote-table th {
+            padding: 5px 8px !important;
+            font-size: 10px !important;
+          }
+          .quote-table td {
+            padding: 4px 8px !important;
+            font-size: 10.5px !important;
+          }
+          .quote-totals {
+            padding-top: 4px !important;
+            gap: 8px !important;
+          }
+          .quote-total-banner {
+            padding: 6px 12px !important;
+          }
+          .quote-notes {
+            padding: 6px 10px !important;
+            margin-top: 4px !important;
+          }
+          .quote-footer {
+            padding-top: 6px !important;
+            margin-top: 6px !important;
+          }
+          /* Evitar cortes antiestéticos en elementos de la hoja */
+          .quote-header,
+          .quote-client,
+          .quote-table-container,
+          .quote-table tr,
+          .quote-totals,
+          .quote-notes,
+          .quote-footer {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
           }
         }
       `}</style>
@@ -320,7 +373,7 @@ export default function PresupuestoPreviewPage() {
       {/* Hoja del Presupuesto con Branding HABA (Estructura de Documento A4) */}
       <div className="quote-sheet bg-white rounded-3xl p-6 sm:p-10 border border-[#EAF0E8] shadow-sm max-w-3xl mx-auto w-full space-y-6">
         {/* Cabecera Institucional y Branding (Puntos D y G) */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-[#EAF0E8] pb-6">
+        <div className="quote-header flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-[#EAF0E8] pb-6">
           <div className="flex items-start gap-3">
             <div className="w-12 h-12 rounded-2xl bg-[#DCF4D7] border border-[#C3EBC0] flex items-center justify-center flex-shrink-0 shadow-2xs">
               <HabaMascot size={40} />
@@ -366,7 +419,7 @@ export default function PresupuestoPreviewPage() {
         </div>
 
         {/* Ficha de Datos del Cliente y Condiciones */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-[#F8FAF8] p-4 rounded-2xl border border-[#EAF0E8]">
+        <div className="quote-client grid grid-cols-1 sm:grid-cols-2 gap-4 bg-[#F8FAF8] p-4 rounded-2xl border border-[#EAF0E8]">
           <div className="space-y-1">
             <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 block">
               Preparado para:
@@ -403,13 +456,13 @@ export default function PresupuestoPreviewPage() {
         </div>
 
         {/* Tabla de Productos Cotizados */}
-        <div className="space-y-2">
+        <div className="quote-table-container space-y-2">
           <span className="text-[11px] font-bold uppercase tracking-wider text-[#1F7A4C] block">
             Detalle de Productos & Servicios
           </span>
 
           <div className="border border-[#EAF0E8] rounded-2xl overflow-hidden shadow-2xs">
-            <table className="w-full text-xs text-left border-collapse">
+            <table className="quote-table w-full text-xs text-left border-collapse">
               <thead className="bg-[#DCF4D7] text-[#1F7A4C] font-bold text-[11px] border-b border-[#C3EBC0]">
                 <tr>
                   <th className="py-2.5 px-3">Producto / Ítem</th>
@@ -455,7 +508,7 @@ export default function PresupuestoPreviewPage() {
         </div>
 
         {/* Panel de Totales y Descuentos */}
-        <div className="flex flex-col sm:flex-row items-end justify-between gap-4 pt-2">
+        <div className="quote-totals flex flex-col sm:flex-row items-end justify-between gap-4 pt-2">
           {/* Sello de Seguridad / Garantía de Precios */}
           <div className="w-full sm:w-auto p-3 bg-[#F0FAF4] border border-[#DCF4D7] rounded-2xl flex items-center gap-2 text-xs text-[#1F7A4C]">
             <ShieldCheck className="w-4 h-4 text-[#3BB578] flex-shrink-0" />
@@ -489,7 +542,7 @@ export default function PresupuestoPreviewPage() {
             )}
 
             {/* Total Final Destacado HABA */}
-            <div className="bg-[#DCF4D7] border border-[#C3EBC0] p-3 rounded-2xl flex items-center justify-between text-[#1F7A4C] shadow-xs mt-1">
+            <div className="quote-total-banner bg-[#DCF4D7] border border-[#C3EBC0] p-3 rounded-2xl flex items-center justify-between text-[#1F7A4C] shadow-xs mt-1">
               <div>
                 <span className="text-[10px] font-extrabold uppercase tracking-wider block">
                   Total Final
@@ -512,7 +565,7 @@ export default function PresupuestoPreviewPage() {
 
         {/* Notas y Condiciones Particulares */}
         {cleanNotes && (
-          <div className="bg-[#FFFDF5] border border-[#FEF3C7] p-3.5 rounded-2xl space-y-1 text-xs text-amber-900">
+          <div className="quote-notes bg-[#FFFDF5] border border-[#FEF3C7] p-3.5 rounded-2xl space-y-1 text-xs text-amber-900">
             <span className="font-bold flex items-center gap-1.5 text-amber-800">
               <FileText className="w-3.5 h-3.5 text-amber-600" />
               <span>Condiciones de entrega y formas de pago:</span>
@@ -524,7 +577,7 @@ export default function PresupuestoPreviewPage() {
         )}
 
         {/* Pie de Página Oficial con Vigencia y Contacto */}
-        <div className="border-t border-neutral-200/80 pt-4 space-y-2 text-[10px] text-neutral-500">
+        <div className="quote-footer border-t border-neutral-200/80 pt-4 space-y-2 text-[10px] text-neutral-500">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1">
             <p>
               <strong className="text-neutral-700">Cláusula de Vigencia:</strong> Este presupuesto tiene una validez de{" "}

@@ -157,7 +157,7 @@ export default function PresupuestosPage() {
     window.open(waUrl, "_blank");
   };
 
-  // Descarga / Impresión nativa como PDF
+  // Descarga / Impresión nativa como PDF en formato A4 ajustado a una sola hoja
   const printQuote = (quote: Quote) => {
     const printWindow = window.open("", "_blank");
     if (!printWindow) return;
@@ -166,71 +166,268 @@ export default function PresupuestosPage() {
       .map(
         (item) => `
         <tr>
-          <td style="padding: 8px; border-bottom: 1px solid #eee;">${item.product_name}</td>
-          <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: center;">${item.quantity}</td>
-          <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">${formatCurrency(item.unit_price)}</td>
-          <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right; font-weight: bold;">${formatCurrency(item.subtotal)}</td>
+          <td style="padding: 5px 8px; border-bottom: 1px solid #f0f0f0; font-weight: 600; color: #1f2937;">${item.product_name}</td>
+          <td style="padding: 5px 8px; border-bottom: 1px solid #f0f0f0; text-align: center; font-weight: 700; color: #374151;">${item.quantity}</td>
+          <td style="padding: 5px 8px; border-bottom: 1px solid #f0f0f0; text-align: right; color: #4b5563;">${formatCurrency(item.unit_price)}</td>
+          <td style="padding: 5px 8px; border-bottom: 1px solid #f0f0f0; text-align: right; font-weight: 800; color: #1F7A4C;">${formatCurrency(item.subtotal)}</td>
         </tr>
       `
       )
       .join("");
 
+    const discountAmount =
+      quote.discount_percent > 0 ? (quote.subtotal * quote.discount_percent) / 100 : 0;
+
     const html = `
       <!DOCTYPE html>
-      <html>
+      <html lang="es">
         <head>
-          <title>Presupuesto ${quote.quote_number}</title>
+          <meta charset="utf-8" />
+          <title>Presupuesto #${quote.quote_number} - ${quote.client_name}</title>
           <style>
-            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; padding: 30px; color: #333; max-width: 600px; margin: auto; }
-            .header { border-bottom: 2px solid #3BB578; padding-bottom: 15px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-end; }
-            h1 { margin: 0; font-size: 24px; color: #1F7A4C; }
-            table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-            th { background: #DCF4D7; color: #1F7A4C; padding: 8px; text-align: left; font-size: 12px; }
-            .totals { margin-top: 20px; text-align: right; }
-            .total-line { font-size: 18px; font-weight: bold; color: #1F7A4C; margin-top: 5px; }
-            .footer { margin-top: 30px; font-size: 11px; color: #777; border-top: 1px solid #eee; padding-top: 10px; }
+            @page {
+              size: A4 portrait;
+              margin: 10mm 12mm;
+            }
+            * {
+              box-sizing: border-box;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+            html, body {
+              margin: 0;
+              padding: 0;
+              background: #ffffff;
+              color: #1a1a1a;
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+              width: 100%;
+            }
+            .sheet {
+              width: 100%;
+              max-width: 100%;
+              border: 1.5px solid #d1d5db;
+              border-radius: 12px;
+              padding: 14px 18px;
+              margin: 0 auto;
+              break-inside: avoid;
+              page-break-inside: avoid;
+              page-break-after: avoid;
+            }
+            .header {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              border-bottom: 1.5px solid #EAF0E8;
+              padding-bottom: 8px;
+              margin-bottom: 8px;
+            }
+            .brand-title {
+              font-size: 20px;
+              font-weight: 900;
+              color: #1F7A4C;
+              letter-spacing: -0.5px;
+              margin: 0;
+            }
+            .brand-sub {
+              font-size: 11px;
+              color: #555;
+              margin: 2px 0 0;
+            }
+            .quote-badge {
+              display: inline-block;
+              font-size: 9.5px;
+              font-weight: 800;
+              text-transform: uppercase;
+              background: #DCF4D7;
+              color: #1F7A4C;
+              border: 1px solid #C3EBC0;
+              padding: 2px 8px;
+              border-radius: 999px;
+            }
+            .quote-num {
+              font-size: 15px;
+              font-weight: 900;
+              color: #1a1a1a;
+              margin: 2px 0 0;
+            }
+            .client-card {
+              background: #F8FAF8;
+              border: 1px solid #EAF0E8;
+              border-radius: 10px;
+              padding: 8px 12px;
+              display: flex;
+              justify-content: space-between;
+              margin-bottom: 8px;
+              font-size: 11.5px;
+            }
+            .client-title {
+              font-size: 9.5px;
+              font-weight: 800;
+              text-transform: uppercase;
+              color: #888;
+              margin-bottom: 2px;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-top: 4px;
+              margin-bottom: 8px;
+              border-radius: 8px;
+              overflow: hidden;
+            }
+            th {
+              background: #DCF4D7;
+              color: #1F7A4C;
+              padding: 5px 8px;
+              text-align: left;
+              font-size: 10.5px;
+              font-weight: 700;
+              border-bottom: 1px solid #C3EBC0;
+            }
+            td {
+              padding: 4px 8px;
+              font-size: 11px;
+              border-bottom: 1px solid #f0f0f0;
+            }
+            .totals-wrap {
+              display: flex;
+              justify-content: space-between;
+              align-items: flex-end;
+              gap: 12px;
+              margin-top: 6px;
+            }
+            .guarantee-box {
+              background: #F0FAF4;
+              border: 1px solid #DCF4D7;
+              border-radius: 10px;
+              padding: 6px 10px;
+              font-size: 10px;
+              color: #1F7A4C;
+              max-width: 300px;
+            }
+            .totals-table {
+              width: 250px;
+              font-size: 11.5px;
+            }
+            .totals-table tr td {
+              padding: 2px 4px;
+              border: none;
+            }
+            .total-final-box {
+              background: #DCF4D7;
+              border: 1px solid #C3EBC0;
+              border-radius: 10px;
+              padding: 6px 10px;
+              margin-top: 4px;
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              color: #1F7A4C;
+              font-weight: 900;
+              font-size: 15px;
+            }
+            .notes-box {
+              background: #FFFDF5;
+              border: 1px solid #FEF3C7;
+              border-radius: 10px;
+              padding: 6px 10px;
+              font-size: 10.5px;
+              color: #78350F;
+              margin-top: 6px;
+            }
+            .footer {
+              border-top: 1px solid #eee;
+              padding-top: 6px;
+              margin-top: 8px;
+              font-size: 9.5px;
+              color: #777;
+              display: flex;
+              justify-content: space-between;
+            }
           </style>
         </head>
         <body>
-          <div class="header">
-            <div>
-              <h1>PRESUPUESTO</h1>
-              <p style="margin: 4px 0 0; font-size: 12px; color: #666;">N°: <strong>${quote.quote_number}</strong></p>
+          <div class="sheet">
+            <div class="header">
+              <div>
+                <h1 class="brand-title">HABA</h1>
+                <p class="brand-sub">Costos & Presupuestos</p>
+              </div>
+              <div style="text-align: right;">
+                <span class="quote-badge">Presupuesto Oficial</span>
+                <p class="quote-num">N° #${String(quote.quote_number).padStart(4, "0")}</p>
+                <p style="margin: 2px 0 0; font-size: 10.5px; color: #666;">
+                  Emisión: ${new Date(quote.created_at).toLocaleDateString("es-AR")}
+                  ${quote.delivery_date ? ` • Entrega: ${new Date(quote.delivery_date).toLocaleDateString("es-AR")}` : ""}
+                </p>
+              </div>
             </div>
-            <div style="text-align: right; font-size: 12px;">
-              <p style="margin: 0;">Fecha: ${new Date(quote.created_at).toLocaleDateString("es-AR")}</p>
-              ${quote.delivery_date ? `<p style="margin: 3px 0 0;">Entrega: ${new Date(quote.delivery_date).toLocaleDateString("es-AR")}</p>` : ""}
+
+            <div class="client-card">
+              <div>
+                <div class="client-title">Preparado para:</div>
+                <strong style="font-size: 12.5px; color: #111;">${quote.client_name}</strong>
+                ${quote.client_contact ? `<div style="color: #666; font-size: 10.5px; margin-top: 1px;">${quote.client_contact}</div>` : ""}
+              </div>
+              <div style="text-align: right;">
+                <div class="client-title">Condiciones:</div>
+                <div style="color: #1F7A4C; font-weight: 700;">Vigencia: 15 días corridos</div>
+                <div style="color: #666; font-size: 10px; margin-top: 1px;">Precios Congelados</div>
+              </div>
             </div>
-          </div>
 
-          <div style="margin-bottom: 15px; font-size: 13px;">
-            <strong>Cliente:</strong> ${quote.client_name} ${quote.client_contact ? `(${quote.client_contact})` : ""}
-          </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Producto / Ítem</th>
+                  <th style="text-align: center;">Cant.</th>
+                  <th style="text-align: right;">Precio Unit.</th>
+                  <th style="text-align: right;">Subtotal</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${itemsRows}
+              </tbody>
+            </table>
 
-          <table>
-            <thead>
-              <tr>
-                <th>Producto</th>
-                <th style="text-align: center;">Cant</th>
-                <th style="text-align: right;">Unitario</th>
-                <th style="text-align: right;">Subtotal</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${itemsRows}
-            </tbody>
-          </table>
+            <div class="totals-wrap">
+              <div class="guarantee-box">
+                <strong style="display: block; margin-bottom: 2px;">🛡️ Precios Congelados</strong>
+                Los valores quedan asegurados durante el período de vigencia de 15 días corridos.
+              </div>
 
-          <div class="totals">
-            <p style="margin: 4px 0; font-size: 13px;">Subtotal: ${formatCurrency(quote.subtotal)}</p>
-            ${quote.discount_percent > 0 ? `<p style="margin: 4px 0; font-size: 13px; color: #b91c1c;">Descuento (${quote.discount_percent}%): -${formatCurrency((quote.subtotal * quote.discount_percent) / 100)}</p>` : ""}
-            <p class="total-line">TOTAL: ${formatCurrency(quote.total)}</p>
-          </div>
+              <div class="totals-table">
+                <table style="margin: 0; width: 100%;">
+                  <tbody>
+                    <tr>
+                      <td style="color: #666;">Subtotal:</td>
+                      <td style="text-align: right; font-weight: 600;">${formatCurrency(quote.subtotal)}</td>
+                    </tr>
+                    ${discountAmount > 0 ? `
+                    <tr>
+                      <td style="color: #b91c1c;">Descuento (${quote.discount_percent}%):</td>
+                      <td style="text-align: right; color: #b91c1c; font-weight: 600;">-${formatCurrency(discountAmount)}</td>
+                    </tr>` : ""}
+                  </tbody>
+                </table>
 
-          ${quote.notes ? `<div style="margin-top: 25px; padding: 12px; background: #f9f9f9; border-radius: 8px; font-size: 12px;"><strong>Condiciones:</strong><br/>${quote.notes.replace(/\n/g, "<br/>")}</div>` : ""}
+                <div class="total-final-box">
+                  <span style="font-size: 10px; text-transform: uppercase;">Total Final:</span>
+                  <span>${formatCurrency(quote.total)}</span>
+                </div>
+              </div>
+            </div>
 
-          <div class="footer">
-            Generado con HABA — Presupuesto con valores congelados.
+            ${quote.notes ? `
+            <div class="notes-box">
+              <strong>📝 Condiciones de entrega y formas de pago:</strong><br/>
+              <span style="white-space: pre-line; line-height: 1.4;">${quote.notes}</span>
+            </div>` : ""}
+
+            <div class="footer">
+              <span>Vigencia: 15 días corridos con precios congelados.</span>
+              <span style="color: #1F7A4C; font-weight: 600;">Generado con HABA • Presupuesto Oficial</span>
+            </div>
           </div>
           <script>
             window.onload = function() { window.print(); };
