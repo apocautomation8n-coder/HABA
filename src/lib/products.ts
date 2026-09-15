@@ -163,6 +163,79 @@ export interface OutdatedProductAlert {
   difference: number;
 }
 
+export interface ProductComponentItem {
+  id?: string;
+  parent_product_id: string;
+  component_product_id: string;
+  quantity: number;
+  created_at?: string;
+  component?: {
+    id: string;
+    name: string;
+    description?: string | null;
+    direct_cost: number;
+    labor_cost?: number;
+    total_cost: number;
+    needs_price_review?: boolean;
+  } | null;
+}
+
+export interface SelectedProductComponent {
+  component: {
+    id: string;
+    name: string;
+    description?: string | null;
+    direct_cost: number;
+    total_cost: number;
+  };
+  quantity: number | string;
+}
+
+/**
+ * Verifica si agregar candidateChildId a parentId generaría una referencia circular.
+ * allRelations es un array de pares { parent_product_id, component_product_id }.
+ */
+export function wouldCreateCircularDependency(
+  parentId: string,
+  candidateChildId: string,
+  allRelations: { parent_product_id: string; component_product_id: string }[]
+): boolean {
+  if (!parentId || !candidateChildId) return false;
+  if (parentId === candidateChildId) return true;
+
+  // BFS: Desde candidateChildId, verificar si alcanzamos parentId
+  const visited = new Set<string>();
+  const queue = [candidateChildId];
+
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    if (current === parentId) return true;
+    if (visited.has(current)) continue;
+    visited.add(current);
+
+    for (const rel of allRelations) {
+      if (rel.parent_product_id === current && !visited.has(rel.component_product_id)) {
+        queue.push(rel.component_product_id);
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Calcula la sumatoria del costo base aportado por los subproductos/componentes
+ * Siempre toma estrictamente el costo base (total_cost o direct_cost), NO el precio de venta.
+ */
+export function calculateComponentsCost(components: SelectedProductComponent[]): number {
+  if (!components || components.length === 0) return 0;
+  return components.reduce((acc, item) => {
+    const q = typeof item.quantity === "number" ? item.quantity : parseFloat(String(item.quantity)) || 0;
+    const baseCost = Number(item.component.total_cost) || Number(item.component.direct_cost) || 0;
+    return acc + baseCost * q;
+  }, 0);
+}
+
 export async function getOutdatedProductsList(supabase: any): Promise<OutdatedProductAlert[]> {
   try {
     const { data: products, error } = await supabase
@@ -182,48 +255,97 @@ export async function getOutdatedProductsList(supabase: any): Promise<OutdatedPr
             purchase_quantity,
             conversion_factor
           )
+        ),
+        product_components!parent_product_id (
+          id,
+          quantity,
+          component:products!component_product_id (
+            id,
+            name,
+            direct_cost,
+            total_cost,
+            needs_price_review
+          )
         )
       `);
 
-    if (error || !products) return [];
-
-    const outdatedProducts: OutdatedProductAlert[] = [];
-
-    for (const product of products as any[]) {
-      let currentMaterialsCost = 0;
-      let hasRecipe = false;
-
-      if (product.product_supplies && product.product_supplies.length > 0) {
-        hasRecipe = true;
-        currentMaterialsCost = product.product_supplies.reduce((acc: number, ps: any) => {
-          if (!ps.supplies) return acc;
-          const purchaseQty = Number(ps.supplies.purchase_quantity) || 1;
-          const factor = Number(ps.supplies.conversion_factor) || 1;
-          const totalUnits = purchaseQty * factor;
-          const unitCost = totalUnits > 0 ? Number(ps.supplies.current_price) / totalUnits : 0;
-          return acc + unitCost * (Number(ps.quantity) || 0);
-        }, 0);
-      }
-
-      const costDifference = hasRecipe ? Math.abs(currentMaterialsCost - Number(product.direct_cost)) : 0;
-      const isCostOutdated = Boolean(product.needs_price_review || (hasRecipe && costDifference > 0.5));
-
-      if (isCostOutdated) {
-        outdatedProducts.push({
-          id: product.id,
-          name: product.name,
-          direct_cost: Number(product.direct_cost) || 0,
-          currentMaterialsCost: Math.round(currentMaterialsCost * 100) / 100,
-          difference: Math.round(costDifference * 100) / 100,
-        });
-      }
+    if (error || !products) {
+      // Fallback si product_components aún no está creada en Supabase
+      const { data: fallbackProducts } = await supabase
+        .from("products")
+        .select(`
+          id,
+          name,
+          direct_cost,
+          needs_price_review,
+          product_supplies (
+            id,
+            quantity,
+            supplies (
+              id,
+              name,
+              current_price,
+              purchase_quantity,
+              conversion_factor
+            )
+          )
+        `);
+      if (!fallbackProducts) return [];
+      return calculateOutdatedList(fallbackProducts);
     }
 
-    return outdatedProducts;
+    return calculateOutdatedList(products);
   } catch (err) {
     console.error("Error al obtener lista de productos desactualizados:", err);
     return [];
   }
+}
+
+function calculateOutdatedList(products: any[]): OutdatedProductAlert[] {
+  const outdatedProducts: OutdatedProductAlert[] = [];
+
+  for (const product of products) {
+    let currentMaterialsCost = 0;
+    let hasRecipe = false;
+
+    // 1. Costo de insumos directos
+    if (product.product_supplies && product.product_supplies.length > 0) {
+      hasRecipe = true;
+      currentMaterialsCost += product.product_supplies.reduce((acc: number, ps: any) => {
+        if (!ps.supplies) return acc;
+        const purchaseQty = Number(ps.supplies.purchase_quantity) || 1;
+        const factor = Number(ps.supplies.conversion_factor) || 1;
+        const totalUnits = purchaseQty * factor;
+        const unitCost = totalUnits > 0 ? Number(ps.supplies.current_price) / totalUnits : 0;
+        return acc + unitCost * (Number(ps.quantity) || 0);
+      }, 0);
+    }
+
+    // 2. Costo de subproductos componentes
+    if (product.product_components && product.product_components.length > 0) {
+      hasRecipe = true;
+      currentMaterialsCost += product.product_components.reduce((acc: number, pc: any) => {
+        if (!pc.component) return acc;
+        const compCost = Number(pc.component.total_cost) || Number(pc.component.direct_cost) || 0;
+        return acc + compCost * (Number(pc.quantity) || 0);
+      }, 0);
+    }
+
+    const costDifference = hasRecipe ? Math.abs(currentMaterialsCost - Number(product.direct_cost)) : 0;
+    const isCostOutdated = Boolean(product.needs_price_review || (hasRecipe && costDifference > 0.5));
+
+    if (isCostOutdated) {
+      outdatedProducts.push({
+        id: product.id,
+        name: product.name,
+        direct_cost: Number(product.direct_cost) || 0,
+        currentMaterialsCost: Math.round(currentMaterialsCost * 100) / 100,
+        difference: Math.round(costDifference * 100) / 100,
+      });
+    }
+  }
+
+  return outdatedProducts;
 }
 
 

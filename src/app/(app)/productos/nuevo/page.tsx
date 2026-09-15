@@ -35,7 +35,7 @@ import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency, calculateUnitCost } from "@/lib/units";
 import { SupplyItem } from "@/components/SupplyModal";
-import { PRODUCT_CATEGORIES, serializeProductDescription } from "@/lib/products";
+import { PRODUCT_CATEGORIES, serializeProductDescription, SelectedProductComponent, calculateComponentsCost, getCategoryBadge } from "@/lib/products";
 
 interface SelectedSupply {
   supply: SupplyItem;
@@ -85,6 +85,13 @@ export default function NuevoProductoPage() {
   const [showWasteInfo, setShowWasteInfo] = useState(false);
   const [supplySearch, setSupplyPickerSearch] = useState("");
 
+  // Paso 2: Subproductos / Componentes de otros productos
+  const [availableProducts, setAvailableProducts] = useState<any[]>([]);
+  const [selectedComponents, setSelectedComponents] = useState<SelectedProductComponent[]>([]);
+  const [componentPickerOpen, setComponentPickerOpen] = useState(false);
+  const [componentSearch, setComponentSearch] = useState("");
+  const [activeRecipeTab, setActiveRecipeTab] = useState<"supplies" | "components">("supplies");
+
   // Paso 3: Tiempo / Mano de Obra (Opcional)
   const [includeLabor, setIncludeLabor] = useState(true);
   const [workTimeMinutes, setWorkTimeMinutes] = useState<number | string>(30);
@@ -127,6 +134,16 @@ export default function NuevoProductoPage() {
             setAvailableSupplies(suppliesData as SupplyItem[]);
           }
 
+          // Cargar productos existentes para permitir usarlos como subproductos
+          const { data: prodsData } = await supabase
+            .from("products")
+            .select("id, name, description, direct_cost, total_cost")
+            .order("name", { ascending: true });
+
+          if (prodsData) {
+            setAvailableProducts(prodsData);
+          }
+
           // Cargar mano de obra
           const { data: laborData } = await supabase
             .from("labor_settings")
@@ -163,6 +180,9 @@ export default function NuevoProductoPage() {
         if (draft.selectedSupplies && Array.isArray(draft.selectedSupplies)) {
           setSelectedSupplies(draft.selectedSupplies);
         }
+        if (draft.selectedComponents && Array.isArray(draft.selectedComponents)) {
+          setSelectedComponents(draft.selectedComponents);
+        }
         if (draft.channelPrices && Array.isArray(draft.channelPrices)) {
           setChannelPrices(draft.channelPrices);
         }
@@ -175,7 +195,7 @@ export default function NuevoProductoPage() {
   // Guardar borrador en sessionStorage reactivamente ante cambios (Punto E)
   useEffect(() => {
     try {
-      if (name || category || selectedSupplies.length > 0) {
+      if (name || category || selectedSupplies.length > 0 || selectedComponents.length > 0) {
         sessionStorage.setItem(
           "haba_draft_nuevo_producto",
           JSON.stringify({
@@ -186,6 +206,7 @@ export default function NuevoProductoPage() {
             currentStep,
             workTimeMinutes,
             selectedSupplies,
+            selectedComponents,
             channelPrices,
           })
         );
@@ -193,11 +214,11 @@ export default function NuevoProductoPage() {
     } catch {
       // ignore
     }
-  }, [name, category, customCategory, description, currentStep, workTimeMinutes, selectedSupplies, channelPrices]);
+  }, [name, category, customCategory, description, currentStep, workTimeMinutes, selectedSupplies, selectedComponents, channelPrices]);
 
   // Cálculos reactivos de costos:
-  // 1. Costo directo de materiales (Insumos + Packaging + Merma %)
-  const directCost = useMemo(() => {
+  // 1. Costo directo de insumos (Insumos + Packaging + Merma %)
+  const suppliesCost = useMemo(() => {
     return selectedSupplies.reduce((acc, item) => {
       const unitCost = calculateUnitCost(
         item.supply.current_price,
@@ -209,6 +230,16 @@ export default function NuevoProductoPage() {
       return acc + unitCost * q * wasteFactor;
     }, 0);
   }, [selectedSupplies]);
+
+  // 1.b. Costo base aportado por Subproductos / Componentes
+  const componentsCost = useMemo(() => {
+    return calculateComponentsCost(selectedComponents);
+  }, [selectedComponents]);
+
+  // Costo directo total (Insumos + Subproductos)
+  const directCost = useMemo(() => {
+    return suppliesCost + componentsCost;
+  }, [suppliesCost, componentsCost]);
 
   // 2. Costo de Mano de Obra
   const laborCost = useMemo(() => {
@@ -354,6 +385,44 @@ export default function NuevoProductoPage() {
     setSelectedSupplies((prev) => prev.filter((_, i) => i !== index));
   };
 
+  // Agregar subproducto / componente a la receta
+  const handleAddProductComponent = (prod: any) => {
+    if (selectedComponents.some((c) => c.component.id === prod.id)) return;
+    const baseCost = Number(prod.total_cost) || Number(prod.direct_cost) || 0;
+    setSelectedComponents((prev) => [
+      ...prev,
+      {
+        component: {
+          id: prod.id,
+          name: prod.name,
+          description: prod.description,
+          direct_cost: Number(prod.direct_cost) || 0,
+          total_cost: baseCost,
+        },
+        quantity: 1,
+      },
+    ]);
+    setComponentPickerOpen(false);
+    setComponentSearch("");
+  };
+
+  // Quitar subproducto de la receta
+  const handleRemoveProductComponent = (index: number) => {
+    setSelectedComponents((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  // Cambiar cantidad de subproducto
+  const handleUpdateComponentQty = (index: number, qty: number | string) => {
+    setSelectedComponents((prev) => {
+      const updated = [...prev];
+      updated[index] = {
+        ...updated[index],
+        quantity: qty,
+      };
+      return updated;
+    });
+  };
+
   // Validación de Paso 1
   const validateStep1 = (): boolean => {
     const errors: { name?: string; category?: string } = {};
@@ -447,21 +516,40 @@ export default function NuevoProductoPage() {
       const productId = productData.id;
 
       // 2. Insertar insumos de la receta en product_supplies con ROLLBACK si falla
-      const suppliesToInsert = selectedSupplies.map((s) => ({
-        product_id: productId,
-        supply_id: s.supply.id,
-        quantity: typeof s.quantity === "number" ? s.quantity : parseFloat(String(s.quantity)) || 0,
-      }));
+      if (selectedSupplies.length > 0) {
+        const suppliesToInsert = selectedSupplies.map((s) => ({
+          product_id: productId,
+          supply_id: s.supply.id,
+          quantity: typeof s.quantity === "number" ? s.quantity : parseFloat(String(s.quantity)) || 0,
+        }));
 
-      const { error: suppliesError } = await supabase
-        .from("product_supplies")
-        .insert(suppliesToInsert);
+        const { error: suppliesError } = await supabase
+          .from("product_supplies")
+          .insert(suppliesToInsert);
 
-      if (suppliesError) {
-        console.error("Error insertando insumos. Ejecutando rollback...", suppliesError);
-        // Rollback: borrar el producto creado para evitar registros huérfanos
-        await supabase.from("products").delete().eq("id", productId);
-        throw new Error(`Error al guardar la receta: ${suppliesError.message}. Operación revertida.`);
+        if (suppliesError) {
+          console.error("Error insertando insumos. Ejecutando rollback...", suppliesError);
+          // Rollback: borrar el producto creado para evitar registros huérfanos
+          await supabase.from("products").delete().eq("id", productId);
+          throw new Error(`Error al guardar la receta: ${suppliesError.message}. Operación revertida.`);
+        }
+      }
+
+      // 2.b. Insertar subproductos en product_components con ROLLBACK si falla
+      if (selectedComponents.length > 0) {
+        const componentsToInsert = selectedComponents.map((c) => ({
+          parent_product_id: productId,
+          component_product_id: c.component.id,
+          quantity: typeof c.quantity === "number" ? c.quantity : parseFloat(String(c.quantity)) || 1,
+        }));
+
+        const { error: componentsError } = await supabase
+          .from("product_components")
+          .insert(componentsToInsert);
+
+        if (componentsError) {
+          console.warn("Aviso insertando subproductos componentes:", componentsError);
+        }
       }
 
       // 3. Insertar precios de canales en product_prices con ROLLBACK completo si falla
@@ -478,7 +566,10 @@ export default function NuevoProductoPage() {
 
       if (pricesError) {
         console.error("Error insertando precios. Ejecutando rollback...", pricesError);
-        // Rollback: borrar insumos y producto
+        // Rollback: borrar componentes, insumos y producto
+        try {
+          await supabase.from("product_components").delete().eq("parent_product_id", productId);
+        } catch {}
         await supabase.from("product_supplies").delete().eq("product_id", productId);
         await supabase.from("products").delete().eq("id", productId);
         throw new Error(`Error al guardar los precios: ${pricesError.message}. Operación revertida.`);
@@ -728,196 +819,356 @@ export default function NuevoProductoPage() {
         </div>
       )}
 
-      {/* PASO 2: Insumos & Packaging del Producto (Con Merma %) */}
+      {/* PASO 2: Insumos, Subproductos & Packaging */}
       {currentStep === 2 && (
         <div className="bg-white p-5 rounded-3xl border border-[#EAF0E8] shadow-sm space-y-4">
           <div className="border-b border-neutral-100 pb-3">
             <div className="flex items-center gap-2">
               <Boxes className="w-5 h-5 text-[#3BB578]" />
               <div>
-                <h3 className="text-sm font-bold text-neutral-800">2. Insumos, Packaging y Merma %</h3>
+                <h3 className="text-sm font-bold text-neutral-800">2. Insumos y Subproductos Componentes</h3>
                 <p className="text-[11px] text-neutral-400">
-                  Agregá lo que consume 1 unidad y el desperdicio estimado
+                  Agregá lo que consume 1 unidad (materias primas y productos registrados que formen parte de este producto)
                 </p>
               </div>
             </div>
           </div>
 
-          {/* Banner Didáctico Paso 2 (Minimizable - Punto G) */}
-          <div className="bg-[#F0FAF4] border border-[#DCF4D7] rounded-2xl overflow-hidden transition-all">
+          {/* Selector de Pestañas en Paso 2: Insumos vs Subproductos */}
+          <div className="flex rounded-2xl bg-neutral-100 p-1 gap-1">
             <button
               type="button"
-              onClick={() => setShowWasteInfo(!showWasteInfo)}
-              className="w-full p-2.5 sm:p-3 flex items-center justify-between text-left hover:bg-[#DCF4D7]/30 transition"
+              onClick={() => setActiveRecipeTab("supplies")}
+              className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                activeRecipeTab === "supplies"
+                  ? "bg-white text-[#1F7A4C] shadow-xs"
+                  : "text-neutral-500 hover:text-neutral-700"
+              }`}
             >
-              <div className="flex items-center gap-2">
-                <div className="w-5 h-5 rounded-lg bg-[#DCF4D7] text-[#1F7A4C] flex items-center justify-center flex-shrink-0">
-                  <Sparkles className="w-3 h-3" />
-                </div>
-                <span className="font-bold text-[11px] text-[#1F7A4C]">¿Cómo costear los materiales y la merma?</span>
-              </div>
-              <div className="flex items-center gap-1 text-[10px] text-[#1F7A4C] font-semibold bg-white/70 px-2 py-0.5 rounded-full border border-[#DCF4D7]">
-                <span>{showWasteInfo ? "Ocultar" : "Ver explicación"}</span>
-                {showWasteInfo ? <ChevronRight className="w-3 h-3 rotate-90 transition-transform" /> : <ChevronRight className="w-3 h-3 transition-transform" />}
-              </div>
+              <Boxes className="w-3.5 h-3.5 text-[#3BB578]" />
+              <span>Insumos & Pack ({selectedSupplies.length})</span>
             </button>
-            {showWasteInfo && (
-              <div className="px-3 pb-3 pt-0.5 text-[11px] leading-snug text-[#555] border-t border-[#DCF4D7]/60 animate-in fade-in duration-150">
-                <p className="pt-2">
-                  Ingresás la cantidad que lleva 1 producto terminado. Si al cortar o producir hay recortes o desperdicios que se pierden, agregá un <strong>% de Merma</strong> (ej: 5% o 10%) para que el costo real quede cubierto.
-                </p>
-              </div>
-            )}
+            <button
+              type="button"
+              onClick={() => setActiveRecipeTab("components")}
+              className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                activeRecipeTab === "components"
+                  ? "bg-white text-[#1F7A4C] shadow-xs"
+                  : "text-neutral-500 hover:text-neutral-700"
+              }`}
+            >
+              <Package className="w-3.5 h-3.5 text-[#3BB578]" />
+              <span>Subproductos ({selectedComponents.length})</span>
+            </button>
           </div>
 
-          {selectedSupplies.length === 0 ? (
+          {/* CONTENIDO PESTAÑA 1: INSUMOS */}
+          {activeRecipeTab === "supplies" && (
             <div className="space-y-3">
-              <div className="bg-neutral-50 rounded-2xl p-6 border border-dashed border-neutral-200 text-center">
-                <Boxes className="w-8 h-8 text-neutral-300 mx-auto mb-2" />
-                <p className="text-xs font-semibold text-neutral-600">
-                  Aún no agregaste insumos ni packaging a este producto.
-                </p>
-                <p className="text-[11px] text-neutral-400 mt-0.5">
-                  Tocá el botón de abajo para sumar los materiales que utilizás para fabricarlo.
-                </p>
-              </div>
-              <button
-                onClick={() => setSupplyPickerOpen(true)}
-                className="w-full py-2.5 px-4 bg-[#3BB578] hover:bg-[#2E9E65] text-white text-xs font-bold rounded-2xl shadow-sm transition"
-              >
-                Elegir insumo
-              </button>
-            </div>
-          ) : (
-            <div className="space-y-2.5">
-              {selectedSupplies.map((item, idx) => {
-                const unitCost = calculateUnitCost(
-                  item.supply.current_price,
-                  item.supply.purchase_quantity,
-                  item.supply.conversion_factor
-                );
-                const itemQty = typeof item.quantity === "number" ? item.quantity : parseFloat(String(item.quantity)) || 0;
-                const wastePercent = Number(item.waste_percent) || 0;
-                const wasteMultiplier = 1 + wastePercent / 100;
-                const subtotal = unitCost * itemQty * wasteMultiplier;
-
-                return (
-                  <div
-                    key={item.supply.id || idx}
-                    className="p-3 bg-neutral-50 rounded-2xl border border-neutral-200/80 flex flex-col space-y-2.5"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <span className="text-xs font-bold text-neutral-800">
-                          {item.supply.name}
-                        </span>
-                        <span className="text-[10px] block text-neutral-400">
-                          Costo reposición: {formatCurrency(unitCost)} / {item.supply.use_unit}
-                        </span>
-                      </div>
-                      <button
-                        onClick={() => handleRemoveSupply(idx)}
-                        className="p-1 text-neutral-400 hover:text-rose-500 rounded-lg transition"
-                        title="Quitar de la receta"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+              {/* Banner Didáctico Paso 2 */}
+              <div className="bg-[#F0FAF4] border border-[#DCF4D7] rounded-2xl overflow-hidden transition-all">
+                <button
+                  type="button"
+                  onClick={() => setShowWasteInfo(!showWasteInfo)}
+                  className="w-full p-2.5 sm:p-3 flex items-center justify-between text-left hover:bg-[#DCF4D7]/30 transition"
+                >
+                  <div className="flex items-center gap-2">
+                    <div className="w-5 h-5 rounded-lg bg-[#DCF4D7] text-[#1F7A4C] flex items-center justify-center flex-shrink-0">
+                      <Sparkles className="w-3 h-3" />
                     </div>
+                    <span className="font-bold text-[11px] text-[#1F7A4C]">¿Cómo costear los materiales y la merma?</span>
+                  </div>
+                  <div className="flex items-center gap-1 text-[10px] text-[#1F7A4C] font-semibold bg-white/70 px-2 py-0.5 rounded-full border border-[#DCF4D7]">
+                    <span>{showWasteInfo ? "Ocultar" : "Ver explicación"}</span>
+                    <ChevronRight className={`w-3 h-3 transition-transform ${showWasteInfo ? "rotate-90" : ""}`} />
+                  </div>
+                </button>
+                {showWasteInfo && (
+                  <div className="px-3 pb-3 pt-0.5 text-[11px] leading-snug text-[#555] border-t border-[#DCF4D7]/60 animate-in fade-in duration-150">
+                    <p className="pt-2">
+                      Ingresás la cantidad que lleva 1 producto terminado. Si al cortar o producir hay desperdicio que se pierde, agregá un <strong>% de Merma</strong> (ej: 5% o 10%) para que el costo real quede cubierto.
+                    </p>
+                  </div>
+                )}
+              </div>
 
-                    <div className="grid grid-cols-2 gap-2 pt-1 border-t border-neutral-200/50">
-                      {/* Cantidad consumida */}
-                      <div className="space-y-1">
-                        <label className="text-[11px] font-semibold text-neutral-600">
-                          Cantidad:
-                        </label>
-                        <div className="flex items-center gap-1">
-                          <input
-                            type="number"
-                            step="any"
-                            min="0.0001"
-                            value={item.quantity === 0 ? "" : item.quantity}
-                            onChange={(e) =>
-                              handleUpdateSupplyQty(idx, e.target.value)
-                            }
-                            placeholder="1"
-                            className="w-full px-2 py-1 text-xs bg-white border border-neutral-200 rounded-xl text-center font-bold outline-none focus:border-[#3BB578]"
-                          />
-                          <span className="text-[11px] font-semibold text-neutral-500 flex-shrink-0">
-                            {item.supply.use_unit}
+              {selectedSupplies.length === 0 ? (
+                <div className="space-y-3">
+                  <div className="bg-neutral-50 rounded-2xl p-6 border border-dashed border-neutral-200 text-center">
+                    <Boxes className="w-8 h-8 text-neutral-300 mx-auto mb-2" />
+                    <p className="text-xs font-semibold text-neutral-600">
+                      Aún no agregaste insumos ni packaging a este producto.
+                    </p>
+                    <p className="text-[11px] text-neutral-400 mt-0.5">
+                      Tocá el botón para sumar las materias primas que utilizás para fabricarlo.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSupplyPickerOpen(true)}
+                    className="w-full py-2.5 px-4 bg-[#3BB578] hover:bg-[#2E9E65] text-white text-xs font-bold rounded-2xl shadow-sm transition flex items-center justify-center gap-1.5"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Elegir insumo</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {selectedSupplies.map((item, idx) => {
+                    const unitCost = calculateUnitCost(
+                      item.supply.current_price,
+                      item.supply.purchase_quantity,
+                      item.supply.conversion_factor
+                    );
+                    const itemQty = typeof item.quantity === "number" ? item.quantity : parseFloat(String(item.quantity)) || 0;
+                    const wastePercent = Number(item.waste_percent) || 0;
+                    const wasteMultiplier = 1 + wastePercent / 100;
+                    const subtotal = unitCost * itemQty * wasteMultiplier;
+
+                    return (
+                      <div
+                        key={item.supply.id || idx}
+                        className="p-3 bg-neutral-50 rounded-2xl border border-neutral-200/80 flex flex-col space-y-2.5"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <span className="text-xs font-bold text-neutral-800">
+                              {item.supply.name}
+                            </span>
+                            <span className="text-[10px] block text-neutral-400">
+                              Costo reposición: {formatCurrency(unitCost)} / {item.supply.use_unit}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveSupply(idx)}
+                            className="p-1 text-neutral-400 hover:text-rose-500 rounded-lg transition"
+                            title="Quitar de la receta"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 pt-1 border-t border-neutral-200/50">
+                          {/* Cantidad consumida */}
+                          <div className="space-y-1">
+                            <label className="text-[11px] font-semibold text-neutral-600">
+                              Cantidad:
+                            </label>
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="number"
+                                step="any"
+                                min="0.0001"
+                                value={item.quantity === 0 ? "" : item.quantity}
+                                onChange={(e) => handleUpdateSupplyQty(idx, e.target.value)}
+                                placeholder="1"
+                                className="w-full px-2 py-1 text-xs bg-white border border-neutral-200 rounded-xl text-center font-bold outline-none focus:border-[#3BB578]"
+                              />
+                              <span className="text-[11px] font-semibold text-neutral-500 flex-shrink-0">
+                                {item.supply.use_unit}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Merma % */}
+                          <div className="space-y-1">
+                            <label className="text-[11px] font-semibold text-neutral-600 flex items-center justify-between">
+                              <span>Merma %:</span>
+                              <span className="text-[9px] text-neutral-400">(desperdicio)</span>
+                            </label>
+                            <div className="relative">
+                              <input
+                                type="number"
+                                step="any"
+                                min="0"
+                                max="100"
+                                value={item.waste_percent === 0 ? "" : (item.waste_percent ?? "")}
+                                onChange={(e) =>
+                                  handleUpdateSupplyWaste(idx, e.target.value === "" ? 0 : parseFloat(e.target.value) || 0)
+                                }
+                                placeholder="0"
+                                className="w-full px-2 py-1 text-xs bg-white border border-neutral-200 rounded-xl text-center font-bold outline-none focus:border-[#3BB578]"
+                              />
+                              <span className="absolute right-2 top-1 text-[11px] text-neutral-400 font-bold">%</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between pt-1 border-t border-neutral-200/40 text-[10.5px]">
+                          <span className="text-neutral-500">
+                            {item.quantity} {item.supply.use_unit}
+                            {wastePercent > 0 && ` (+${wastePercent}% merma)`}
+                          </span>
+                          <span className="font-bold text-[#1F7A4C] text-xs">
+                            Subtotal: {formatCurrency(subtotal)}
                           </span>
                         </div>
                       </div>
+                    );
+                  })}
 
-                      {/* Merma % */}
-                      <div className="space-y-1">
-                        <label className="text-[11px] font-semibold text-neutral-600 flex items-center justify-between">
-                          <span>Merma %:</span>
-                          <span className="text-[9px] text-neutral-400">(desperdicio)</span>
-                        </label>
-                        <div className="relative">
-                          <input
-                            type="number"
-                            step="any"
-                            min="0"
-                            max="100"
-                            value={item.waste_percent === 0 ? "" : (item.waste_percent ?? "")}
-                            onChange={(e) =>
-                              handleUpdateSupplyWaste(idx, e.target.value === "" ? 0 : parseFloat(e.target.value) || 0)
-                            }
-                            placeholder="0"
-                            className="w-full px-2 py-1 text-xs bg-white border border-neutral-200 rounded-xl text-center font-bold outline-none focus:border-[#3BB578]"
-                          />
-                          <span className="absolute right-2 top-1 text-[11px] text-neutral-400 font-bold">%</span>
+                  <div className="pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setSupplyPickerOpen(true)}
+                      className="py-2 px-4 bg-[#DCF4D7] hover:bg-[#C3EBC0] text-[#1F7A4C] rounded-2xl text-xs font-bold flex items-center gap-1.5 transition active:scale-95 shadow-xs"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>Agregar Insumo</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* CONTENIDO PESTAÑA 2: SUBPRODUCTOS / COMPONENTES */}
+          {activeRecipeTab === "components" && (
+            <div className="space-y-3">
+              <div className="bg-[#F0FAF4] border border-[#DCF4D7] rounded-2xl p-3 text-[11px] text-[#555] leading-snug flex items-start gap-2">
+                <Package className="w-4 h-4 text-[#3BB578] flex-shrink-0 mt-0.5" />
+                <div>
+                  <strong className="text-[#1F7A4C] block font-bold">Subproductos de tu Catálogo</strong>
+                  <span>
+                    Podés agregar productos que ya registraste (ej: Cuaderno A5 x 3, Packaging x 1). 
+                    Se sumará <strong>estrictamente su costo base de fabricación</strong>, sin incluir márgenes ni precios de venta.
+                  </span>
+                </div>
+              </div>
+
+              {selectedComponents.length === 0 ? (
+                <div className="space-y-3">
+                  <div className="bg-neutral-50 rounded-2xl p-6 border border-dashed border-neutral-200 text-center">
+                    <Package className="w-8 h-8 text-neutral-300 mx-auto mb-2" />
+                    <p className="text-xs font-semibold text-neutral-600">
+                      No agregaste subproductos a este producto.
+                    </p>
+                    <p className="text-[11px] text-neutral-400 mt-0.5">
+                      Ideal para armar combos, kits o productos ensamblados a partir de otros productos.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setComponentPickerOpen(true)}
+                    className="w-full py-2.5 px-4 bg-[#3BB578] hover:bg-[#2E9E65] text-white text-xs font-bold rounded-2xl shadow-sm transition flex items-center justify-center gap-1.5"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Elegir subproducto</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {selectedComponents.map((item, idx) => {
+                    const unitCost = Number(item.component.total_cost) || Number(item.component.direct_cost) || 0;
+                    const itemQty = typeof item.quantity === "number" ? item.quantity : parseFloat(String(item.quantity)) || 0;
+                    const subtotal = unitCost * itemQty;
+
+                    return (
+                      <div
+                        key={item.component.id || idx}
+                        className="p-3 bg-neutral-50 rounded-2xl border border-neutral-200/80 flex flex-col space-y-2.5"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-xl bg-[#DCF4D7] text-[#1F7A4C] flex items-center justify-center flex-shrink-0">
+                              <Package className="w-3.5 h-3.5" />
+                            </div>
+                            <div>
+                              <span className="text-xs font-bold text-neutral-800 block">
+                                {item.component.name}
+                              </span>
+                              <span className="text-[10px] text-neutral-500">
+                                Costo base unitario: <strong>{formatCurrency(unitCost)}</strong> / u
+                              </span>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveProductComponent(idx)}
+                            className="p-1 text-neutral-400 hover:text-rose-500 rounded-lg transition"
+                            title="Quitar de la receta"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 pt-1 border-t border-neutral-200/50 items-center">
+                          <div className="space-y-1">
+                            <label className="text-[11px] font-semibold text-neutral-600">
+                              Cantidad necesaria:
+                            </label>
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="number"
+                                step="any"
+                                min="0.0001"
+                                value={item.quantity === 0 ? "" : item.quantity}
+                                onChange={(e) => handleUpdateComponentQty(idx, e.target.value)}
+                                placeholder="1"
+                                className="w-full px-2 py-1 text-xs bg-white border border-neutral-200 rounded-xl text-center font-bold outline-none focus:border-[#3BB578]"
+                              />
+                              <span className="text-[11px] font-semibold text-neutral-500 flex-shrink-0">
+                                u
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="text-right space-y-0.5">
+                            <span className="text-[10px] text-neutral-400 block">Subtotal al costo:</span>
+                            <span className="text-xs font-bold text-[#1F7A4C]">
+                              {formatCurrency(subtotal)}
+                            </span>
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    );
+                  })}
 
-                    <div className="flex items-center justify-between pt-1 border-t border-neutral-200/40 text-[10.5px]">
-                      <span className="text-neutral-500">
-                        {item.quantity} {item.supply.use_unit}
-                        {wastePercent > 0 && ` (+${wastePercent}% merma)`}
-                      </span>
-                      <span className="font-bold text-[#1F7A4C] text-xs">
-                        Subtotal: {formatCurrency(subtotal)}
-                      </span>
-                    </div>
+                  <div className="pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setComponentPickerOpen(true)}
+                      className="py-2 px-4 bg-[#DCF4D7] hover:bg-[#C3EBC0] text-[#1F7A4C] rounded-2xl text-xs font-bold flex items-center gap-1.5 transition active:scale-95 shadow-xs"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>Agregar otro Subproducto</span>
+                    </button>
                   </div>
-                );
-              })}
+                </div>
+              )}
             </div>
           )}
 
-          {selectedSupplies.length > 0 && (
-            <div className="pt-1">
-              <button
-                type="button"
-                onClick={() => setSupplyPickerOpen(true)}
-                className="py-2 px-4 bg-[#DCF4D7] hover:bg-[#C3EBC0] text-[#1F7A4C] rounded-2xl text-xs font-bold flex items-center gap-1.5 transition active:scale-95 shadow-xs"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Agregar</span>
-              </button>
-            </div>
-          )}
-
-          {selectedSupplies.length > 0 && (
-            <div className="p-3 bg-[#DCF4D7]/70 border border-[#C3EBC0] rounded-2xl flex items-center justify-between">
-              <span className="text-xs font-bold text-[#1F7A4C]">Total Materiales (1 unidad):</span>
-              <span className="text-sm font-black text-[#1F7A4C] font-display">{formatCurrency(directCost)}</span>
+          {/* Tarjeta de Resumen Combinado de Costos de Materiales */}
+          {(selectedSupplies.length > 0 || selectedComponents.length > 0) && (
+            <div className="p-3 bg-[#F0FAF4] border border-[#C3EBC0] rounded-2xl flex items-center justify-between text-xs mt-2">
+              <div>
+                <span className="text-[11px] font-bold text-[#1F7A4C] block">
+                  Total Materiales y Subproductos:
+                </span>
+                <span className="text-[10px] text-[#2E9E65]">
+                  Insumos: {formatCurrency(suppliesCost)} | Subproductos: {formatCurrency(componentsCost)}
+                </span>
+              </div>
+              <span className="text-sm font-black text-[#1F7A4C] font-display">
+                {formatCurrency(directCost)}
+              </span>
             </div>
           )}
 
           <div className="pt-3 border-t border-neutral-100 flex items-center justify-between">
             <button
+              type="button"
               onClick={() => setCurrentStep(1)}
-              className="py-2 px-4 bg-neutral-100 text-neutral-600 rounded-2xl text-xs font-semibold"
+              className="py-2 px-4 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 rounded-2xl text-xs font-semibold transition"
             >
               Atrás
             </button>
             <button
+              type="button"
               onClick={() => setCurrentStep(3)}
-              disabled={selectedSupplies.length === 0}
-              className="py-2.5 px-5 bg-[#3BB578] hover:bg-[#2E9E65] disabled:opacity-50 text-white rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+              className="py-2.5 px-6 bg-[#3BB578] hover:bg-[#2E9E65] text-white rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm active:scale-95"
             >
               <span>Siguiente: Tiempo</span>
               <ChevronRight className="w-4 h-4" />
@@ -925,6 +1176,7 @@ export default function NuevoProductoPage() {
           </div>
         </div>
       )}
+
 
       {/* PASO 3: Tiempo de Producción */}
       {currentStep === 3 && (
@@ -1499,6 +1751,142 @@ export default function NuevoProductoPage() {
             >
               <button
                 onClick={() => setSupplyPickerOpen(false)}
+                className="w-full py-2.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-xs font-semibold rounded-2xl transition"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* MODAL SELECCIONADOR DE SUBPRODUCTOS COMPONENTES */}
+      {componentPickerOpen && (
+        <div className="fixed inset-0 z-[99999] bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center">
+          <div
+            className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl border border-[#EAF0E8] flex flex-col animate-in slide-in-from-bottom-6"
+            style={{
+              height: 'min(88vh, 600px)',
+              maxHeight: 'calc(100dvh - env(safe-area-inset-top, 20px) - 10px)'
+            }}
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-neutral-100 flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-xl bg-[#DCF4D7] text-[#1F7A4C] flex items-center justify-center">
+                  <Package className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-neutral-800">Elegir Subproducto</h3>
+                  <p className="text-[10.5px] text-neutral-400">Sumará solo su costo base de fabricación</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setComponentPickerOpen(false);
+                  setComponentSearch("");
+                }}
+                className="p-1 text-neutral-400 hover:text-neutral-600 rounded-full"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Buscador de Subproductos */}
+            <div className="pt-3 pb-2 flex-shrink-0">
+              <div className="relative">
+                <Search className="w-4 h-4 text-neutral-400 absolute left-3 top-2.5" />
+                <input
+                  type="text"
+                  value={componentSearch}
+                  onChange={(e) => setComponentSearch(e.target.value)}
+                  placeholder="Buscar producto por nombre..."
+                  className="w-full pl-9 pr-8 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl outline-none focus:bg-white focus:border-[#3BB578]"
+                  autoFocus
+                />
+                {componentSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setComponentSearch("")}
+                    className="absolute right-2.5 top-2.5 text-neutral-400 hover:text-neutral-600"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Lista de Subproductos disponibles */}
+            <div className="flex-1 overflow-y-auto space-y-2 py-2 pr-1">
+              {(() => {
+                const filtered = availableProducts.filter((p) =>
+                  p.name.toLowerCase().includes(componentSearch.toLowerCase())
+                );
+
+                if (availableProducts.length === 0) {
+                  return (
+                    <div className="p-6 text-center text-xs text-neutral-400">
+                      No tenés otros productos registrados aún en tu catálogo. Creá primero los productos simples y luego podrás combinarlos aquí.
+                    </div>
+                  );
+                }
+
+                if (filtered.length === 0) {
+                  return (
+                    <div className="p-6 text-center text-xs text-neutral-400">
+                      No encontramos productos que coincidan con &ldquo;<strong>{componentSearch}</strong>&rdquo;.
+                    </div>
+                  );
+                }
+
+                return filtered.map((prod) => {
+                  const isSelected = selectedComponents.some((c) => c.component.id === prod.id);
+                  const baseCost = Number(prod.total_cost) || Number(prod.direct_cost) || 0;
+                  const badge = getCategoryBadge(prod.description);
+
+                  return (
+                    <button
+                      key={prod.id}
+                      disabled={isSelected}
+                      onClick={() => handleAddProductComponent(prod)}
+                      className={`w-full p-3 rounded-2xl border text-left transition flex items-center justify-between ${
+                        isSelected
+                          ? "bg-neutral-100 border-neutral-200 opacity-50 cursor-not-allowed"
+                          : "bg-white hover:bg-[#DCF4D7]/50 border-neutral-200 hover:border-[#3BB578]"
+                      }`}
+                    >
+                      <div>
+                        <span className="text-xs font-bold text-neutral-800 block">
+                          {prod.name}
+                        </span>
+                        <span className="text-[10px] text-neutral-400 flex items-center gap-1 mt-0.5">
+                          <span>{badge.icon}</span>
+                          <span>{badge.label}</span>
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-xs font-bold text-[#1F7A4C]">
+                          {formatCurrency(baseCost)}
+                        </span>
+                        <span className="text-[9px] block text-neutral-400 font-medium">
+                          costo base / u
+                        </span>
+                      </div>
+                    </button>
+                  );
+                });
+              })()}
+            </div>
+
+            <div
+              className="pt-2 border-t border-neutral-100 flex-shrink-0"
+              style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 12px), 16px)' }}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  setComponentPickerOpen(false);
+                  setComponentSearch("");
+                }}
                 className="w-full py-2.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-xs font-semibold rounded-2xl transition"
               >
                 Cerrar
