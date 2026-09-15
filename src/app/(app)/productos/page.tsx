@@ -2149,12 +2149,18 @@ export default function ProductosPage() {
 
       {/* Toast de Notificación Kawaii */}
       {successToast && (
-        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 bg-[#1F7A4C] text-white px-4 py-2.5 rounded-2xl shadow-xl flex items-center gap-2 text-xs font-bold border border-emerald-400/30 animate-in fade-in slide-in-from-bottom-3 duration-200">
+        <div
+          className="fixed left-1/2 -translate-x-1/2 z-[60] bg-[#1F7A4C] text-white px-4 py-2.5 rounded-2xl shadow-xl flex items-center gap-2 text-xs font-bold border border-emerald-400/30 animate-in fade-in slide-in-from-bottom-3 duration-200 w-max max-w-[calc(100vw-2rem)]"
+          style={{
+            bottom: "calc(4.5rem + env(safe-area-inset-bottom, 0px) + 1rem)",
+          }}
+        >
           <Sparkles className="w-4 h-4 text-emerald-200 flex-shrink-0" />
-          <span>{successToast}</span>
+          <span className="leading-tight">{successToast}</span>
           <button
             onClick={() => setSuccessToast(null)}
-            className="ml-2 text-emerald-200 hover:text-white p-0.5 rounded-lg transition"
+            className="ml-2 text-emerald-200 hover:text-white p-0.5 rounded-lg transition flex-shrink-0"
+            aria-label="Cerrar notificación"
           >
             <X className="w-3.5 h-3.5" />
           </button>
