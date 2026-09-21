@@ -1504,11 +1504,21 @@ export default function ProductosPage() {
             return (
               <div
                 key={product.id}
-                className={`bg-white rounded-3xl p-4 border shadow-sm flex flex-col space-y-3 transition-all ${
+                onClick={() => setExpandedProductId(isExpanded ? null : product.id)}
+                className={`bg-white rounded-3xl p-4 border shadow-sm flex flex-col space-y-3 transition-all cursor-pointer ${
                   isActive
-                    ? "border-[#EAF0E8] hover:border-[#C3EBC0]"
-                    : "border-neutral-200/80 bg-neutral-50/40 opacity-90"
+                    ? "border-[#EAF0E8] hover:border-[#3BB578]/50 hover:shadow-md"
+                    : "border-neutral-200/80 bg-neutral-50/40 opacity-90 hover:border-neutral-300 hover:shadow-md"
                 }`}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setExpandedProductId(isExpanded ? null : product.id);
+                  }
+                }}
+                aria-expanded={isExpanded}
               >
                 {/* Cabecera de la tarjeta: Título a la izquierda, botones de acción a la derecha */}
                 <div className="flex items-start justify-between gap-2">
@@ -1530,7 +1540,10 @@ export default function ProductosPage() {
 
                       {/* Badge 2: Estado Activo / Inactivo (Interactivo con toggle) */}
                       <button
-                        onClick={() => handleToggleStatus(product, isActive)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleToggleStatus(product, isActive);
+                        }}
                         disabled={togglingId === product.id}
                         className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border transition active:scale-95 cursor-pointer ${
                           isActive
@@ -1589,9 +1602,12 @@ export default function ProductosPage() {
                   <div className="flex items-center gap-0.5">
                     {/* Botón de alternar estado rápido */}
                     <button
-                      onClick={() => handleToggleStatus(product, isActive)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleToggleStatus(product, isActive);
+                      }}
                       disabled={togglingId === product.id}
-                      className={`p-1.5 rounded-xl transition ${
+                      className={`p-1.5 rounded-xl transition cursor-pointer ${
                         isActive
                           ? "text-emerald-600 hover:bg-emerald-50"
                           : "text-neutral-400 hover:text-emerald-600 hover:bg-neutral-100"
@@ -1603,9 +1619,12 @@ export default function ProductosPage() {
 
                     {/* Botón de duplicar producto */}
                     <button
-                      onClick={() => handleDuplicate(product)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDuplicate(product);
+                      }}
                       disabled={duplicatingId === product.id}
-                      className="p-1.5 text-neutral-400 hover:text-[#1F7A4C] hover:bg-[#DCF4D7] rounded-xl transition disabled:opacity-50"
+                      className="p-1.5 text-neutral-400 hover:text-[#1F7A4C] hover:bg-[#DCF4D7] rounded-xl transition disabled:opacity-50 cursor-pointer"
                       title="Duplicar producto (receta y precios)"
                     >
                       {duplicatingId === product.id ? (
@@ -1617,8 +1636,11 @@ export default function ProductosPage() {
 
                     {/* Botón de editar producto (Punto H) */}
                     <button
-                      onClick={() => handleOpenEdit(product)}
-                      className="p-1.5 text-neutral-400 hover:text-[#1F7A4C] hover:bg-[#DCF4D7] rounded-xl transition"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleOpenEdit(product);
+                      }}
+                      className="p-1.5 text-neutral-400 hover:text-[#1F7A4C] hover:bg-[#DCF4D7] rounded-xl transition cursor-pointer"
                       title="Editar detalles del producto"
                     >
                       <Pencil className="w-4 h-4" />
@@ -1627,6 +1649,7 @@ export default function ProductosPage() {
                     {/* Botón de crear presupuesto desde producto */}
                     <Link
                       href={`/presupuestos/nuevo?productId=${product.id}`}
+                      onClick={(e) => e.stopPropagation()}
                       className="p-1.5 text-neutral-400 hover:text-[#1F7A4C] hover:bg-[#DCF4D7] rounded-xl transition"
                       title="Crear presupuesto con este producto"
                     >
@@ -1635,8 +1658,11 @@ export default function ProductosPage() {
 
                     {/* Botón de eliminar */}
                     <button
-                      onClick={() => handleDelete(product)}
-                      className="p-1.5 text-neutral-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDelete(product);
+                      }}
+                      className="p-1.5 text-neutral-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition cursor-pointer"
                       title="Eliminar producto"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -1644,17 +1670,19 @@ export default function ProductosPage() {
 
                     {/* Botón de desplegar acordeón */}
                     <button
-                      onClick={() =>
-                        setExpandedProductId(isExpanded ? null : product.id)
-                      }
-                      className="p-1.5 text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 rounded-xl transition"
-                      title="Ver desglose de costos y canales"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setExpandedProductId(isExpanded ? null : product.id);
+                      }}
+                      className="p-1.5 text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 rounded-xl transition cursor-pointer"
+                      title={isExpanded ? "Ocultar detalles" : "Ver detalles y componentes"}
+                      aria-label={isExpanded ? "Ocultar detalles" : "Ver detalles"}
                     >
-                      {isExpanded ? (
-                        <ChevronUp className="w-4 h-4" />
-                      ) : (
-                        <ChevronDown className="w-4 h-4" />
-                      )}
+                      <ChevronDown
+                        className={`w-4 h-4 transition-transform duration-200 ${
+                          isExpanded ? "rotate-180 text-[#1F7A4C]" : ""
+                        }`}
+                      />
                     </button>
                   </div>
                 </div>
@@ -1694,7 +1722,10 @@ export default function ProductosPage() {
 
                 {/* Alerta de precio integrada en la card con botón Recalcular, Ver detalle y Omitir */}
                 {product.isCostOutdated && (
-                  <div className="bg-amber-50/90 border border-amber-200 p-2.5 rounded-2xl flex items-center justify-between text-xs text-amber-900 shadow-2xs gap-2">
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    className="bg-amber-50/90 border border-amber-200 p-2.5 rounded-2xl flex items-center justify-between text-xs text-amber-900 shadow-2xs gap-2 cursor-default"
+                  >
                     <div className="flex items-center gap-1.5 min-w-0 flex-1">
                       <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
                       <span className="text-[11px] font-semibold leading-tight truncate">
@@ -1707,7 +1738,10 @@ export default function ProductosPage() {
                     </div>
                     <div className="flex items-center gap-1.5 flex-shrink-0">
                       <button
-                        onClick={() => setReviewPriceProduct(product)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setReviewPriceProduct(product);
+                        }}
                         className="py-1 px-2.5 bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-xl text-[11px] font-bold flex items-center gap-1 transition cursor-pointer shadow-2xs"
                         title="Ver desglose detallado de insumos modificados"
                       >
@@ -1715,7 +1749,10 @@ export default function ProductosPage() {
                         <span>Ver detalle</span>
                       </button>
                       <button
-                        onClick={() => handleRecalculate(product)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRecalculate(product);
+                        }}
                         disabled={recalculatingId === product.id}
                         className="py-1 px-2.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white rounded-xl text-[11px] font-bold flex items-center gap-1 transition shadow-xs flex-shrink-0 disabled:opacity-50 cursor-pointer"
                         title="Actualizar costo directo, total y precios sugeridos"
@@ -1724,7 +1761,10 @@ export default function ProductosPage() {
                         <span>{recalculatingId === product.id ? "..." : "Recalcular"}</span>
                       </button>
                       <button
-                        onClick={() => handleDismissAlert(product)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDismissAlert(product);
+                        }}
                         className="p-1 text-amber-700 hover:text-neutral-700 hover:bg-amber-100 rounded-lg transition cursor-pointer"
                         title="Omitir alerta por ahora"
                       >
@@ -1736,7 +1776,10 @@ export default function ProductosPage() {
 
                 {/* Vista Desplegada: Desglose de Canales y Costos */}
                 {isExpanded && (
-                  <div className="pt-2 border-t border-neutral-100 space-y-2.5 animate-in fade-in-50 duration-200">
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    className="pt-2 border-t border-neutral-100 space-y-2.5 animate-in fade-in-50 duration-200 cursor-default"
+                  >
                     {/* Alerta explicativa expandida con comparador y botón */}
                     {product.isCostOutdated && (
                       <div className="bg-amber-50 border border-amber-200 p-3 rounded-2xl flex flex-col gap-2.5 text-xs text-amber-900">
