@@ -41,7 +41,6 @@ import { matchesSearch } from "@/lib/search";
 interface SelectedSupply {
   supply: SupplyItem;
   quantity: number | string; // en use_unit
-  waste_percent?: number | string; // % de merma / desperdicio
 }
 
 interface ChannelPrice {
@@ -80,10 +79,9 @@ export default function NuevoProductoPage() {
   const [description, setDescription] = useState("");
   const [step1Errors, setStep1Errors] = useState<{ name?: string; category?: string }>({});
 
-  // Paso 2: Insumos & Packaging (Receta con merma %)
+  // Paso 2: Insumos & Packaging
   const [selectedSupplies, setSelectedSupplies] = useState<SelectedSupply[]>([]);
   const [supplyPickerOpen, setSupplyPickerOpen] = useState(false);
-  const [showWasteInfo, setShowWasteInfo] = useState(false);
   const [supplySearch, setSupplyPickerSearch] = useState("");
   const [isCreateSupplyOpen, setIsCreateSupplyOpen] = useState(false);
   const [newSupplyInitialName, setNewSupplyInitialName] = useState("");
@@ -230,7 +228,7 @@ export default function NuevoProductoPage() {
   }, [name, category, customCategory, description, currentStep, workTimeMinutes, selectedSupplies, selectedComponents, channelPrices]);
 
   // Cálculos reactivos de costos:
-  // 1. Costo directo de insumos (Insumos + Packaging + Merma %)
+  // 1. Costo directo de insumos (Insumos + Packaging)
   const suppliesCost = useMemo(() => {
     return selectedSupplies.reduce((acc, item) => {
       const unitCost = calculateUnitCost(
@@ -239,8 +237,7 @@ export default function NuevoProductoPage() {
         item.supply.conversion_factor
       );
       const q = typeof item.quantity === "number" ? item.quantity : parseFloat(String(item.quantity)) || 0;
-      const wasteFactor = 1 + (Number(item.waste_percent) || 0) / 100;
-      return acc + unitCost * q * wasteFactor;
+      return acc + unitCost * q;
     }, 0);
   }, [selectedSupplies]);
 
@@ -371,7 +368,7 @@ export default function NuevoProductoPage() {
   // Agregar insumo a la receta
   const handleAddSupply = (supply: SupplyItem) => {
     if (selectedSupplies.some((s) => s.supply.id === supply.id)) return;
-    setSelectedSupplies((prev) => [...prev, { supply, quantity: 1, waste_percent: 0 }]);
+    setSelectedSupplies((prev) => [...prev, { supply, quantity: 1 }]);
     setSupplyPickerOpen(false);
   };
 
@@ -394,15 +391,6 @@ export default function NuevoProductoPage() {
     setSelectedSupplies((prev) => {
       const updated = [...prev];
       updated[index].quantity = qty;
-      return updated;
-    });
-  };
-
-  // Cambiar merma % de insumo
-  const handleUpdateSupplyWaste = (index: number, waste: number | string) => {
-    setSelectedSupplies((prev) => {
-      const updated = [...prev];
-      updated[index].waste_percent = waste;
       return updated;
     });
   };
@@ -893,30 +881,16 @@ export default function NuevoProductoPage() {
           {activeRecipeTab === "supplies" && (
             <div className="space-y-3">
               {/* Banner Didáctico Paso 2 */}
-              <div className="bg-[#F0FAF4] border border-[#DCF4D7] rounded-2xl overflow-hidden transition-all">
-                <button
-                  type="button"
-                  onClick={() => setShowWasteInfo(!showWasteInfo)}
-                  className="w-full p-2.5 sm:p-3 flex items-center justify-between text-left hover:bg-[#DCF4D7]/30 transition"
-                >
-                  <div className="flex items-center gap-2">
-                    <div className="w-5 h-5 rounded-lg bg-[#DCF4D7] text-[#1F7A4C] flex items-center justify-center flex-shrink-0">
-                      <Sparkles className="w-3 h-3" />
-                    </div>
-                    <span className="font-bold text-[11px] text-[#1F7A4C]">¿Cómo costear los materiales y la merma?</span>
-                  </div>
-                  <div className="flex items-center gap-1 text-[10px] text-[#1F7A4C] font-semibold bg-white/70 px-2 py-0.5 rounded-full border border-[#DCF4D7]">
-                    <span>{showWasteInfo ? "Ocultar" : "Ver explicación"}</span>
-                    <ChevronRight className={`w-3 h-3 transition-transform ${showWasteInfo ? "rotate-90" : ""}`} />
-                  </div>
-                </button>
-                {showWasteInfo && (
-                  <div className="px-3 pb-3 pt-0.5 text-[11px] leading-snug text-[#555] border-t border-[#DCF4D7]/60 animate-in fade-in duration-150">
-                    <p className="pt-2">
-                      Ingresás la cantidad que lleva 1 producto terminado. Si al cortar o producir hay desperdicio que se pierde, agregá un <strong>% de Merma</strong> (ej: 5% o 10%) para que el costo real quede cubierto.
-                    </p>
-                  </div>
-                )}
+              <div className="bg-[#F0FAF4] border border-[#DCF4D7] rounded-2xl p-3 flex items-start gap-2.5">
+                <div className="w-5 h-5 rounded-lg bg-[#DCF4D7] text-[#1F7A4C] flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <Sparkles className="w-3 h-3" />
+                </div>
+                <div className="text-[11px] leading-relaxed text-[#555]">
+                  <p className="font-bold text-[#1F7A4C] mb-0.5">¿Cómo costear los materiales?</p>
+                  <p>
+                    Ingresás la cantidad exacta que lleva 1 producto terminado. El costo se calcula automáticamente multiplicando esa cantidad por el costo unitario de reposición de cada insumo.
+                  </p>
+                </div>
               </div>
 
               {selectedSupplies.length === 0 ? (
@@ -948,9 +922,7 @@ export default function NuevoProductoPage() {
                       item.supply.conversion_factor
                     );
                     const itemQty = typeof item.quantity === "number" ? item.quantity : parseFloat(String(item.quantity)) || 0;
-                    const wastePercent = Number(item.waste_percent) || 0;
-                    const wasteMultiplier = 1 + wastePercent / 100;
-                    const subtotal = unitCost * itemQty * wasteMultiplier;
+                    const subtotal = unitCost * itemQty;
 
                     return (
                       <div
@@ -970,16 +942,15 @@ export default function NuevoProductoPage() {
                             type="button"
                             onClick={() => handleRemoveSupply(idx)}
                             className="p-1 text-neutral-400 hover:text-rose-500 rounded-lg transition"
-                            title="Quitar de la receta"
+                            title="Quitar de la lista"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-2 pt-1 border-t border-neutral-200/50">
-                          {/* Cantidad consumida */}
-                          <div className="space-y-1">
-                            <label className="text-[11px] font-semibold text-neutral-600">
+                        <div className="flex items-center justify-between pt-2 border-t border-neutral-200/50 gap-3">
+                          <div className="flex items-center gap-2">
+                            <label className="text-[11px] font-semibold text-neutral-600 flex-shrink-0">
                               Cantidad:
                             </label>
                             <div className="flex items-center gap-1">
@@ -990,7 +961,7 @@ export default function NuevoProductoPage() {
                                 value={item.quantity === 0 ? "" : item.quantity}
                                 onChange={(e) => handleUpdateSupplyQty(idx, e.target.value)}
                                 placeholder="1"
-                                className="w-full px-2 py-1 text-xs bg-white border border-neutral-200 rounded-xl text-center font-bold outline-none focus:border-[#3BB578]"
+                                className="w-24 px-2 py-1 text-xs bg-white border border-neutral-200 rounded-xl text-center font-bold outline-none focus:border-[#3BB578]"
                               />
                               <span className="text-[11px] font-semibold text-neutral-500 flex-shrink-0">
                                 {item.supply.use_unit}
@@ -998,38 +969,12 @@ export default function NuevoProductoPage() {
                             </div>
                           </div>
 
-                          {/* Merma % */}
-                          <div className="space-y-1">
-                            <label className="text-[11px] font-semibold text-neutral-600 flex items-center justify-between">
-                              <span>Merma %:</span>
-                              <span className="text-[9px] text-neutral-400">(desperdicio)</span>
-                            </label>
-                            <div className="relative">
-                              <input
-                                type="number"
-                                step="any"
-                                min="0"
-                                max="100"
-                                value={item.waste_percent === 0 ? "" : (item.waste_percent ?? "")}
-                                onChange={(e) =>
-                                  handleUpdateSupplyWaste(idx, e.target.value === "" ? 0 : parseFloat(e.target.value) || 0)
-                                }
-                                placeholder="0"
-                                className="w-full px-2 py-1 text-xs bg-white border border-neutral-200 rounded-xl text-center font-bold outline-none focus:border-[#3BB578]"
-                              />
-                              <span className="absolute right-2 top-1 text-[11px] text-neutral-400 font-bold">%</span>
-                            </div>
+                          <div className="text-right">
+                            <span className="text-[10px] text-neutral-400 block">Subtotal</span>
+                            <span className="font-bold text-[#1F7A4C] text-xs">
+                              {formatCurrency(subtotal)}
+                            </span>
                           </div>
-                        </div>
-
-                        <div className="flex items-center justify-between pt-1 border-t border-neutral-200/40 text-[10.5px]">
-                          <span className="text-neutral-500">
-                            {item.quantity} {item.supply.use_unit}
-                            {wastePercent > 0 && ` (+${wastePercent}% merma)`}
-                          </span>
-                          <span className="font-bold text-[#1F7A4C] text-xs">
-                            Subtotal: {formatCurrency(subtotal)}
-                          </span>
                         </div>
                       </div>
                     );

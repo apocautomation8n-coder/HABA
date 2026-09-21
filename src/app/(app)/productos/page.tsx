@@ -113,7 +113,6 @@ export interface EditSupplyLine {
   use_unit: string;
   unit_cost: number;
   quantity: number | string;
-  waste_percent: number | string;
 }
 
 export interface EditComponentLine {
@@ -539,7 +538,6 @@ export default function ProductosPage() {
         use_unit: s?.use_unit || "u",
         unit_cost: unitCost,
         quantity: ps.quantity || 1,
-        waste_percent: 0,
       };
     });
     setEditSupplies(initialSupplies);
@@ -643,7 +641,6 @@ export default function ProductosPage() {
         use_unit: supply.use_unit || "u",
         unit_cost: unitCost,
         quantity: 1,
-        waste_percent: 0,
       },
     ]);
     setSelectedSupplyToAdd("");
@@ -681,7 +678,6 @@ export default function ProductosPage() {
           use_unit: createdSupply.use_unit || "u",
           unit_cost: unitCost,
           quantity: 1,
-          waste_percent: 0,
         },
       ]);
       setSuccessToast(`¡Insumo "${createdSupply.name}" creado y agregado al producto!`);
@@ -743,8 +739,7 @@ export default function ProductosPage() {
   const editSuppliesCost = useMemo(() => {
     return editSupplies.reduce((acc, curr) => {
       const qty = typeof curr.quantity === "number" ? curr.quantity : parseFloat(String(curr.quantity)) || 0;
-      const waste = typeof curr.waste_percent === "number" ? curr.waste_percent : parseFloat(String(curr.waste_percent)) || 0;
-      return acc + curr.unit_cost * qty * (1 + waste / 100);
+      return acc + curr.unit_cost * qty;
     }, 0);
   }, [editSupplies]);
 
