@@ -36,6 +36,7 @@ import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency, calculateUnitCost } from "@/lib/units";
 import { SupplyModal, SupplyItem } from "@/components/SupplyModal";
+import { CategorySelector } from "@/components/CategorySelector";
 import { PRODUCT_CATEGORIES, serializeProductDescription, SelectedProductComponent, calculateComponentsCost, getCategoryBadge, validateProductYield } from "@/lib/products";
 import { matchesSearch } from "@/lib/search";
 
@@ -71,9 +72,9 @@ export default function NuevoProductoPage() {
   // Configuración de Mano de Obra del usuario
   const [laborMinuteRate, setLaborMinuteRate] = useState<number>(0);
 
-  // Datos del Producto - Paso 1: Básicos y Categoría
+  // Datos del Producto - Paso 1: Datos Básicos
   const [name, setName] = useState("");
-  const [category, setCategory] = useState("");
+  const [category, setCategory] = useState<string>("Papelería & Libretas");
   const [customCategory, setCustomCategory] = useState("");
   const [description, setDescription] = useState("");
   const [step1Errors, setStep1Errors] = useState<{ name?: string; category?: string }>({});
@@ -474,10 +475,8 @@ export default function NuevoProductoPage() {
     if (!name.trim()) {
       errors.name = "El nombre del producto es obligatorio.";
     }
-    if (!category) {
+    if (!category || !category.trim()) {
       errors.category = "Seleccioná una categoría para tu producto.";
-    } else if (category === "otro" && !customCategory.trim()) {
-      errors.category = "Por favor especificá el rubro artesanal de tu producto.";
     }
     setStep1Errors(errors);
     return Object.keys(errors).length === 0;
@@ -532,9 +531,7 @@ export default function NuevoProductoPage() {
       }
 
       // Categoría, rendimiento y estado activo serializados
-      const effectiveCategory = category === "otro" ? customCategory.trim() : category;
-      const categoryLabel =
-        PRODUCT_CATEGORIES.find((c) => c.id === effectiveCategory)?.label || effectiveCategory;
+      const categoryLabel = category.trim();
 
       const finalDescription = serializeProductDescription({
         cleanDescription: description,
@@ -789,54 +786,24 @@ export default function NuevoProductoPage() {
           </div>
 
           {/* Campo: Categoría */}
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             <label className="text-xs font-semibold text-neutral-700 flex items-center justify-between">
               <span>Categoría Artesanal <span className="text-rose-500">*</span></span>
-              <span className="text-[10px] text-neutral-400 font-normal">Seleccioná tu rubro</span>
+              <span className="text-[10px] text-neutral-400 font-normal">Seleccioná o creá tu rubro</span>
             </label>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {PRODUCT_CATEGORIES.map((cat) => {
-                const isSelected = category === cat.id;
-                return (
-                  <button
-                    key={cat.id}
-                    type="button"
-                    onClick={() => {
-                      setCategory(cat.id);
-                      if (step1Errors.category) setStep1Errors((prev) => ({ ...prev, category: undefined }));
-                    }}
-                    className={`p-2.5 rounded-2xl border text-left flex items-center gap-2 transition ${
-                      isSelected
-                        ? "border-[#3BB578] bg-[#DCF4D7]/50 shadow-xs"
-                        : "border-neutral-200 bg-neutral-50 hover:bg-neutral-100/80"
-                    }`}
-                  >
-                    <span className="text-lg">{cat.icon}</span>
-                    <span className={`text-[11px] font-bold leading-tight ${isSelected ? "text-[#1F7A4C]" : "text-neutral-700"}`}>
-                      {cat.label}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {category === "otro" && (
-              <div className="pt-2 animate-in fade-in-50 duration-200">
-                <input
-                  type="text"
-                  value={customCategory}
-                  onChange={(e) => {
-                    setCustomCategory(e.target.value);
-                    if (step1Errors.category) {
-                      setStep1Errors((prev) => ({ ...prev, category: undefined }));
-                    }
-                  }}
-                  placeholder="Especificá tu categoría (Ej: Cosmética natural, Resina epoxi, Joyería...)"
-                  className="w-full px-3.5 py-2 text-xs bg-white border border-[#3BB578] rounded-2xl outline-none focus:ring-2 focus:ring-[#DCF4D7]"
-                />
-              </div>
-            )}
+            <CategorySelector
+              value={category}
+              onChange={(newCat) => {
+                setCategory(newCat);
+                if (step1Errors.category) {
+                  setStep1Errors((prev) => ({ ...prev, category: undefined }));
+                }
+              }}
+              existingProducts={availableProducts}
+              supabase={supabase}
+              error={step1Errors.category}
+            />
 
             {step1Errors.category && (
               <p className="text-[11px] text-rose-500 flex items-center gap-1 mt-1 font-medium">

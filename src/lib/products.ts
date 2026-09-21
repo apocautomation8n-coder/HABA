@@ -216,12 +216,247 @@ export function getCategoryBadge(categoryStr?: string) {
     };
   }
 
+  const stored = getStoredCustomCategories();
+  const matchedCustom = stored.find(
+    (c) => c.label.toLowerCase() === (categoryStr || "").toLowerCase()
+  );
+  if (matchedCustom) {
+    return {
+      label: matchedCustom.label,
+      icon: matchedCustom.icon || "🏷️",
+      color: matchedCustom.color || "#1F7A4C",
+      bgColor: matchedCustom.bgColor || "#DCF4D7",
+    };
+  }
+
   return {
     label: categoryStr || "Otro",
     icon: "✨",
     color: "#374151",
     bgColor: "#F3F4F6",
   };
+}
+
+export interface CustomCategoryItem {
+  id: string;
+  label: string;
+  icon: string;
+  color?: string;
+  bgColor?: string;
+  isCustom?: boolean;
+}
+
+const CUSTOM_CATEGORIES_STORAGE_KEY = "haba_custom_product_categories";
+
+/**
+ * Obtiene las categorías personalizadas guardadas en localStorage
+ */
+export function getStoredCustomCategories(): CustomCategoryItem[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(CUSTOM_CATEGORIES_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Guarda las categorías personalizadas en localStorage
+ */
+export function saveStoredCustomCategories(cats: CustomCategoryItem[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(CUSTOM_CATEGORIES_STORAGE_KEY, JSON.stringify(cats));
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Obtiene la lista completa y unificada de categorías (presets + personalizadas + categorías de productos existentes)
+ */
+export function getAllProductCategories(existingProducts?: { description?: string | null }[]): CustomCategoryItem[] {
+  const baseCategories: CustomCategoryItem[] = PRODUCT_CATEGORIES.map((cat) => ({
+    id: cat.id,
+    label: cat.label,
+    icon: cat.icon,
+    color: cat.color,
+    bgColor: cat.bgColor,
+    isCustom: false,
+  }));
+
+  const storedCustom = getStoredCustomCategories();
+  const categoryMap = new Map<string, CustomCategoryItem>();
+
+  for (const cat of baseCategories) {
+    categoryMap.set(cat.label.toLowerCase(), cat);
+  }
+
+  for (const cat of storedCustom) {
+    categoryMap.set(cat.label.toLowerCase(), { ...cat, isCustom: true });
+  }
+
+  // Extraer también cualquier categoría presente en los productos existentes
+  if (existingProducts && Array.isArray(existingProducts)) {
+    for (const p of existingProducts) {
+      const meta = parseProductMeta(p.description);
+      if (meta.category && meta.category.trim() && !categoryMap.has(meta.category.toLowerCase())) {
+        const newCat: CustomCategoryItem = {
+          id: `custom-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+          label: meta.category.trim(),
+          icon: meta.categoryIcon || "🏷️",
+          color: "#1F7A4C",
+          bgColor: "#DCF4D7",
+          isCustom: true,
+        };
+        categoryMap.set(meta.category.toLowerCase(), newCat);
+      }
+    }
+  }
+
+  return Array.from(categoryMap.values());
+}
+
+/**
+ * Crea una nueva categoría personalizada
+ */
+export function createProductCategory(label: string, icon: string = "🏷️"): CustomCategoryItem {
+  const trimmedLabel = label.trim();
+  const existing = getStoredCustomCategories();
+  const id = `custom-${Date.now()}`;
+  const newCat: CustomCategoryItem = {
+    id,
+    label: trimmedLabel,
+    icon: icon || "🏷️",
+    color: "#1F7A4C",
+    bgColor: "#DCF4D7",
+    isCustom: true,
+  };
+
+  // Evitar duplicados por nombre
+  const filtered = existing.filter((c) => c.label.toLowerCase() !== trimmedLabel.toLowerCase());
+  const updated = [...filtered, newCat];
+  saveStoredCustomCategories(updated);
+  return newCat;
+}
+
+/**
+ * Renombra una categoría personalizada y actualiza en Supabase todos los productos que la utilicen
+ */
+export async function updateProductCategory(
+  oldLabel: string,
+  newLabel: string,
+  newIcon?: string,
+  supabase?: any
+): Promise<{ updatedCount: number }> {
+  const trimmedOld = oldLabel.trim();
+  const trimmedNew = newLabel.trim();
+  if (!trimmedNew || trimmedOld.toLowerCase() === trimmedNew.toLowerCase()) {
+    return { updatedCount: 0 };
+  }
+
+  // 1. Actualizar en localStorage
+  const stored = getStoredCustomCategories();
+  const updatedStored = stored.map((cat) => {
+    if (cat.label.toLowerCase() === trimmedOld.toLowerCase()) {
+      return {
+        ...cat,
+        label: trimmedNew,
+        icon: newIcon || cat.icon || "🏷️",
+      };
+    }
+    return cat;
+  });
+  saveStoredCustomCategories(updatedStored);
+
+  // 2. Actualizar productos en Supabase si se provee el cliente
+  let updatedCount = 0;
+  if (supabase) {
+    try {
+      const { data: products } = await supabase
+        .from("products")
+        .select("id, description");
+
+      if (products && products.length > 0) {
+        for (const prod of products) {
+          const meta = parseProductMeta(prod.description);
+          if (meta.category.toLowerCase() === trimmedOld.toLowerCase()) {
+            const updatedDescription = serializeProductDescription({
+              cleanDescription: meta.cleanDescription,
+              category: trimmedNew,
+              isActive: meta.isActive,
+              yieldValue: meta.yield,
+            });
+
+            await supabase
+              .from("products")
+              .update({ description: updatedDescription })
+              .eq("id", prod.id);
+
+            updatedCount++;
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Error al actualizar productos tras renombrar categoría:", err);
+    }
+  }
+
+  return { updatedCount };
+}
+
+/**
+ * Elimina una categoría personalizada y reasigna los productos que la utilicen a 'Otro' en Supabase
+ */
+export async function deleteProductCategory(
+  label: string,
+  supabase?: any,
+  reassignTo: string = "Otro"
+): Promise<{ affectedCount: number }> {
+  const trimmed = label.trim();
+
+  // 1. Eliminar de localStorage
+  const stored = getStoredCustomCategories();
+  const updatedStored = stored.filter((c) => c.label.toLowerCase() !== trimmed.toLowerCase());
+  saveStoredCustomCategories(updatedStored);
+
+  // 2. Reasignar productos en Supabase si se provee el cliente
+  let affectedCount = 0;
+  if (supabase) {
+    try {
+      const { data: products } = await supabase
+        .from("products")
+        .select("id, description");
+
+      if (products && products.length > 0) {
+        for (const prod of products) {
+          const meta = parseProductMeta(prod.description);
+          if (meta.category.toLowerCase() === trimmed.toLowerCase()) {
+            const updatedDescription = serializeProductDescription({
+              cleanDescription: meta.cleanDescription,
+              category: reassignTo,
+              isActive: meta.isActive,
+              yieldValue: meta.yield,
+            });
+
+            await supabase
+              .from("products")
+              .update({ description: updatedDescription })
+              .eq("id", prod.id);
+
+            affectedCount++;
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Error al reasignar productos tras eliminar categoría:", err);
+    }
+  }
+
+  return { affectedCount };
 }
 
 /**

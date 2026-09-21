@@ -40,9 +40,11 @@ import {
   ProductCategory,
   wouldCreateCircularDependency,
   validateProductYield,
+  getAllProductCategories,
 } from "@/lib/products";
 import { matchesSearch } from "@/lib/search";
 import { SupplyModal, SupplyItem } from "@/components/SupplyModal";
+import { CategorySelector } from "@/components/CategorySelector";
 
 interface ProductPrice {
   id: string;
@@ -1052,16 +1054,17 @@ export default function ProductosPage() {
     };
   }, [productsWithMeta]);
 
-  // Categorías que tienen al menos un producto, o las predefinidas
+  // Categorías que tienen al menos un producto, o las predefinidas y personalizadas
   const activeCategories = useMemo(() => {
-    return PRODUCT_CATEGORIES.map((cat) => ({
+    const allCats = getAllProductCategories(products);
+    return allCats.map((cat) => ({
       ...cat,
       count:
         counts.byCategory[cat.id.toLowerCase()] ||
         counts.byCategory[cat.label.toLowerCase()] ||
         0,
     }));
-  }, [counts.byCategory]);
+  }, [counts.byCategory, products]);
 
   // Filtrado de productos
   const filteredProducts = useMemo(() => {
@@ -1077,7 +1080,8 @@ export default function ProductosPage() {
 
       // 2. Filtro por categoría
       if (selectedCategory !== "all") {
-        const selectedObj = PRODUCT_CATEGORIES.find((c) => c.id === selectedCategory);
+        const allCats = getAllProductCategories(products);
+        const selectedObj = allCats.find((c) => c.id === selectedCategory || c.label.toLowerCase() === selectedCategory.toLowerCase());
         const matchCat =
           p.meta.category.toLowerCase() === selectedCategory.toLowerCase() ||
           (selectedObj && p.meta.category.toLowerCase() === selectedObj.label.toLowerCase());
@@ -1999,17 +2003,13 @@ export default function ProductosPage() {
                   <label className="text-[11px] font-semibold text-neutral-700 block mb-1">
                     Categoría:
                   </label>
-                  <select
+                  <CategorySelector
                     value={editCategory}
-                    onChange={(e) => setEditCategory(e.target.value)}
-                    className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl outline-none focus:bg-white focus:border-[#3BB578]"
-                  >
-                    {PRODUCT_CATEGORIES.map((cat) => (
-                      <option key={cat.id} value={cat.label}>
-                        {cat.icon} {cat.label}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(newCat) => setEditCategory(newCat)}
+                    existingProducts={products}
+                    supabase={supabase}
+                    onCategoriesChanged={loadProducts}
+                  />
                 </div>
 
                 <div>
