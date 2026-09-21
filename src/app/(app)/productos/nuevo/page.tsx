@@ -36,7 +36,7 @@ import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency, calculateUnitCost } from "@/lib/units";
 import { SupplyModal, SupplyItem } from "@/components/SupplyModal";
-import { PRODUCT_CATEGORIES, serializeProductDescription, SelectedProductComponent, calculateComponentsCost, getCategoryBadge } from "@/lib/products";
+import { PRODUCT_CATEGORIES, serializeProductDescription, SelectedProductComponent, calculateComponentsCost, getCategoryBadge, validateProductYield } from "@/lib/products";
 import { matchesSearch } from "@/lib/search";
 
 interface SelectedSupply {
@@ -85,6 +85,9 @@ export default function NuevoProductoPage() {
   const [isCreateSupplyOpen, setIsCreateSupplyOpen] = useState(false);
   const [newSupplyInitialName, setNewSupplyInitialName] = useState("");
   const [successToast, setSuccessToast] = useState<string | null>(null);
+
+  // Rendimiento de la receta / lote (Batch size)
+  const [yieldValue, setYieldValue] = useState<number | string>(1);
 
   // Paso 2: Subproductos / Componentes de otros productos
   const [availableProducts, setAvailableProducts] = useState<any[]>([]);
@@ -187,6 +190,7 @@ export default function NuevoProductoPage() {
         if (draft.description) setDescription(draft.description);
         if (draft.currentStep) setCurrentStep(draft.currentStep);
         if (draft.workTimeMinutes) setWorkTimeMinutes(draft.workTimeMinutes);
+        if (draft.yieldValue !== undefined) setYieldValue(draft.yieldValue);
         if (draft.selectedSupplies && Array.isArray(draft.selectedSupplies)) {
           setSelectedSupplies(draft.selectedSupplies);
         }
@@ -215,6 +219,7 @@ export default function NuevoProductoPage() {
             description,
             currentStep,
             workTimeMinutes,
+            yieldValue,
             selectedSupplies,
             selectedComponents,
             channelPrices,
@@ -224,11 +229,11 @@ export default function NuevoProductoPage() {
     } catch {
       // ignore
     }
-  }, [name, category, customCategory, description, currentStep, workTimeMinutes, selectedSupplies, selectedComponents, channelPrices]);
+  }, [name, category, customCategory, description, currentStep, workTimeMinutes, yieldValue, selectedSupplies, selectedComponents, channelPrices]);
 
-  // Cálculos reactivos de costos:
-  // 1. Costo directo de insumos (Insumos + Packaging)
-  const suppliesCost = useMemo(() => {
+  // Cálculos reactivos de costos por Lote (Batch) y Unitarios:
+  // 1. Costo directo de insumos del lote (Insumos + Packaging)
+  const batchSuppliesCost = useMemo(() => {
     return selectedSupplies.reduce((acc, item) => {
       const unitCost = calculateUnitCost(
         item.supply.current_price,
@@ -240,27 +245,53 @@ export default function NuevoProductoPage() {
     }, 0);
   }, [selectedSupplies]);
 
-  // 1.b. Costo base aportado por Subproductos / Componentes
-  const componentsCost = useMemo(() => {
+  // 1.b. Costo base aportado por Subproductos / Componentes del lote
+  const batchComponentsCost = useMemo(() => {
     return calculateComponentsCost(selectedComponents);
   }, [selectedComponents]);
 
-  // Costo directo total (Insumos + Subproductos)
-  const directCost = useMemo(() => {
-    return suppliesCost + componentsCost;
-  }, [suppliesCost, componentsCost]);
+  // Costo directo total del lote (Insumos + Subproductos)
+  const batchDirectCost = useMemo(() => {
+    return batchSuppliesCost + batchComponentsCost;
+  }, [batchSuppliesCost, batchComponentsCost]);
 
-  // 2. Costo de Mano de Obra
-  const laborCost = useMemo(() => {
+  // 2. Costo de Mano de Obra del lote
+  const batchLaborCost = useMemo(() => {
     if (!includeLabor) return 0;
     const mins = typeof workTimeMinutes === "number" ? workTimeMinutes : parseFloat(String(workTimeMinutes)) || 0;
     return mins * (laborMinuteRate || 0);
   }, [includeLabor, workTimeMinutes, laborMinuteRate]);
 
-  // 3. Costo Total Unitario (Materiales + Mano de obra según tiempo y objetivo mensual)
-  const totalCost = useMemo(() => {
-    return directCost + laborCost;
-  }, [directCost, laborCost]);
+  // Costo Total del Lote
+  const batchTotalCost = useMemo(() => {
+    return batchDirectCost + batchLaborCost;
+  }, [batchDirectCost, batchLaborCost]);
+
+  // Rendimiento seguro (mínimo 1)
+  const safeYield = useMemo(() => {
+    const y = typeof yieldValue === "number" ? yieldValue : parseFloat(String(yieldValue)) || 1;
+    return y > 0 ? y : 1;
+  }, [yieldValue]);
+
+  // Costos Unitarios Resultantes (por producto individual)
+  const unitDirectCost = useMemo(() => {
+    return batchDirectCost / safeYield;
+  }, [batchDirectCost, safeYield]);
+
+  const unitLaborCost = useMemo(() => {
+    return batchLaborCost / safeYield;
+  }, [batchLaborCost, safeYield]);
+
+  const unitTotalCost = useMemo(() => {
+    return batchTotalCost / safeYield;
+  }, [batchTotalCost, safeYield]);
+
+  // Aliases para compatibilidad con canales de venta y guardado
+  const totalCost = unitTotalCost;
+  const directCost = unitDirectCost;
+  const laborCost = unitLaborCost;
+  const suppliesCost = batchSuppliesCost;
+  const componentsCost = batchComponentsCost;
 
   // Actualizar precios sugeridos de canales cuando cambia el totalCost
   useEffect(() => {
@@ -492,7 +523,15 @@ export default function NuevoProductoPage() {
 
       if (!user) throw new Error("Sesión no válida");
 
-      // Categoría y estado activo serializados
+      // Validar rendimiento
+      const yieldValidation = validateProductYield(yieldValue);
+      if (!yieldValidation.isValid) {
+        setErrorMsg(yieldValidation.error || "El rendimiento debe ser un número mayor a 0.");
+        setCurrentStep(2);
+        return;
+      }
+
+      // Categoría, rendimiento y estado activo serializados
       const effectiveCategory = category === "otro" ? customCategory.trim() : category;
       const categoryLabel =
         PRODUCT_CATEGORIES.find((c) => c.id === effectiveCategory)?.label || effectiveCategory;
@@ -501,9 +540,10 @@ export default function NuevoProductoPage() {
         cleanDescription: description,
         category: categoryLabel,
         isActive: true,
+        yieldValue: yieldValidation.value,
       });
 
-      // 1. Insertar en tabla products
+      // 1. Insertar en tabla products (costos unitarios normalizados)
       const mins = typeof workTimeMinutes === "number" ? workTimeMinutes : parseFloat(String(workTimeMinutes)) || 0;
       const ind = typeof indirectCost === "number" ? indirectCost : parseFloat(String(indirectCost)) || 0;
       const { data: productData, error: productError } = await supabase
@@ -514,10 +554,10 @@ export default function NuevoProductoPage() {
           description: finalDescription || null,
           work_time_minutes: includeLabor ? mins : 0,
           include_labor: includeLabor,
-          direct_cost: directCost,
-          labor_cost: laborCost,
+          direct_cost: Math.round(unitDirectCost * 100) / 100,
+          labor_cost: Math.round(unitLaborCost * 100) / 100,
           indirect_cost: ind,
-          total_cost: totalCost,
+          total_cost: Math.round(unitTotalCost * 100) / 100,
           needs_price_review: false,
         })
         .select()
@@ -844,10 +884,66 @@ export default function NuevoProductoPage() {
               <div>
                 <h3 className="text-sm font-bold text-neutral-800">2. Insumos y Subproductos Componentes</h3>
                 <p className="text-[11px] text-neutral-400">
-                  Agregá lo que consume 1 unidad (materias primas y productos registrados que formen parte de este producto)
+                  Cargá los materiales para 1 producto o para un lote completo indicando el rendimiento (ej. 10 unidades)
                 </p>
               </div>
             </div>
+          </div>
+
+          {/* Tarjeta de Rendimiento del Lote / Tanda */}
+          <div className="p-3.5 bg-neutral-50 rounded-2xl border border-neutral-200/90 space-y-2">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <label className="text-xs font-bold text-neutral-800 flex items-center gap-1.5">
+                  <Layers className="w-3.5 h-3.5 text-[#3BB578]" />
+                  <span>Rendimiento de la Receta / Lote</span>
+                </label>
+                <p className="text-[11px] text-neutral-500">
+                  ¿Cuántas unidades producís con esta receta de materiales? (Ej: 10 unidades)
+                </p>
+              </div>
+              <div className="flex items-center gap-1.5 self-start sm:self-auto">
+                <button
+                  type="button"
+                  onClick={() => setYieldValue((prev) => Math.max(1, (Number(prev) || 1) - 1))}
+                  className="w-7 h-7 bg-white hover:bg-neutral-100 border border-neutral-200 rounded-lg text-xs font-bold text-neutral-600 flex items-center justify-center transition shadow-2xs"
+                  title="Disminuir rendimiento"
+                >
+                  -
+                </button>
+                <div className="flex items-center bg-white px-2.5 py-1 rounded-xl border border-neutral-200 focus-within:border-[#3BB578] focus-within:ring-2 focus-within:ring-[#3BB578]/10 transition shadow-2xs">
+                  <input
+                    type="number"
+                    min="1"
+                    step="any"
+                    value={yieldValue}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setYieldValue(val === "" ? "" : Math.max(0, parseFloat(val) || 0));
+                    }}
+                    placeholder="1"
+                    className="w-14 text-center text-xs font-black text-[#1F7A4C] outline-none bg-transparent"
+                  />
+                  <span className="text-[11px] font-bold text-neutral-400 ml-1">unidades</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setYieldValue((prev) => (Number(prev) || 0) + 1)}
+                  className="w-7 h-7 bg-white hover:bg-neutral-100 border border-neutral-200 rounded-lg text-xs font-bold text-neutral-600 flex items-center justify-center transition shadow-2xs"
+                  title="Aumentar rendimiento"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+
+            {safeYield > 1 && (
+              <div className="pt-2 border-t border-neutral-200/60 flex items-center justify-between text-[11px] text-[#1F7A4C] bg-[#DCF4D7]/40 px-2.5 py-1 rounded-xl font-medium">
+                <span>Costo total del lote: <strong>{formatCurrency(batchDirectCost)}</strong></span>
+                <span>÷ {safeYield} u =</span>
+                <span>Costo unitario materiales: <strong>{formatCurrency(unitDirectCost)} / u</strong></span>
+              </div>
+            )}
           </div>
 
           {/* Selector de Pestañas en Paso 2: Insumos vs Subproductos */}
@@ -1115,18 +1211,29 @@ export default function NuevoProductoPage() {
 
           {/* Tarjeta de Resumen Combinado de Costos de Materiales */}
           {(selectedSupplies.length > 0 || selectedComponents.length > 0) && (
-            <div className="p-3 bg-[#F0FAF4] border border-[#C3EBC0] rounded-2xl flex items-center justify-between text-xs mt-2">
-              <div>
-                <span className="text-[11px] font-bold text-[#1F7A4C] block">
-                  Total Materiales y Subproductos:
-                </span>
-                <span className="text-[10px] text-[#2E9E65]">
-                  Insumos: {formatCurrency(suppliesCost)} | Subproductos: {formatCurrency(componentsCost)}
+            <div className="p-3 bg-[#F0FAF4] border border-[#C3EBC0] rounded-2xl text-xs mt-2 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-[11px] font-bold text-[#1F7A4C] block">
+                    {safeYield > 1 ? "Costo Total del Lote (Materiales):" : "Total Materiales y Subproductos:"}
+                  </span>
+                  <span className="text-[10px] text-[#2E9E65]">
+                    Insumos: {formatCurrency(suppliesCost)} | Subproductos: {formatCurrency(componentsCost)}
+                  </span>
+                </div>
+                <span className="text-sm font-black text-[#1F7A4C] font-display">
+                  {formatCurrency(batchDirectCost)}
                 </span>
               </div>
-              <span className="text-sm font-black text-[#1F7A4C] font-display">
-                {formatCurrency(directCost)}
-              </span>
+
+              {safeYield > 1 && (
+                <div className="pt-1.5 border-t border-[#C3EBC0]/70 flex items-center justify-between text-[11px] text-[#1F7A4C] font-bold">
+                  <span>Costo Unitario Resultante ({safeYield} unidades):</span>
+                  <span className="text-sm font-black text-[#1F7A4C] bg-[#DCF4D7] px-2 py-0.5 rounded-lg border border-[#3BB578]/30">
+                    {formatCurrency(unitDirectCost)} / u
+                  </span>
+                </div>
+              )}
             </div>
           )}
 
@@ -1318,7 +1425,16 @@ export default function NuevoProductoPage() {
                 <div className="w-5 h-5 rounded-lg bg-[#DCF4D7] text-[#1F7A4C] flex items-center justify-center flex-shrink-0">
                   <Sparkles className="w-3 h-3" />
                 </div>
-                <span className="font-bold text-[11px] text-[#1F7A4C]">Costo base: {formatCurrency(totalCost)}</span>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-bold text-[11px] text-[#1F7A4C]">
+                    Costo Base Unitario: {formatCurrency(totalCost)}
+                  </span>
+                  {safeYield > 1 && (
+                    <span className="text-[10px] bg-white text-[#1F7A4C] px-2 py-0.5 rounded-full border border-[#DCF4D7] font-semibold">
+                      Lote de {safeYield} u: {formatCurrency(batchTotalCost)}
+                    </span>
+                  )}
+                </div>
               </div>
               <div className="flex items-center gap-1 text-[10px] text-[#1F7A4C] font-semibold bg-white/70 px-2 py-0.5 rounded-full border border-[#DCF4D7]">
                 <span>{showChannelInfo ? "Ocultar" : "Ver explicación"}</span>

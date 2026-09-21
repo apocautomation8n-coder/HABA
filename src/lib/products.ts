@@ -25,6 +25,7 @@ export interface ParsedProductMeta {
   category: string;
   categoryIcon: string;
   isActive: boolean;
+  yield: number;
   cleanDescription: string;
 }
 
@@ -37,6 +38,7 @@ export function parseProductMeta(rawDescription?: string | null): ParsedProductM
       category: "Otro",
       categoryIcon: "✨",
       isActive: true,
+      yield: 1,
       cleanDescription: "",
     };
   }
@@ -45,6 +47,7 @@ export function parseProductMeta(rawDescription?: string | null): ParsedProductM
   let categoryLabel = "Otro";
   let categoryIcon = "✨";
   let isActive = true;
+  let yieldVal = 1;
 
   // 1. Extraer [Categoría: ...]
   const catMatch = text.match(/\[Categoría:\s*([^\]]+)\]/i);
@@ -76,13 +79,24 @@ export function parseProductMeta(rawDescription?: string | null): ParsedProductM
     text = text.replace(statusMatch[0], "");
   }
 
-  // 3. Limpiar cualquier tag residual de foto si existiese
+  // 3. Extraer [Rendimiento: ...]
+  const yieldMatch = text.match(/\[Rendimiento:\s*([0-9]+(?:\.[0-9]+)?)\]/i);
+  if (yieldMatch) {
+    const parsed = parseFloat(yieldMatch[1]);
+    if (!isNaN(parsed) && parsed > 0) {
+      yieldVal = parsed;
+    }
+    text = text.replace(yieldMatch[0], "");
+  }
+
+  // 4. Limpiar cualquier tag residual de foto si existiese
   text = text.replace(/\[Foto:\s*[^\]]+\]/gi, "");
 
   return {
     category: categoryLabel,
     categoryIcon,
     isActive,
+    yield: yieldVal,
     cleanDescription: text.trim(),
   };
 }
@@ -94,10 +108,12 @@ export function serializeProductDescription({
   cleanDescription,
   category,
   isActive = true,
+  yieldValue = 1,
 }: {
   cleanDescription?: string;
   category?: string;
   isActive?: boolean;
+  yieldValue?: number;
 }): string {
   const metaTags: string[] = [];
 
@@ -111,12 +127,74 @@ export function serializeProductDescription({
     metaTags.push(`[Estado: Activo]`);
   }
 
+  const safeYield = typeof yieldValue === "number" ? yieldValue : parseFloat(String(yieldValue)) || 1;
+  if (safeYield > 1) {
+    metaTags.push(`[Rendimiento: ${safeYield}]`);
+  }
+
   const clean = (cleanDescription || "").trim();
   if (metaTags.length > 0) {
     return clean ? `${metaTags.join(" ")}\n\n${clean}` : metaTags.join(" ");
   }
 
   return clean;
+}
+
+/**
+ * Valida y normaliza el valor de rendimiento (yield / batch size).
+ * Debe ser un número positivo > 0.
+ */
+export function validateProductYield(val: unknown): { isValid: boolean; value: number; error?: string } {
+  const num = typeof val === "number" ? val : parseFloat(String(val));
+  if (isNaN(num) || num <= 0) {
+    return {
+      isValid: false,
+      value: 1,
+      error: "El rendimiento debe ser un número mayor a 0 (ej. 1, 10, 24).",
+    };
+  }
+  return {
+    isValid: true,
+    value: num,
+  };
+}
+
+/**
+ * Calcula los costos de lote y unitarios según el rendimiento.
+ */
+export function calculateBatchAndUnitCosts({
+  suppliesCost,
+  componentsCost,
+  laborCost = 0,
+  indirectCost = 0,
+  yieldValue = 1,
+}: {
+  suppliesCost: number;
+  componentsCost: number;
+  laborCost?: number;
+  indirectCost?: number;
+  yieldValue?: number;
+}) {
+  const safeYield = yieldValue > 0 ? yieldValue : 1;
+  const batchDirectCost = suppliesCost + componentsCost;
+  const batchTotalCost = batchDirectCost + laborCost + indirectCost;
+
+  const unitDirectCost = batchDirectCost / safeYield;
+  const unitLaborCost = laborCost / safeYield;
+  const unitIndirectCost = indirectCost / safeYield;
+  const unitTotalCost = batchTotalCost / safeYield;
+
+  return {
+    batchDirectCost,
+    batchLaborCost: laborCost,
+    batchIndirectCost: indirectCost,
+    batchTotalCost,
+    unitDirectCost,
+    unitLaborCost,
+    unitIndirectCost,
+    unitTotalCost,
+    yield: safeYield,
+  };
 }
 
 /**
@@ -331,7 +409,11 @@ function calculateOutdatedList(products: any[]): OutdatedProductAlert[] {
       }, 0);
     }
 
-    const costDifference = hasRecipe ? Math.abs(currentMaterialsCost - Number(product.direct_cost)) : 0;
+    const meta = parseProductMeta(product.description);
+    const productYield = meta.yield || 1;
+    const unitMaterialsCost = currentMaterialsCost / productYield;
+
+    const costDifference = hasRecipe ? Math.abs(unitMaterialsCost - Number(product.direct_cost)) : 0;
     const isCostOutdated = Boolean(product.needs_price_review || (hasRecipe && costDifference > 0.5));
 
     if (isCostOutdated) {
@@ -339,7 +421,7 @@ function calculateOutdatedList(products: any[]): OutdatedProductAlert[] {
         id: product.id,
         name: product.name,
         direct_cost: Number(product.direct_cost) || 0,
-        currentMaterialsCost: Math.round(currentMaterialsCost * 100) / 100,
+        currentMaterialsCost: Math.round(unitMaterialsCost * 100) / 100,
         difference: Math.round(costDifference * 100) / 100,
       });
     }

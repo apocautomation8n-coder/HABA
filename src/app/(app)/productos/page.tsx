@@ -39,6 +39,7 @@ import {
   getCategoryBadge,
   ProductCategory,
   wouldCreateCircularDependency,
+  validateProductYield,
 } from "@/lib/products";
 import { matchesSearch } from "@/lib/search";
 import { SupplyModal, SupplyItem } from "@/components/SupplyModal";
@@ -73,6 +74,7 @@ interface Product {
   description?: string | null;
   work_time_minutes: number;
   include_labor: boolean;
+  yield?: number;
   direct_cost: number;
   labor_cost: number;
   indirect_cost: number;
@@ -170,6 +172,7 @@ export default function ProductosPage() {
   const [editDescription, setEditDescription] = useState("");
   const [editCategory, setEditCategory] = useState("");
   const [editWorkMinutes, setEditWorkMinutes] = useState<number | string>(0);
+  const [editYield, setEditYield] = useState<number | string>(1);
   const [savingEdit, setSavingEdit] = useState(false);
   const [isCreateSupplyOpen, setIsCreateSupplyOpen] = useState(false);
   const [editPrices, setEditPrices] = useState<EditPriceLine[]>([]);
@@ -524,6 +527,7 @@ export default function ProductosPage() {
     setEditDescription(meta.cleanDescription || "");
     setEditCategory(meta.category || "");
     setEditWorkMinutes(product.work_time_minutes || 0);
+    setEditYield(meta.yield || 1);
 
     // Cargar insumos actuales de la receta
     const initialSupplies: EditSupplyLine[] = (product.product_supplies || []).map((ps) => {
@@ -747,7 +751,7 @@ export default function ProductosPage() {
     });
   };
 
-  // Costos reactivos del modal de edición
+  // Costos reactivos del modal de edición por Lote y Unitarios
   const editSuppliesCost = useMemo(() => {
     return editSupplies.reduce((acc, curr) => {
       const qty = typeof curr.quantity === "number" ? curr.quantity : parseFloat(String(curr.quantity)) || 0;
@@ -762,16 +766,35 @@ export default function ProductosPage() {
     }, 0);
   }, [editComponents]);
 
-  const editDirectCost = editSuppliesCost + editComponentsCost;
+  const editBatchDirectCost = editSuppliesCost + editComponentsCost;
   const editMins = typeof editWorkMinutes === "number" ? editWorkMinutes : parseFloat(String(editWorkMinutes)) || 0;
-  const editLaborCost = Math.round(editMins * (currentMinuteRate || 0) * 100) / 100;
-  const editTotalCost = Math.round((editDirectCost + editLaborCost) * 100) / 100;
+  const editBatchLaborCost = Math.round(editMins * (currentMinuteRate || 0) * 100) / 100;
+  const editBatchTotalCost = Math.round((editBatchDirectCost + editBatchLaborCost) * 100) / 100;
+
+  const safeEditYield = useMemo(() => {
+    const y = typeof editYield === "number" ? editYield : parseFloat(String(editYield)) || 1;
+    return y > 0 ? y : 1;
+  }, [editYield]);
+
+  const editUnitDirectCost = Math.round((editBatchDirectCost / safeEditYield) * 100) / 100;
+  const editUnitLaborCost = Math.round((editBatchLaborCost / safeEditYield) * 100) / 100;
+  const editUnitTotalCost = Math.round((editBatchTotalCost / safeEditYield) * 100) / 100;
+
+  const editDirectCost = editUnitDirectCost;
+  const editLaborCost = editUnitLaborCost;
+  const editTotalCost = editUnitTotalCost;
 
   // Guardar cambios del modal de edición incluyendo insumos y receta
   const handleSaveEditProduct = async () => {
     if (!editModalProduct || savingEdit) return;
     if (!editName.trim()) {
       alert("El nombre del producto es obligatorio.");
+      return;
+    }
+
+    const yieldValidation = validateProductYield(editYield);
+    if (!yieldValidation.isValid) {
+      alert(yieldValidation.error || "El rendimiento debe ser un número mayor a 0.");
       return;
     }
 
@@ -783,6 +806,7 @@ export default function ProductosPage() {
         cleanDescription: editDescription.trim(),
         category: editCategory || meta.category,
         isActive: meta.isActive,
+        yieldValue: yieldValidation.value,
       });
 
       // 1. Actualizar tabla products
@@ -2258,16 +2282,67 @@ export default function ProductosPage() {
                 )}
               </div>
 
+              {/* Rendimiento del Lote / Tanda en Edición */}
+              <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200/90 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <label className="text-xs font-bold text-neutral-800 flex items-center gap-1.5">
+                      <Layers className="w-3.5 h-3.5 text-[#3BB578]" />
+                      <span>Rendimiento de la Receta / Lote</span>
+                    </label>
+                    <p className="text-[10px] text-neutral-500">
+                      Unidades obtenidas con estos materiales (ej. 10 unidades)
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setEditYield((prev) => Math.max(1, (Number(prev) || 1) - 1))}
+                      className="w-6 h-6 bg-white hover:bg-neutral-100 border border-neutral-200 rounded-lg text-xs font-bold text-neutral-600 flex items-center justify-center transition shadow-2xs"
+                      title="Disminuir rendimiento"
+                    >
+                      -
+                    </button>
+                    <div className="flex items-center bg-white px-2 py-0.5 rounded-lg border border-neutral-200 focus-within:border-[#3BB578] transition shadow-2xs">
+                      <input
+                        type="number"
+                        min="1"
+                        step="any"
+                        value={editYield}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setEditYield(val === "" ? "" : Math.max(0, parseFloat(val) || 0));
+                        }}
+                        placeholder="1"
+                        className="w-12 text-center text-xs font-black text-[#1F7A4C] outline-none bg-transparent"
+                      />
+                      <span className="text-[10px] font-bold text-neutral-400 ml-1">u</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setEditYield((prev) => (Number(prev) || 0) + 1)}
+                      className="w-6 h-6 bg-white hover:bg-neutral-100 border border-neutral-200 rounded-lg text-xs font-bold text-neutral-600 flex items-center justify-center transition shadow-2xs"
+                      title="Aumentar rendimiento"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+              </div>
+
               {/* Resumen Total Actualizado */}
-              <div className="bg-[#DCF4D7] border border-[#C3EBC0] p-3 rounded-2xl space-y-1 text-xs text-[#1F7A4C]">
+              <div className="bg-[#DCF4D7] border border-[#C3EBC0] p-3 rounded-2xl space-y-1.5 text-xs text-[#1F7A4C]">
                 <div className="flex justify-between items-center text-[11px]">
                   <span>
-                    Insumos: <strong>{formatCurrency(editSuppliesCost)}</strong> + Subproductos: <strong>{formatCurrency(editComponentsCost)}</strong> + M.O ({editMins} min): <strong>{formatCurrency(editLaborCost)}</strong>
+                    Lote ({safeEditYield} u): Insumos ({formatCurrency(editSuppliesCost)}) + Subprod. ({formatCurrency(editComponentsCost)}) + M.O ({formatCurrency(editBatchLaborCost)})
                   </span>
+                  <span className="font-bold">{formatCurrency(editBatchTotalCost)}</span>
                 </div>
-                <div className="flex justify-between items-center font-bold pt-1 border-t border-[#C3EBC0]">
-                  <span>Costo Total de Fabricación:</span>
-                  <span className="text-sm font-black text-[#1F7A4C]">{formatCurrency(editTotalCost)}</span>
+                <div className="flex justify-between items-center font-bold pt-1.5 border-t border-[#C3EBC0]">
+                  <span>Costo Unitario Resultante (por unidad):</span>
+                  <span className="text-sm font-black text-[#1F7A4C] bg-white/70 px-2 py-0.5 rounded-lg border border-[#3BB578]/30">
+                    {formatCurrency(editTotalCost)} / u
+                  </span>
                 </div>
               </div>
 
