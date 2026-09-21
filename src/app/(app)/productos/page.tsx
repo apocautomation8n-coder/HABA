@@ -124,6 +124,13 @@ export interface EditComponentLine {
   quantity: number | string;
 }
 
+export interface EditPriceLine {
+  id: string;
+  channel_name: string;
+  profit_margin_percent: number | string;
+  selling_price: number | string;
+}
+
 export default function ProductosPage() {
   const supabase = createClient();
 
@@ -166,6 +173,7 @@ export default function ProductosPage() {
   const [editWorkMinutes, setEditWorkMinutes] = useState<number | string>(0);
   const [savingEdit, setSavingEdit] = useState(false);
   const [isCreateSupplyOpen, setIsCreateSupplyOpen] = useState(false);
+  const [editPrices, setEditPrices] = useState<EditPriceLine[]>([]);
 
   // Mapeo de todas las relaciones existentes para prevención de ciclos
   const allRelations = useMemo(() => {
@@ -552,6 +560,65 @@ export default function ProductosPage() {
     setEditComponents(initialComponents);
     setSelectedComponentToAdd("");
     setEditRecipeTab("supplies");
+
+    // Cargar precios por canal actuales para edición
+    setEditPrices(
+      (product.product_prices || []).map((p) => ({
+        id: p.id,
+        channel_name: p.channel_name,
+        profit_margin_percent: p.profit_margin_percent ?? 0,
+        selling_price: p.selling_price ?? 0,
+      }))
+    );
+  };
+
+  // Modificar margen % de un canal -> actualiza precio de venta
+  const handleUpdatePriceMargin = (index: number, newMarginStr: string) => {
+    setEditPrices((prev) => {
+      const updated = [...prev];
+      if (newMarginStr === "") {
+        updated[index] = {
+          ...updated[index],
+          profit_margin_percent: "",
+          selling_price: Math.round(editTotalCost),
+        };
+        return updated;
+      }
+      const margin = parseFloat(newMarginStr) || 0;
+      const calculatedSelling = Math.round(editTotalCost * (1 + margin / 100));
+      updated[index] = {
+        ...updated[index],
+        profit_margin_percent: margin,
+        selling_price: calculatedSelling,
+      };
+      return updated;
+    });
+  };
+
+  // Modificar precio de venta manual de un canal -> actualiza margen %
+  const handleUpdatePriceSelling = (index: number, newPriceStr: string) => {
+    setEditPrices((prev) => {
+      const updated = [...prev];
+      if (newPriceStr === "") {
+        updated[index] = {
+          ...updated[index],
+          selling_price: "",
+          profit_margin_percent: 0,
+        };
+        return updated;
+      }
+      const selling = parseFloat(newPriceStr) || 0;
+      let margin = 0;
+      if (editTotalCost > 0) {
+        margin = Math.round(((selling - editTotalCost) / editTotalCost) * 1000) / 10;
+      }
+      updated[index] = {
+        ...updated[index],
+        selling_price: selling,
+        profit_margin_percent: margin,
+      };
+      return updated;
+    });
   };
 
   // Agregar insumo a la receta en edición
@@ -560,7 +627,7 @@ export default function ProductosPage() {
     const supply = allSupplies.find((s) => s.id === supplyId);
     if (!supply) return;
     if (editSupplies.some((es) => es.supply_id === supplyId)) {
-      alert("Este insumo ya está en la receta del producto.");
+      alert("Este insumo ya está agregado al producto.");
       return;
     }
     const unitCost = calculateUnitCost(
@@ -617,7 +684,7 @@ export default function ProductosPage() {
           waste_percent: 0,
         },
       ]);
-      setSuccessToast(`¡Insumo "${createdSupply.name}" creado y agregado a la receta!`);
+      setSuccessToast(`¡Insumo "${createdSupply.name}" creado y agregado al producto!`);
       setTimeout(() => setSuccessToast(null), 4000);
     }
   };
@@ -767,20 +834,40 @@ export default function ProductosPage() {
         console.warn("Error con product_components:", errComp);
       }
 
-      // 3. Actualizar precios por canal manteniendo margen %
-      if (editModalProduct.product_prices && editModalProduct.product_prices.length > 0) {
-        for (const price of editModalProduct.product_prices) {
-          const newSelling = Math.round(editTotalCost * (1 + (price.profit_margin_percent || 0) / 100));
-          await supabase
-            .from("product_prices")
-            .update({ selling_price: newSelling })
-            .eq("id", price.id);
+      // 3. Actualizar precios por canal en product_prices
+      if (editPrices.length > 0) {
+        for (const price of editPrices) {
+          const finalMargin =
+            typeof price.profit_margin_percent === "number"
+              ? price.profit_margin_percent
+              : parseFloat(String(price.profit_margin_percent)) || 0;
+          const finalSelling =
+            typeof price.selling_price === "number"
+              ? price.selling_price
+              : parseFloat(String(price.selling_price)) || 0;
+
+          if (price.id && !price.id.startsWith("new-")) {
+            await supabase
+              .from("product_prices")
+              .update({
+                profit_margin_percent: finalMargin,
+                selling_price: finalSelling,
+              })
+              .eq("id", price.id);
+          } else {
+            await supabase.from("product_prices").insert({
+              product_id: editModalProduct.id,
+              channel_name: price.channel_name || "General",
+              profit_margin_percent: finalMargin,
+              selling_price: finalSelling,
+            });
+          }
         }
       }
 
       setEditModalProduct(null);
       await loadProducts();
-      setSuccessToast(`¡Producto "${editName.trim()}" actualizado correctamente con sus insumos!`);
+      setSuccessToast(`¡Producto "${editName.trim()}" actualizado correctamente con sus precios e insumos!`);
       setTimeout(() => {
         setSuccessToast(null);
       }, 4000);
@@ -1510,59 +1597,6 @@ export default function ProductosPage() {
                       </div>
                     )}
 
-                    {/* Detalle de Receta / Insumos que componen el producto (Punto H) */}
-                    <div className="bg-neutral-50 p-3 rounded-2xl border border-neutral-200/60 text-xs space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider block">
-                          Insumos y Packaging que lo componen:
-                        </span>
-                        <button
-                          onClick={() => handleOpenEdit(product)}
-                          className="text-[11px] font-bold text-[#1F7A4C] hover:text-[#165837] flex items-center gap-1 transition"
-                        >
-                          <Pencil className="w-3 h-3" />
-                          <span>Editar</span>
-                        </button>
-                      </div>
-
-                      {product.product_supplies && product.product_supplies.length > 0 ? (
-                        <div className="space-y-1">
-                          {product.product_supplies.map((ps) => {
-                            if (!ps.supplies) return null;
-                            const unitCost = calculateUnitCost(
-                              ps.supplies.current_price,
-                              ps.supplies.purchase_quantity || 1,
-                              ps.supplies.conversion_factor || 1
-                            );
-                            const subtotal = unitCost * (ps.quantity || 0);
-
-                            return (
-                              <div
-                                key={ps.id}
-                                className="flex items-center justify-between text-[11px] bg-white p-2 rounded-xl border border-neutral-200/60"
-                              >
-                                <div>
-                                  <span className="font-semibold text-neutral-800 block">
-                                    {ps.supplies.name}
-                                  </span>
-                                  <span className="text-[10px] text-neutral-400">
-                                    {ps.quantity} {ps.supplies.use_unit} × {formatCurrency(unitCost)}
-                                  </span>
-                                </div>
-                                <span className="font-bold text-[#1F7A4C]">
-                                  {formatCurrency(subtotal)}
-                                </span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        <p className="text-[11px] text-neutral-400 italic">
-                          Sin receta de insumos registrada.
-                        </p>
-                      )}
-                    </div>
-
                     {/* Desglose de costos */}
                     <div className="bg-neutral-50 p-3 rounded-2xl border border-neutral-200/60 text-xs space-y-1">
                       <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider block">
@@ -1585,17 +1619,26 @@ export default function ProductosPage() {
                       )}
                     </div>
 
-                    {/* Desglose de Insumos y Materiales de la Receta */}
+                    {/* Insumos y Packaging que lo componen (Única sección consolidada) */}
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
                         <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider flex items-center gap-1.5">
                           <Boxes className="w-3.5 h-3.5 text-[#3BB578]" />
-                          Insumos de la Receta:
+                          Insumos y Packaging:
                         </span>
-                        <span className="text-[10px] text-neutral-400 font-medium">
-                          {product.product_supplies?.length || 0}{" "}
-                          {product.product_supplies?.length === 1 ? "insumo" : "insumos"}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-neutral-400 font-medium">
+                            {product.product_supplies?.length || 0}{" "}
+                            {product.product_supplies?.length === 1 ? "insumo" : "insumos"}
+                          </span>
+                          <button
+                            onClick={() => handleOpenEdit(product)}
+                            className="text-[11px] font-bold text-[#1F7A4C] hover:text-[#165837] flex items-center gap-1 transition ml-1"
+                          >
+                            <Pencil className="w-3 h-3" />
+                            <span>Editar</span>
+                          </button>
+                        </div>
                       </div>
 
                       {product.product_supplies && product.product_supplies.length > 0 ? (
@@ -1614,15 +1657,15 @@ export default function ProductosPage() {
                             return (
                               <div
                                 key={item.id}
-                                className="p-2.5 bg-neutral-50/80 rounded-2xl border border-neutral-200/60 flex items-center justify-between text-xs hover:bg-neutral-50 transition"
+                                className="p-2.5 bg-neutral-50/80 rounded-2xl border border-neutral-200/60 flex items-center justify-between text-xs hover:bg-neutral-50 transition gap-2"
                               >
-                                <div className="min-w-0 pr-2">
+                                <div className="min-w-0 flex-1">
                                   <div className="flex items-center gap-1.5 flex-wrap">
-                                    <span className="font-bold text-neutral-800 truncate">
+                                    <span className="font-bold text-neutral-800 break-words whitespace-normal">
                                       {supply?.name || "Insumo"}
                                     </span>
                                     {supply?.category && (
-                                      <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-md bg-neutral-200/60 text-neutral-600">
+                                      <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-md bg-neutral-200/60 text-neutral-600 flex-shrink-0">
                                         {supply.category === "packaging" ? "Packaging" : "Materia prima"}
                                       </span>
                                     )}
@@ -1642,7 +1685,7 @@ export default function ProductosPage() {
                         </div>
                       ) : (
                         <div className="p-3 bg-neutral-50 rounded-xl border border-dashed border-neutral-200 text-center text-xs text-neutral-400 italic">
-                          Este producto no tiene insumos asignados en su receta.
+                          Este producto no tiene insumos asignados.
                         </div>
                       )}
                     </div>
@@ -1893,7 +1936,7 @@ export default function ProductosPage() {
             <div className="flex items-center justify-between border-b border-neutral-100 pb-3 flex-shrink-0">
               <h3 className="text-sm font-bold text-neutral-800 flex items-center gap-2 font-display">
                 <Pencil className="w-4 h-4 text-[#3BB578]" />
-                <span>Editar Producto & Receta</span>
+                <span>Editar Producto</span>
               </h3>
               <button
                 onClick={() => setEditModalProduct(null)}
@@ -2065,11 +2108,11 @@ export default function ProductosPage() {
                               key={item.supply_id || idx}
                               className="bg-white p-2.5 rounded-xl border border-neutral-200 flex items-center justify-between gap-2 text-xs"
                             >
-                              <div className="flex-1 min-w-0">
-                                <span className="font-bold text-neutral-800 truncate block">
+                              <div className="flex-1 min-w-0 pr-1">
+                                <span className="font-bold text-neutral-800 break-words whitespace-normal block">
                                   {item.name}
                                 </span>
-                                <span className="text-[10px] text-neutral-400">
+                                <span className="text-[10px] text-neutral-400 block mt-0.5">
                                   {formatCurrency(item.unit_cost)} / {item.use_unit}
                                 </span>
                               </div>
@@ -2148,7 +2191,7 @@ export default function ProductosPage() {
                     {/* Lista de subproductos cargados */}
                     {editComponents.length === 0 ? (
                       <p className="text-[11px] text-neutral-400 italic py-2 text-center bg-white rounded-xl border border-dashed border-neutral-200">
-                        No hay subproductos asignados a este producto. Elegí uno arriba para sumarlo a la receta.
+                        No hay subproductos asignados a este producto. Elegí uno arriba para sumarlo a la lista de materiales.
                       </p>
                     ) : (
                       <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
@@ -2161,14 +2204,14 @@ export default function ProductosPage() {
                               key={item.component_product_id || idx}
                               className="bg-white p-2.5 rounded-xl border border-neutral-200 flex items-center justify-between gap-2 text-xs"
                             >
-                              <div className="flex-1 min-w-0">
+                              <div className="flex-1 min-w-0 pr-1">
                                 <div className="flex items-center gap-1.5">
-                                  <Package className="w-3.5 h-3.5 text-[#3BB578]" />
-                                  <span className="font-bold text-neutral-800 truncate block">
+                                  <Package className="w-3.5 h-3.5 text-[#3BB578] flex-shrink-0" />
+                                  <span className="font-bold text-neutral-800 break-words whitespace-normal block">
                                     {item.name}
                                   </span>
                                 </div>
-                                <span className="text-[10px] text-neutral-400 block ml-5">
+                                <span className="text-[10px] text-neutral-400 block ml-5 mt-0.5">
                                   Costo base: {formatCurrency(item.unit_cost)} / u
                                 </span>
                               </div>
@@ -2218,9 +2261,86 @@ export default function ProductosPage() {
                   <span>Costo Total de Fabricación:</span>
                   <span className="text-sm font-black text-[#1F7A4C]">{formatCurrency(editTotalCost)}</span>
                 </div>
-                <p className="text-[9.5px] text-[#2E9E65] pt-0.5">
-                  Los precios de venta de tus canales se actualizarán automáticamente manteniendo tus márgenes de ganancia.
-                </p>
+              </div>
+
+              {/* SECCIÓN DE PRECIOS POR CANAL DE VENTA */}
+              <div className="p-3.5 bg-neutral-50 rounded-2xl border border-neutral-200/80 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-neutral-700 flex items-center gap-1.5 uppercase tracking-wider">
+                    <DollarSign className="w-3.5 h-3.5 text-[#3BB578]" />
+                    Precios de Venta por Canal
+                  </span>
+                  <span className="text-[10px] text-neutral-400">
+                    Costo: <strong>{formatCurrency(editTotalCost)}</strong>
+                  </span>
+                </div>
+
+                {editPrices.length === 0 ? (
+                  <p className="text-[11px] text-neutral-400 italic py-2 text-center bg-white rounded-xl border border-dashed border-neutral-200">
+                    No hay canales de venta configurados para este producto.
+                  </p>
+                ) : (
+                  <div className="space-y-2.5">
+                    {editPrices.map((price, idx) => {
+                      const netProfit = Math.max(0, Number(price.selling_price || 0) - editTotalCost);
+                      return (
+                        <div
+                          key={price.id || idx}
+                          className="p-3 bg-white rounded-xl border border-neutral-200 shadow-2xs space-y-2"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-neutral-800">
+                              {price.channel_name}
+                            </span>
+                            <span className="text-[10px] font-semibold text-[#1F7A4C] bg-[#DCF4D7] px-2 py-0.5 rounded-md">
+                              Ganancia: {formatCurrency(netProfit)}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2.5">
+                            <div>
+                              <label className="text-[10px] font-semibold text-neutral-500 block mb-1">
+                                Margen de ganancia:
+                              </label>
+                              <div className="relative flex items-center">
+                                <input
+                                  type="number"
+                                  step="any"
+                                  value={price.profit_margin_percent === "" ? "" : price.profit_margin_percent}
+                                  onChange={(e) => handleUpdatePriceMargin(idx, e.target.value)}
+                                  className="w-full pl-2.5 pr-6 py-1.5 text-xs bg-neutral-50 border border-neutral-200 rounded-xl font-bold outline-none focus:bg-white focus:border-[#3BB578]"
+                                  placeholder="100"
+                                />
+                                <span className="absolute right-2 text-[10px] text-neutral-400 pointer-events-none font-bold">
+                                  %
+                                </span>
+                              </div>
+                            </div>
+
+                            <div>
+                              <label className="text-[10px] font-semibold text-neutral-500 block mb-1">
+                                Precio Final de Venta:
+                              </label>
+                              <div className="relative flex items-center">
+                                <span className="absolute left-2.5 text-[10px] text-neutral-400 pointer-events-none font-bold">
+                                  $
+                                </span>
+                                <input
+                                  type="number"
+                                  step="any"
+                                  value={price.selling_price === "" ? "" : price.selling_price}
+                                  onChange={(e) => handleUpdatePriceSelling(idx, e.target.value)}
+                                  className="w-full pl-6 pr-2.5 py-1.5 text-xs bg-neutral-50 border border-neutral-200 rounded-xl font-black outline-none focus:bg-white focus:border-[#3BB578] text-[#1F7A4C]"
+                                  placeholder="0"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
 
