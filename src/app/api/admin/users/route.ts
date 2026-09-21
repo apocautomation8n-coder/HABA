@@ -3,7 +3,7 @@ import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { checkIsAdmin } from "@/lib/auth-helpers";
 import { calculatePlanEndDate, PlanType } from "@/lib/plan-helpers";
-import { formatAccountNumber, getNextAccountNumberFromList } from "@/lib/account";
+import { formatAccountNumber, parseAccountNumber, getNextAccountNumberFromList } from "@/lib/account";
 
 function getAdminClient() {
   return createSupabaseClient(
@@ -81,12 +81,12 @@ export async function GET(request: Request) {
     const { data: authData } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
     const authMap = new Map(authData?.users?.map((u) => [u.id, u]) || []);
 
-    // Mapa cronológico para fallback de números de cuenta si aún no están asignados
+    // Mapa cronológico para fallback de números de cuenta (Admin Gio es siempre 01)
     const chronologicalProfiles = [...(profiles || [])].sort((a, b) =>
       new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()
     );
     const idToSeqMap = new Map(
-      chronologicalProfiles.map((p, idx) => [p.id, 1001 + idx])
+      chronologicalProfiles.map((p, idx) => [p.id, formatAccountNumber(idx + 1)])
     );
 
     const users = (profiles || []).map((p) => {
@@ -104,8 +104,18 @@ export async function GET(request: Request) {
         meta.account_status || (p.status === "suspended" ? "suspended" : "active");
       const avatarUrl = meta.avatar_url || null;
 
-      const fallbackSeq = idToSeqMap.get(p.id) || 1001;
-      const accountNumber = p.account_number || meta.account_number || formatAccountNumber(fallbackSeq);
+      // Recuperar account_number normalizado en formato de 2 dígitos ("01", "02", etc.)
+      let accountNumber = p.account_number || meta.account_number;
+      if (!accountNumber || accountNumber.includes("HABA-001001")) {
+        accountNumber = idToSeqMap.get(p.id) || "01";
+      } else {
+        const parsed = parseAccountNumber(accountNumber);
+        if (parsed !== null && parsed < 1000) {
+          accountNumber = formatAccountNumber(parsed);
+        } else {
+          accountNumber = idToSeqMap.get(p.id) || "01";
+        }
+      }
 
       return {
         ...p,
@@ -155,18 +165,42 @@ export async function POST(request: Request) {
     const endDate =
       planEndDate?.trim() || calculatePlanEndDate(startDate, planType as PlanType);
 
-    // Obtener perfiles existentes para calcular el siguiente número de cuenta secuencial
-    let nextAccountNumber = "HABA-001001";
+    // Obtener usuarios existentes de Auth y perfiles para calcular el siguiente ID secuencial
+    let nextAccountNumber = "01";
     try {
-      const { data: existingProfiles } = await supabaseAdmin
-        .from("profiles")
-        .select("account_number, created_at");
-      nextAccountNumber = getNextAccountNumberFromList(existingProfiles || []);
-    } catch {
-      nextAccountNumber = "HABA-001001";
+      const { data: authDataList } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
+      const authUsers = authDataList?.users || [];
+
+      // Mapear cuentas existentes con su account_number y fecha de creación
+      const existingAccounts = authUsers.map((u) => ({
+        account_number: (u.user_metadata?.account_number as string | undefined) || null,
+        email: u.email,
+        created_at: u.created_at,
+      }));
+
+      // Calcular el siguiente número secuencial (ej. si hay 5 usuarios -> "06")
+      nextAccountNumber = getNextAccountNumberFromList(existingAccounts);
+
+      // Verificación estricta de unicidad: asegurarse de que no exista colisión
+      const existingNumbers = new Set(
+        existingAccounts
+          .map((a) => {
+            const parsed = parseAccountNumber(a.account_number);
+            return parsed !== null && parsed < 1000 ? formatAccountNumber(parsed) : null;
+          })
+          .filter(Boolean)
+      );
+      let candidateSeq = parseAccountNumber(nextAccountNumber) || 1;
+      while (existingNumbers.has(formatAccountNumber(candidateSeq))) {
+        candidateSeq++;
+      }
+      nextAccountNumber = formatAccountNumber(candidateSeq);
+    } catch (calcErr) {
+      console.error("Error al calcular el siguiente número de cuenta:", calcErr);
+      nextAccountNumber = "01";
     }
 
-    // 1. Crear usuario en Auth con confirmación automática, metadata de plan y account_number
+    // 1. Crear usuario en Auth con confirmación automática, metadata de plan y account_number único
     const { data: authData, error: authError } =
       await supabaseAdmin.auth.admin.createUser({
         email: email.trim().toLowerCase(),
@@ -218,7 +252,13 @@ export async function POST(request: Request) {
       }
     }
 
-    return NextResponse.json({ success: true, user: authData.user });
+    return NextResponse.json({
+      success: true,
+      user: {
+        ...authData.user,
+        account_number: nextAccountNumber,
+      },
+    });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
