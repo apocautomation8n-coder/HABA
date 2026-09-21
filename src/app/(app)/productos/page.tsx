@@ -41,6 +41,7 @@ import {
   wouldCreateCircularDependency,
 } from "@/lib/products";
 import { matchesSearch } from "@/lib/search";
+import { SupplyModal, SupplyItem } from "@/components/SupplyModal";
 
 interface ProductPrice {
   id: string;
@@ -164,6 +165,7 @@ export default function ProductosPage() {
   const [editCategory, setEditCategory] = useState("");
   const [editWorkMinutes, setEditWorkMinutes] = useState<number | string>(0);
   const [savingEdit, setSavingEdit] = useState(false);
+  const [isCreateSupplyOpen, setIsCreateSupplyOpen] = useState(false);
 
   // Mapeo de todas las relaciones existentes para prevención de ciclos
   const allRelations = useMemo(() => {
@@ -578,6 +580,46 @@ export default function ProductosPage() {
       },
     ]);
     setSelectedSupplyToAdd("");
+  };
+
+  // Crear insumo al vuelo dentro del modal de edición
+  const handleSupplyCreatedInlineEdit = (createdSupply?: SupplyItem) => {
+    setIsCreateSupplyOpen(false);
+    if (createdSupply) {
+      const catalogItem: CatalogSupply = {
+        id: createdSupply.id!,
+        name: createdSupply.name,
+        category: createdSupply.category,
+        current_price: createdSupply.current_price,
+        use_unit: createdSupply.use_unit,
+        purchase_unit: createdSupply.purchase_unit,
+        purchase_quantity: createdSupply.purchase_quantity,
+        conversion_factor: createdSupply.conversion_factor,
+      };
+      setAllSupplies((prev) =>
+        [catalogItem, ...prev.filter((s) => s.id !== catalogItem.id)].sort((a, b) =>
+          a.name.localeCompare(b.name)
+        )
+      );
+      const unitCost = calculateUnitCost(
+        createdSupply.current_price,
+        createdSupply.purchase_quantity || 1,
+        createdSupply.conversion_factor || 1
+      );
+      setEditSupplies((prev) => [
+        ...prev,
+        {
+          supply_id: createdSupply.id!,
+          name: createdSupply.name,
+          use_unit: createdSupply.use_unit || "u",
+          unit_cost: unitCost,
+          quantity: 1,
+          waste_percent: 0,
+        },
+      ]);
+      setSuccessToast(`¡Insumo "${createdSupply.name}" creado y agregado a la receta!`);
+      setTimeout(() => setSuccessToast(null), 4000);
+    }
   };
 
   // Quitar insumo de la receta
@@ -1991,10 +2033,19 @@ export default function ProductosPage() {
                         type="button"
                         onClick={() => handleAddSupplyToRecipe(selectedSupplyToAdd)}
                         disabled={!selectedSupplyToAdd}
-                        className="px-3 py-1.5 bg-[#3BB578] hover:bg-[#2E9E65] disabled:opacity-50 text-white text-xs font-bold rounded-xl transition flex items-center gap-1 shadow-xs"
+                        className="px-3 py-1.5 bg-[#3BB578] hover:bg-[#2E9E65] disabled:opacity-50 text-white text-xs font-bold rounded-xl transition flex items-center gap-1 shadow-xs flex-shrink-0"
                       >
                         <Plus className="w-3.5 h-3.5" />
                         <span>Agregar</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsCreateSupplyOpen(true)}
+                        className="px-2.5 py-1.5 bg-[#DCF4D7] hover:bg-[#cbf0c4] text-[#1F7A4C] border border-[#C3EBC0] text-xs font-bold rounded-xl transition flex items-center gap-1 shadow-2xs flex-shrink-0"
+                        title="Crear nuevo insumo al vuelo"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Crear</span>
                       </button>
                     </div>
 
@@ -2202,6 +2253,14 @@ export default function ProductosPage() {
         </div>,
         document.body
       )}
+
+      {/* Modal para crear insumos al vuelo desde edición */}
+      <SupplyModal
+        isOpen={isCreateSupplyOpen}
+        onClose={() => setIsCreateSupplyOpen(false)}
+        onSuccess={handleSupplyCreatedInlineEdit}
+        zIndex="z-[100001]"
+      />
 
       {/* Toast de Notificación Kawaii */}
       {successToast && (

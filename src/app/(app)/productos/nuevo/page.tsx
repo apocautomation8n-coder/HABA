@@ -34,7 +34,7 @@ import {
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency, calculateUnitCost } from "@/lib/units";
-import { SupplyItem } from "@/components/SupplyModal";
+import { SupplyModal, SupplyItem } from "@/components/SupplyModal";
 import { PRODUCT_CATEGORIES, serializeProductDescription, SelectedProductComponent, calculateComponentsCost, getCategoryBadge } from "@/lib/products";
 import { matchesSearch } from "@/lib/search";
 
@@ -85,6 +85,9 @@ export default function NuevoProductoPage() {
   const [supplyPickerOpen, setSupplyPickerOpen] = useState(false);
   const [showWasteInfo, setShowWasteInfo] = useState(false);
   const [supplySearch, setSupplyPickerSearch] = useState("");
+  const [isCreateSupplyOpen, setIsCreateSupplyOpen] = useState(false);
+  const [newSupplyInitialName, setNewSupplyInitialName] = useState("");
+  const [successToast, setSuccessToast] = useState<string | null>(null);
 
   // Paso 2: Subproductos / Componentes de otros productos
   const [availableProducts, setAvailableProducts] = useState<any[]>([]);
@@ -370,6 +373,20 @@ export default function NuevoProductoPage() {
     if (selectedSupplies.some((s) => s.supply.id === supply.id)) return;
     setSelectedSupplies((prev) => [...prev, { supply, quantity: 1, waste_percent: 0 }]);
     setSupplyPickerOpen(false);
+  };
+
+  // Crear insumo al vuelo desde el selector
+  const handleSupplyCreatedInline = (createdSupply?: SupplyItem) => {
+    setIsCreateSupplyOpen(false);
+    if (createdSupply) {
+      setAvailableSupplies((prev) => {
+        if (prev.some((s) => s.id === createdSupply.id)) return prev;
+        return [createdSupply, ...prev].sort((a, b) => a.name.localeCompare(b.name));
+      });
+      handleAddSupply(createdSupply);
+      setSuccessToast(`¡Insumo "${createdSupply.name}" creado y agregado a la receta!`);
+      setTimeout(() => setSuccessToast(null), 4000);
+    }
   };
 
   // Cambiar cantidad de insumo
@@ -1687,6 +1704,25 @@ export default function NuevoProductoPage() {
               })()}
             </div>
 
+            {/* Botón para crear insumo al vuelo */}
+            <div className="pt-2 pb-1 flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setNewSupplyInitialName(supplySearch.trim());
+                  setIsCreateSupplyOpen(true);
+                }}
+                className="w-full py-2 px-3 bg-[#DCF4D7]/70 hover:bg-[#DCF4D7] text-[#1F7A4C] border border-[#C3EBC0] rounded-2xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-2xs active:scale-[0.99]"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>
+                  {supplySearch.trim()
+                    ? `+ Crear "${supplySearch.trim()}" como nuevo insumo`
+                    : "+ Crear nuevo insumo"}
+                </span>
+              </button>
+            </div>
+
             <div className="overflow-y-auto flex-1 min-h-0 my-3 space-y-2 pr-1 overscroll-contain">
               {(() => {
                 const filtered = availableSupplies.filter((sup) =>
@@ -1695,16 +1731,40 @@ export default function NuevoProductoPage() {
 
                 if (availableSupplies.length === 0) {
                   return (
-                    <div className="p-4 text-center text-xs text-neutral-500">
-                      No tenés insumos cargados. Creá uno en el módulo Insumos primero.
+                    <div className="p-6 text-center text-xs text-neutral-400 space-y-3">
+                      <p className="text-neutral-500">No tenés insumos cargados en tu catálogo.</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewSupplyInitialName("");
+                          setIsCreateSupplyOpen(true);
+                        }}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#3BB578] hover:bg-[#2E9E65] text-white rounded-2xl text-xs font-bold transition shadow-xs"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>Crear primer insumo</span>
+                      </button>
                     </div>
                   );
                 }
 
                 if (filtered.length === 0) {
                   return (
-                    <div className="p-6 text-center text-xs text-neutral-400">
-                      No encontramos insumos que coincidan con &ldquo;<strong>{supplySearch}</strong>&rdquo;.
+                    <div className="p-6 text-center text-xs text-neutral-400 space-y-3">
+                      <p>
+                        No encontramos insumos que coincidan con &ldquo;<strong>{supplySearch}</strong>&rdquo;.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewSupplyInitialName(supplySearch.trim());
+                          setIsCreateSupplyOpen(true);
+                        }}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#3BB578] hover:bg-[#2E9E65] text-white rounded-2xl text-xs font-bold transition shadow-xs"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>Crear &ldquo;{supplySearch.trim()}&rdquo; ahora</span>
+                      </button>
                     </div>
                   );
                 }
@@ -1898,6 +1958,34 @@ export default function NuevoProductoPage() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+      {/* Modal secundario para creación de insumos al vuelo */}
+      <SupplyModal
+        isOpen={isCreateSupplyOpen}
+        onClose={() => setIsCreateSupplyOpen(false)}
+        onSuccess={handleSupplyCreatedInline}
+        initialSupply={newSupplyInitialName ? { name: newSupplyInitialName } : null}
+        zIndex="z-[100001]"
+      />
+
+      {/* Toast de confirmación */}
+      {successToast && (
+        <div
+          className="fixed left-1/2 -translate-x-1/2 z-[100002] bg-[#1F7A4C] text-white px-4 py-2.5 rounded-2xl shadow-xl flex items-center gap-2 text-xs font-bold border border-emerald-400/30 animate-in fade-in slide-in-from-bottom-3 duration-200 w-max max-w-[calc(100vw-2rem)]"
+          style={{
+            bottom: "calc(4.5rem + env(safe-area-inset-bottom, 0px) + 1rem)",
+          }}
+        >
+          <Sparkles className="w-4 h-4 text-emerald-300 flex-shrink-0" />
+          <span className="leading-tight">{successToast}</span>
+          <button
+            onClick={() => setSuccessToast(null)}
+            className="ml-2 text-emerald-200 hover:text-white p-0.5 rounded-lg transition flex-shrink-0"
+            aria-label="Cerrar notificación"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
     </div>

@@ -23,8 +23,9 @@ export interface SupplyItem {
 interface SupplyModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: () => void;
-  initialSupply?: SupplyItem | null;
+  onSuccess: (newSupply?: SupplyItem) => void;
+  initialSupply?: SupplyItem | Partial<SupplyItem> | null;
+  zIndex?: string;
 }
 
 export const SupplyModal: React.FC<SupplyModalProps> = ({
@@ -32,6 +33,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
   onClose,
   onSuccess,
   initialSupply,
+  zIndex = "z-[99999]",
 }) => {
   const supabase = createClient();
   useModalThemeColor(isOpen);
@@ -121,13 +123,17 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
           .replace(/\s+/g, "")
           .trim();
 
-      const matchingPreset = UNIT_PRESETS.find(
-        (p) =>
-          normalizeUnit(p.purchaseUnit) === normalizeUnit(initialSupply.purchase_unit) &&
-          normalizeUnit(p.useUnit) === normalizeUnit(initialSupply.use_unit) &&
-          p.defaultFactor === initialSupply.conversion_factor
-      );
-      setSelectedPresetId(matchingPreset ? matchingPreset.id : "custom");
+      if (initialSupply.purchase_unit && initialSupply.use_unit) {
+        const matchingPreset = UNIT_PRESETS.find(
+          (p) =>
+            normalizeUnit(p.purchaseUnit) === normalizeUnit(initialSupply.purchase_unit) &&
+            normalizeUnit(p.useUnit) === normalizeUnit(initialSupply.use_unit) &&
+            p.defaultFactor === initialSupply.conversion_factor
+        );
+        setSelectedPresetId(matchingPreset ? matchingPreset.id : "custom");
+      } else {
+        setSelectedPresetId("kg-g");
+      }
     } else {
       // Intentar restaurar borrador no guardado si el usuario salió de la app (Punto E)
       let restored = false;
@@ -301,7 +307,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
             use_unit: useUnit.trim(),
             conversion_factor: parsedConversion,
           })
-          .select("id")
+          .select("*")
           .single();
 
         if (insertError) throw insertError;
@@ -320,9 +326,13 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
         } catch {
           // ignore
         }
+
+        onSuccess(newSupply as SupplyItem);
+        onClose();
+        return;
       }
 
-      onSuccess();
+      onSuccess(initialSupply as SupplyItem);
       onClose();
     } catch (err: any) {
       console.error("Error saving supply:", err);
@@ -334,7 +344,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
 
   const modalContent = (
     <div
-      className="fixed inset-0 z-[99999] bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200"
+      className={`fixed inset-0 ${zIndex} bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200`}
       style={{
         position: 'fixed',
         top: 0,
