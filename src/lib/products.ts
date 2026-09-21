@@ -2,6 +2,8 @@
  * Módulo de utilidades y constantes de Productos para HABA
  */
 
+import { calculateUnitCost } from "./units";
+
 export interface ProductCategory {
   id: string;
   label: string;
@@ -664,5 +666,108 @@ function calculateOutdatedList(products: any[]): OutdatedProductAlert[] {
 
   return outdatedProducts;
 }
+
+export interface ModifiedSupplyInfo {
+  supplyId: string;
+  name: string;
+  category?: string;
+  useUnit: string;
+  purchaseUnit: string;
+  prevPrice: number;
+  newPrice: number;
+  priceDiff: number;
+  percentChange: number;
+  prevUnitCost: number;
+  newUnitCost: number;
+  quantity: number;
+  costImpact: number; // Impacto en el costo directo del producto considerando el rendimiento
+  isIncrease: boolean;
+}
+
+/**
+ * Detecta los insumos de la receta de un producto que hayan cambiado de precio
+ * respecto a la última vez que el producto fue guardado/actualizado.
+ */
+export function detectModifiedSupplies(
+  product: any,
+  priceHistory: Array<{ id?: string; supply_id: string; price: number; changed_at: string }>
+): ModifiedSupplyInfo[] {
+  if (!product || !product.product_supplies || product.product_supplies.length === 0) {
+    return [];
+  }
+
+  const meta = parseProductMeta(product.description);
+  const productYield = meta.yield || 1;
+  const productSavedAt = new Date(product.updated_at || product.created_at || 0).getTime();
+
+  const modified: ModifiedSupplyInfo[] = [];
+
+  for (const ps of product.product_supplies) {
+    const supply = ps.supplies;
+    if (!supply) continue;
+
+    const currentPrice = Number(supply.current_price || 0);
+    const purchaseQty = Number(supply.purchase_quantity || 1);
+    const convFactor = Number(supply.conversion_factor || 1);
+    const qty = Number(ps.quantity || 0);
+
+    // Obtener historial ordenado de más reciente a más antiguo para este insumo
+    const hist = (priceHistory || [])
+      .filter((h) => h.supply_id === ps.supply_id)
+      .sort((a, b) => new Date(b.changed_at).getTime() - new Date(a.changed_at).getTime());
+
+    let prevPrice: number | null = null;
+
+    // 1. Buscar precio en historial que estaba vigente cuando se guardó el producto (changed_at <= productSavedAt)
+    const atSave = hist.find((h) => new Date(h.changed_at).getTime() <= productSavedAt);
+    if (atSave && Number(atSave.price) !== currentPrice) {
+      prevPrice = Number(atSave.price);
+    } else {
+      // 2. Si no hay entrada anterior a productSavedAt o es idéntica al currentPrice, buscar la entrada más reciente distinta a currentPrice
+      const diffEntry = hist.find((h) => Number(h.price) !== currentPrice);
+      if (diffEntry) {
+        prevPrice = Number(diffEntry.price);
+      }
+    }
+
+    // 3. Fallback: Si no encontramos en historial pero supply.updated_at > productSavedAt
+    if (prevPrice === null) {
+      const supplyUpdatedAt = new Date(supply.updated_at || 0).getTime();
+      if (supplyUpdatedAt > productSavedAt && (product.needs_price_review || Math.abs(currentPrice) > 0)) {
+        if (hist.length > 1) {
+          prevPrice = Number(hist[hist.length - 1].price);
+        }
+      }
+    }
+
+    if (prevPrice !== null && prevPrice !== currentPrice) {
+      const prevUnitCost = calculateUnitCost(prevPrice, purchaseQty, convFactor);
+      const newUnitCost = calculateUnitCost(currentPrice, purchaseQty, convFactor);
+      const priceDiff = currentPrice - prevPrice;
+      const percentChange = prevPrice > 0 ? ((currentPrice - prevPrice) / prevPrice) * 100 : 0;
+      const costImpact = ((newUnitCost - prevUnitCost) * qty) / productYield;
+
+      modified.push({
+        supplyId: ps.supply_id,
+        name: supply.name || "Insumo",
+        category: supply.category,
+        useUnit: supply.use_unit || "u",
+        purchaseUnit: supply.purchase_unit || "u",
+        prevPrice,
+        newPrice: currentPrice,
+        priceDiff: Math.round(priceDiff * 100) / 100,
+        percentChange: Math.round(percentChange * 10) / 10,
+        prevUnitCost,
+        newUnitCost,
+        quantity: qty,
+        costImpact: Math.round(costImpact * 100) / 100,
+        isIncrease: currentPrice > prevPrice,
+      });
+    }
+  }
+
+  return modified;
+}
+
 
 

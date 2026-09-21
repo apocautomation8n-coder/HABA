@@ -28,6 +28,9 @@ import {
   Receipt,
   Pencil,
   Boxes,
+  TrendingUp,
+  TrendingDown,
+  Info,
 } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
@@ -41,10 +44,13 @@ import {
   wouldCreateCircularDependency,
   validateProductYield,
   getAllProductCategories,
+  detectModifiedSupplies,
+  ModifiedSupplyInfo,
 } from "@/lib/products";
 import { matchesSearch } from "@/lib/search";
 import { SupplyModal, SupplyItem } from "@/components/SupplyModal";
 import { CategorySelector } from "@/components/CategorySelector";
+import { PriceReviewModal } from "@/components/products/PriceReviewModal";
 
 interface ProductPrice {
   id: string;
@@ -179,6 +185,27 @@ export default function ProductosPage() {
   const [isCreateSupplyOpen, setIsCreateSupplyOpen] = useState(false);
   const [editPrices, setEditPrices] = useState<EditPriceLine[]>([]);
 
+  // Historial de precios de insumos para detección explícita de aumentos
+  const [priceHistory, setPriceHistory] = useState<
+    Array<{ id?: string; supply_id: string; price: number; changed_at: string }>
+  >([]);
+
+  // Modal de revisión detallada de precios por insumos
+  const [reviewPriceProduct, setReviewPriceProduct] = useState<any | null>(null);
+
+  // Alertas de precios omitidas / descartadas por el usuario en la sesión
+  const [dismissedAlerts, setDismissedAlerts] = useState<Set<string>>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = sessionStorage.getItem("haba_dismissed_price_alerts");
+        return stored ? new Set(JSON.parse(stored)) : new Set();
+      } catch {
+        return new Set();
+      }
+    }
+    return new Set();
+  });
+
   // Mapeo de todas las relaciones existentes para prevención de ciclos
   const allRelations = useMemo(() => {
     const rels: { parent_product_id: string; component_product_id: string }[] = [];
@@ -199,7 +226,7 @@ export default function ProductosPage() {
   const loadProducts = useCallback(async () => {
     try {
       setLoading(true);
-      const [productsRes, suppliesRes] = await Promise.all([
+      const [productsRes, suppliesRes, priceHistoryRes] = await Promise.all([
         supabase
           .from("products")
           .select(`
@@ -238,10 +265,18 @@ export default function ProductosPage() {
           .from("supplies")
           .select("id, name, category, current_price, use_unit, purchase_unit, purchase_quantity, conversion_factor")
           .order("name", { ascending: true }),
+        supabase
+          .from("supply_price_history")
+          .select("id, supply_id, price, changed_at")
+          .order("changed_at", { ascending: false }),
       ]);
 
       if (suppliesRes.data) {
         setAllSupplies(suppliesRes.data as CatalogSupply[]);
+      }
+
+      if (priceHistoryRes.data) {
+        setPriceHistory(priceHistoryRes.data);
       }
 
       if (!productsRes.error && productsRes.data) {
@@ -982,7 +1017,37 @@ export default function ProductosPage() {
     }
   };
 
-  // Metadatos, costos vigentes y detección reactiva de alerta
+  // Omitir o descartar la alerta de modificación de precios
+  const handleDismissAlert = async (product: any) => {
+    try {
+      setDismissedAlerts((prev) => {
+        const next = new Set(prev);
+        next.add(product.id);
+        try {
+          sessionStorage.setItem("haba_dismissed_price_alerts", JSON.stringify(Array.from(next)));
+        } catch {}
+        return next;
+      });
+
+      if (product.needs_price_review) {
+        await supabase
+          .from("products")
+          .update({ needs_price_review: false })
+          .eq("id", product.id);
+
+        setProducts((prev) =>
+          prev.map((p) => (p.id === product.id ? { ...p, needs_price_review: false } : p))
+        );
+      }
+
+      setSuccessToast(`Alerta de precios descartada para "${product.name}".`);
+      setTimeout(() => setSuccessToast(null), 3500);
+    } catch (err: any) {
+      console.error("Error al descartar alerta:", err);
+    }
+  };
+
+  // Metadatos, costos vigentes y detección reactiva de alerta con insumos modificados
   const productsWithMeta = useMemo(() => {
     return products.map((product) => {
       const meta = parseProductMeta(product.description);
@@ -1016,7 +1081,9 @@ export default function ProductosPage() {
       }
 
       const costDifference = hasRecipe ? Math.abs(currentMaterialsCost - product.direct_cost) : 0;
-      const isCostOutdated = Boolean(product.needs_price_review || (hasRecipe && costDifference > 0.5));
+      const isDismissed = dismissedAlerts.has(product.id);
+      const isCostOutdated = !isDismissed && Boolean(product.needs_price_review || (hasRecipe && costDifference > 0.5));
+      const modifiedSupplies = detectModifiedSupplies(product, priceHistory);
 
       return {
         ...product,
@@ -1024,9 +1091,16 @@ export default function ProductosPage() {
         badge,
         currentMaterialsCost: hasRecipe ? currentMaterialsCost : product.direct_cost,
         isCostOutdated,
+        modifiedSupplies,
       };
     });
-  }, [products]);
+  }, [products, priceHistory, dismissedAlerts]);
+
+  // Insumos modificados para el producto actualmente en edición
+  const editModalModifiedSupplies = useMemo(() => {
+    if (!editModalProduct) return [];
+    return detectModifiedSupplies(editModalProduct, priceHistory);
+  }, [editModalProduct, priceHistory]);
 
   // Contadores para métricas y badges de filtro
   const counts = useMemo(() => {
@@ -1581,24 +1655,45 @@ export default function ProductosPage() {
                   </div>
                 </div>
 
-                {/* Alerta de precio integrada en la card con botón Recalcular */}
+                {/* Alerta de precio integrada en la card con botón Recalcular, Ver detalle y Omitir */}
                 {product.isCostOutdated && (
-                  <div className="bg-amber-50/90 border border-amber-200 p-2.5 rounded-2xl flex items-center justify-between text-xs text-amber-900 shadow-2xs">
-                    <div className="flex items-center gap-1.5 min-w-0 pr-2">
+                  <div className="bg-amber-50/90 border border-amber-200 p-2.5 rounded-2xl flex items-center justify-between text-xs text-amber-900 shadow-2xs gap-2">
+                    <div className="flex items-center gap-1.5 min-w-0 flex-1">
                       <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
-                      <span className="text-[11px] font-medium leading-tight">
-                        Insumos cambiaron de precio.
+                      <span className="text-[11px] font-semibold leading-tight truncate">
+                        {product.modifiedSupplies && product.modifiedSupplies.length > 0
+                          ? product.modifiedSupplies.length === 1
+                            ? `${product.modifiedSupplies[0].name} aumentó de precio`
+                            : `${product.modifiedSupplies.length} insumos aumentaron de precio`
+                          : "Insumos cambiaron de precio"}
                       </span>
                     </div>
-                    <button
-                      onClick={() => handleRecalculate(product)}
-                      disabled={recalculatingId === product.id}
-                      className="py-1 px-3 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition shadow-xs flex-shrink-0 disabled:opacity-50 cursor-pointer"
-                      title="Actualizar costo directo, total y precios sugeridos"
-                    >
-                      <RefreshCw className={`w-3.5 h-3.5 ${recalculatingId === product.id ? "animate-spin" : ""}`} />
-                      <span>{recalculatingId === product.id ? "Recalculando..." : "Recalcular"}</span>
-                    </button>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <button
+                        onClick={() => setReviewPriceProduct(product)}
+                        className="py-1 px-2.5 bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-xl text-[11px] font-bold flex items-center gap-1 transition cursor-pointer shadow-2xs"
+                        title="Ver desglose detallado de insumos modificados"
+                      >
+                        <TrendingUp className="w-3 h-3 text-amber-700" />
+                        <span>Ver detalle</span>
+                      </button>
+                      <button
+                        onClick={() => handleRecalculate(product)}
+                        disabled={recalculatingId === product.id}
+                        className="py-1 px-2.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white rounded-xl text-[11px] font-bold flex items-center gap-1 transition shadow-xs flex-shrink-0 disabled:opacity-50 cursor-pointer"
+                        title="Actualizar costo directo, total y precios sugeridos"
+                      >
+                        <RefreshCw className={`w-3 h-3 ${recalculatingId === product.id ? "animate-spin" : ""}`} />
+                        <span>{recalculatingId === product.id ? "..." : "Recalcular"}</span>
+                      </button>
+                      <button
+                        onClick={() => handleDismissAlert(product)}
+                        className="p-1 text-amber-700 hover:text-neutral-700 hover:bg-amber-100 rounded-lg transition cursor-pointer"
+                        title="Omitir alerta por ahora"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                 )}
 
@@ -1607,28 +1702,107 @@ export default function ProductosPage() {
                   <div className="pt-2 border-t border-neutral-100 space-y-2.5 animate-in fade-in-50 duration-200">
                     {/* Alerta explicativa expandida con comparador y botón */}
                     {product.isCostOutdated && (
-                      <div className="bg-amber-50 border border-amber-200 p-3 rounded-2xl flex flex-col gap-2 text-xs text-amber-900">
-                        <div className="flex items-start gap-2">
-                          <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-                          <div>
-                            <strong className="block font-bold">Insumos con aumento detectado:</strong>
-                            Uno o más insumos asignados a esta receta cambiaron de precio desde la última actualización.
+                      <div className="bg-amber-50 border border-amber-200 p-3 rounded-2xl flex flex-col gap-2.5 text-xs text-amber-900">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-start gap-2">
+                            <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                            <div>
+                              <strong className="block font-bold">
+                                Insumos con variación de precio detectada:
+                              </strong>
+                              <span className="text-[11px] text-amber-800">
+                                {product.modifiedSupplies && product.modifiedSupplies.length > 0
+                                  ? `Se detectaron cambios en ${product.modifiedSupplies.length} ${
+                                      product.modifiedSupplies.length === 1 ? "insumo" : "insumos"
+                                    } de la receta.`
+                                  : "Uno o más insumos asignados a esta receta cambiaron de precio desde la última actualización."}
+                              </span>
+                            </div>
                           </div>
+                          {product.modifiedSupplies && product.modifiedSupplies.length > 0 && (
+                            <button
+                              onClick={() => setReviewPriceProduct(product)}
+                              className="text-[11px] font-bold text-amber-800 hover:text-amber-950 underline underline-offset-2 flex items-center gap-1 flex-shrink-0 cursor-pointer"
+                            >
+                              <span>Ver simulación</span>
+                              <TrendingUp className="w-3 h-3" />
+                            </button>
+                          )}
                         </div>
+
+                        {/* Desglose de insumos modificados */}
+                        {product.modifiedSupplies && product.modifiedSupplies.length > 0 && (
+                          <div className="space-y-1.5 pt-0.5">
+                            {product.modifiedSupplies.map((mod: ModifiedSupplyInfo) => (
+                              <div
+                                key={mod.supplyId}
+                                className="bg-white/90 p-2 rounded-xl border border-amber-200 flex items-center justify-between gap-2 text-[11px]"
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="font-bold text-neutral-900 truncate">
+                                      {mod.name}
+                                    </span>
+                                    <span
+                                      className={`inline-flex items-center gap-0.5 text-[9px] font-extrabold px-1.5 py-0.2 rounded border ${
+                                        mod.isIncrease
+                                          ? "bg-amber-100 text-amber-800 border-amber-300"
+                                          : "bg-emerald-100 text-emerald-800 border-emerald-300"
+                                      }`}
+                                    >
+                                      {mod.isIncrease ? "+" : ""}
+                                      {formatCurrency(mod.priceDiff)} ({mod.isIncrease ? "+" : ""}
+                                      {mod.percentChange}%)
+                                    </span>
+                                  </div>
+                                  <div className="text-[10px] text-neutral-500 mt-0.5">
+                                    {formatCurrency(mod.prevPrice)} → {formatCurrency(mod.newPrice)} / {mod.purchaseUnit} • Usa: {mod.quantity} {mod.useUnit}
+                                  </div>
+                                </div>
+                                <div className="text-right flex-shrink-0">
+                                  <span className="text-[10px] text-neutral-400 block">Impacto en costo:</span>
+                                  <span className="font-bold text-amber-900 text-xs">
+                                    {mod.isIncrease ? "+" : ""}
+                                    {formatCurrency(mod.costImpact)}
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
                         <div className="flex items-center justify-between bg-white/80 p-2 rounded-xl border border-amber-200/60 text-[11px]">
                           <span>Costo materiales guardado: <strong>{formatCurrency(product.direct_cost)}</strong></span>
                           <span>➔</span>
                           <span>Costo actual vigente: <strong className="text-amber-800">{formatCurrency(product.currentMaterialsCost)}</strong></span>
                         </div>
-                        <div className="flex justify-end pt-0.5">
+
+                        <div className="flex items-center justify-between pt-1 gap-2">
                           <button
-                            onClick={() => handleRecalculate(product)}
-                            disabled={recalculatingId === product.id}
-                            className="py-1.5 px-3.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-xs disabled:opacity-50 cursor-pointer"
+                            type="button"
+                            onClick={() => handleDismissAlert(product)}
+                            className="py-1.5 px-3 rounded-xl border border-amber-300 hover:bg-amber-100/70 text-amber-900 text-xs font-semibold transition cursor-pointer"
+                            title="Descartar esta alerta"
                           >
-                            <RefreshCw className={`w-3.5 h-3.5 ${recalculatingId === product.id ? "animate-spin" : ""}`} />
-                            <span>{recalculatingId === product.id ? "Recalculando..." : "Recalcular Costos y Precios"}</span>
+                            Omitir alerta
                           </button>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setReviewPriceProduct(product)}
+                              className="py-1.5 px-3 bg-white hover:bg-amber-100 border border-amber-300 text-amber-900 rounded-xl text-xs font-bold transition cursor-pointer"
+                            >
+                              Ver detalle completo
+                            </button>
+                            <button
+                              onClick={() => handleRecalculate(product)}
+                              disabled={recalculatingId === product.id}
+                              className="py-1.5 px-3.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-xs disabled:opacity-50 cursor-pointer"
+                            >
+                              <RefreshCw className={`w-3.5 h-3.5 ${recalculatingId === product.id ? "animate-spin" : ""}`} />
+                              <span>{recalculatingId === product.id ? "Recalculando..." : "Recalcular Costos y Precios"}</span>
+                            </button>
+                          </div>
                         </div>
                       </div>
                     )}
@@ -1681,6 +1855,10 @@ export default function ProductosPage() {
                         <div className="space-y-1.5">
                           {product.product_supplies.map((item) => {
                             const supply = item.supplies;
+                            const modInfo = product.modifiedSupplies?.find(
+                              (m: ModifiedSupplyInfo) => m.supplyId === item.supply_id
+                            );
+                            const isModified = Boolean(modInfo);
                             const unitCost = supply
                               ? calculateUnitCost(
                                   Number(supply.current_price || 0),
@@ -1693,7 +1871,11 @@ export default function ProductosPage() {
                             return (
                               <div
                                 key={item.id}
-                                className="p-2.5 bg-neutral-50/80 rounded-2xl border border-neutral-200/60 flex items-center justify-between text-xs hover:bg-neutral-50 transition gap-2"
+                                className={`p-2.5 rounded-2xl border flex items-center justify-between text-xs transition gap-2 ${
+                                  isModified
+                                    ? "bg-amber-50/70 border-amber-300 ring-1 ring-amber-300/50 hover:bg-amber-50"
+                                    : "bg-neutral-50/80 border-neutral-200/60 hover:bg-neutral-50"
+                                }`}
                               >
                                 <div className="min-w-0 flex-1">
                                   <div className="flex items-center gap-1.5 flex-wrap">
@@ -1705,15 +1887,31 @@ export default function ProductosPage() {
                                         {supply.category === "packaging" ? "Packaging" : "Materia prima"}
                                       </span>
                                     )}
+                                    {isModified && (
+                                      <span className="inline-flex items-center gap-0.5 text-[9px] font-extrabold px-1.5 py-0.5 rounded-md bg-amber-200 text-amber-900 border border-amber-300 flex-shrink-0">
+                                        <TrendingUp className="w-2.5 h-2.5" />
+                                        Aumentó {modInfo ? `(+${modInfo.percentChange}%)` : ""}
+                                      </span>
+                                    )}
                                   </div>
                                   <span className="text-[10px] text-neutral-400 block mt-0.5">
                                     {item.quantity} {supply?.use_unit || "u"} • {formatCurrency(unitCost)} /{supply?.use_unit || "u"}
+                                    {isModified && modInfo && (
+                                      <span className="text-amber-800 font-semibold ml-1">
+                                        (antes {formatCurrency(modInfo.prevUnitCost)}/{modInfo.useUnit})
+                                      </span>
+                                    )}
                                   </span>
                                 </div>
                                 <div className="text-right flex-shrink-0">
                                   <span className="font-extrabold text-[#1F7A4C] text-xs block">
                                     {formatCurrency(subtotalCost)}
                                   </span>
+                                  {isModified && modInfo && (
+                                    <span className="text-[9.5px] font-bold text-amber-700 block">
+                                      +{formatCurrency(modInfo.costImpact)}
+                                    </span>
+                                  )}
                                 </div>
                               </div>
                             );
@@ -2127,6 +2325,17 @@ export default function ProductosPage() {
                       </button>
                     </div>
 
+                    {/* Banner de aviso en edición si hay insumos con aumento */}
+                    {editModalModifiedSupplies.length > 0 && (
+                      <div className="bg-amber-50 border border-amber-200 p-2.5 rounded-xl flex items-center gap-2 text-xs text-amber-900">
+                        <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                        <span className="text-[11px] leading-tight">
+                          Hay {editModalModifiedSupplies.length}{" "}
+                          {editModalModifiedSupplies.length === 1 ? "insumo con aumento detectado" : "insumos con aumento detectado"}. Al guardar se recalculará el costo directo con los valores vigentes.
+                        </span>
+                      </div>
+                    )}
+
                     {/* Lista de insumos cargados */}
                     {editSupplies.length === 0 ? (
                       <p className="text-[11px] text-neutral-400 italic py-2 text-center bg-white rounded-xl border border-dashed border-neutral-200">
@@ -2137,18 +2346,39 @@ export default function ProductosPage() {
                         {editSupplies.map((item, idx) => {
                           const qty = typeof item.quantity === "number" ? item.quantity : parseFloat(String(item.quantity)) || 0;
                           const lineSubtotal = item.unit_cost * qty;
+                          const modInfo = editModalModifiedSupplies.find(
+                            (m) => m.supplyId === item.supply_id
+                          );
+                          const isModified = Boolean(modInfo);
 
                           return (
                             <div
                               key={item.supply_id || idx}
-                              className="bg-white p-2.5 rounded-xl border border-neutral-200 flex items-center justify-between gap-2 text-xs"
+                              className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 text-xs transition ${
+                                isModified
+                                  ? "bg-amber-50/60 border-amber-300 ring-1 ring-amber-300/40"
+                                  : "bg-white border-neutral-200"
+                              }`}
                             >
                               <div className="flex-1 min-w-0 pr-1">
-                                <span className="font-bold text-neutral-800 break-words whitespace-normal block">
-                                  {item.name}
-                                </span>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="font-bold text-neutral-800 break-words whitespace-normal block">
+                                    {item.name}
+                                  </span>
+                                  {isModified && (
+                                    <span className="inline-flex items-center gap-0.5 text-[9px] font-extrabold px-1.5 py-0.2 rounded bg-amber-200 text-amber-900 border border-amber-300">
+                                      <TrendingUp className="w-2.5 h-2.5" />
+                                      Aumentó {modInfo ? `(+${modInfo.percentChange}%)` : ""}
+                                    </span>
+                                  )}
+                                </div>
                                 <span className="text-[10px] text-neutral-400 block mt-0.5">
                                   {formatCurrency(item.unit_cost)} / {item.use_unit}
+                                  {isModified && modInfo && (
+                                    <span className="text-amber-800 font-semibold ml-1">
+                                      (antes {formatCurrency(modInfo.prevUnitCost)}/{modInfo.useUnit})
+                                    </span>
+                                  )}
                                 </span>
                               </div>
 
@@ -2171,7 +2401,7 @@ export default function ProductosPage() {
                                 <button
                                   type="button"
                                   onClick={() => handleRemoveSupplyFromRecipe(idx)}
-                                  className="p-1 text-neutral-400 hover:text-rose-500 transition ml-1"
+                                  className="p-1 text-neutral-400 hover:text-rose-500 transition ml-1 cursor-pointer"
                                   title="Quitar insumo"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
@@ -2475,6 +2705,16 @@ export default function ProductosPage() {
         onClose={() => setIsCreateSupplyOpen(false)}
         onSuccess={handleSupplyCreatedInlineEdit}
         zIndex="z-[100001]"
+      />
+
+      {/* Modal de Revisión Detallada de Precios por Modificación de Insumos */}
+      <PriceReviewModal
+        isOpen={reviewPriceProduct !== null}
+        onClose={() => setReviewPriceProduct(null)}
+        product={reviewPriceProduct}
+        onRecalculate={handleRecalculate}
+        onDismissAlert={handleDismissAlert}
+        isRecalculating={recalculatingId === reviewPriceProduct?.id}
       />
 
       {/* Toast de Notificación Kawaii */}
