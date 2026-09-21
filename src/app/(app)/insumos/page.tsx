@@ -24,6 +24,7 @@ import { PriceHistoryDrawer } from "@/components/insumos/PriceHistoryDrawer";
 import { DeleteSupplyModal } from "@/components/insumos/DeleteSupplyModal";
 import { SupplyDetailModal } from "@/components/insumos/SupplyDetailModal";
 import { Insumo, PriceRecord } from "@/types/insumo";
+import { matchesSearch } from "@/lib/search";
 
 export default function InsumosPage() {
   const supabase = createClient();
@@ -261,8 +262,8 @@ export default function InsumosPage() {
   const filteredSupplies = useMemo(() => {
     return supplies.filter((item) => {
       const matchesCategory = filter === "todos" || item.category === filter;
-      const matchesSearch = item.name.toLowerCase().includes(search.toLowerCase());
-      return matchesCategory && matchesSearch;
+      const searchMatch = matchesSearch([item.name, item.category], search);
+      return matchesCategory && searchMatch;
     });
   }, [supplies, filter, search]);
 
@@ -334,7 +335,10 @@ export default function InsumosPage() {
         ).map((tab) => (
           <button
             key={tab.key}
-            onClick={() => setFilter(tab.key)}
+            onClick={() => {
+              setFilter(tab.key);
+              setSearch("");
+            }}
             className={`flex-1 py-1.5 text-[11px] font-semibold rounded-xl transition ${
               filter === tab.key
                 ? "bg-white text-[#1F7A4C] shadow-sm"

@@ -40,6 +40,7 @@ import {
   ProductCategory,
   wouldCreateCircularDependency,
 } from "@/lib/products";
+import { matchesSearch } from "@/lib/search";
 
 interface ProductPrice {
   id: string;
@@ -904,13 +905,13 @@ export default function ProductosPage() {
   // Filtrado de productos
   const filteredProducts = useMemo(() => {
     return productsWithMeta.filter((p) => {
-      // 1. Búsqueda por texto (nombre, categoría, descripción limpia)
+      // 1. Búsqueda por texto (nombre, categoría, descripción limpia) con normalización de acentos y mayúsculas
       if (search.trim()) {
-        const query = search.toLowerCase();
-        const matchName = p.name.toLowerCase().includes(query);
-        const matchDesc = p.meta.cleanDescription.toLowerCase().includes(query);
-        const matchCat = p.meta.category.toLowerCase().includes(query);
-        if (!matchName && !matchDesc && !matchCat) return false;
+        const match = matchesSearch(
+          [p.name, p.meta.cleanDescription, p.meta.category],
+          search
+        );
+        if (!match) return false;
       }
 
       // 2. Filtro por categoría
@@ -1037,7 +1038,10 @@ export default function ProductosPage() {
       {/* Filtros de Categoría (Scroll horizontal de chips) */}
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1.5 scrollbar-none text-xs">
         <button
-          onClick={() => setSelectedCategory("all")}
+          onClick={() => {
+            setSelectedCategory("all");
+            setSearch("");
+          }}
           className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-1.5 ${
             selectedCategory === "all"
               ? "bg-[#1F7A4C] text-white shadow-sm"
@@ -1059,7 +1063,10 @@ export default function ProductosPage() {
           return (
             <button
               key={cat.id}
-              onClick={() => setSelectedCategory(isSelected ? "all" : cat.id)}
+              onClick={() => {
+                setSelectedCategory(isSelected ? "all" : cat.id);
+                setSearch("");
+              }}
               className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold transition flex items-center gap-1.5 border ${
                 isSelected
                   ? "bg-[#3BB578] text-white border-[#3BB578] shadow-sm"

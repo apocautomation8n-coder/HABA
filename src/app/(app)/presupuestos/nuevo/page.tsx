@@ -28,6 +28,7 @@ import {
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/units";
+import { matchesSearch } from "@/lib/search";
 
 interface ProductPrice {
   id: string;
@@ -83,6 +84,13 @@ function NuevoPresupuestoContent() {
   const [items, setItems] = useState<QuoteItemLine[]>([]);
   const [isProductPickerOpen, setIsProductPickerOpen] = useState(false);
   const [productSearch, setProductSearch] = useState("");
+
+  // Limpiar búsqueda al cerrar selector de productos
+  useEffect(() => {
+    if (!isProductPickerOpen) {
+      setProductSearch("");
+    }
+  }, [isProductPickerOpen]);
 
   // Cargar catálogo de productos con sus precios
   useEffect(() => {
@@ -857,7 +865,7 @@ function NuevoPresupuestoContent() {
             <div className="overflow-y-auto flex-1 min-h-0 my-2 space-y-3 pr-1 overscroll-contain">
               {(() => {
                 const filteredProducts = products.filter((p) =>
-                  p.name.toLowerCase().includes(productSearch.toLowerCase().trim())
+                  matchesSearch([p.name], productSearch)
                 );
 
                 if (products.length === 0) {

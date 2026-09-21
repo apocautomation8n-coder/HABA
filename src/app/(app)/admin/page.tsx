@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -34,6 +34,7 @@ import {
   formatDateDisplay,
   calculatePlanEndDate,
 } from "@/lib/plan-helpers";
+import { matchesSearch } from "@/lib/search";
 
 interface UserProfile {
   id: string;
@@ -428,33 +429,35 @@ export default function AdminPage() {
   );
 
   // Filtrar usuarias por texto y filtro rápido
-  const filteredUsers = users.filter((u) => {
-    const matchesSearch =
-      u.email.toLowerCase().includes(search.toLowerCase()) ||
-      (u.full_name && u.full_name.toLowerCase().includes(search.toLowerCase())) ||
-      (u.business_name && u.business_name.toLowerCase().includes(search.toLowerCase()));
+  const filteredUsers = useMemo(() => {
+    return users.filter((u) => {
+      const matches = matchesSearch(
+        [u.email, u.full_name, u.business_name],
+        search
+      );
 
-    if (!matchesSearch) return false;
+      if (!matches) return false;
 
-    const info = getPlanStatusInfo(u.plan_end_date);
-    const accStatus =
-      u.account_status || (u.status === "suspended" ? "suspended" : "active");
+      const info = getPlanStatusInfo(u.plan_end_date);
+      const accStatus =
+        u.account_status || (u.status === "suspended" ? "suspended" : "active");
 
-    if (quickFilter === "activos") {
-      return accStatus === "active" && info.status !== "vencido";
-    }
-    if (quickFilter === "proximos") {
-      return info.status === "proximo_a_vencer";
-    }
-    if (quickFilter === "vencidos") {
-      return info.status === "vencido";
-    }
-    if (quickFilter === "desactivados") {
-      return accStatus === "deactivated" || accStatus === "suspended";
-    }
+      if (quickFilter === "activos") {
+        return accStatus === "active" && info.status !== "vencido";
+      }
+      if (quickFilter === "proximos") {
+        return info.status === "proximo_a_vencer";
+      }
+      if (quickFilter === "vencidos") {
+        return info.status === "vencido";
+      }
+      if (quickFilter === "desactivados") {
+        return accStatus === "deactivated" || accStatus === "suspended";
+      }
 
-    return true;
-  });
+      return true;
+    });
+  }, [users, search, quickFilter]);
 
   if (loading) {
     return (
@@ -552,7 +555,10 @@ export default function AdminPage() {
       {/* Filtros Rápidos */}
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar text-xs">
         <button
-          onClick={() => setQuickFilter("todos")}
+          onClick={() => {
+            setQuickFilter("todos");
+            setSearch("");
+          }}
           className={`px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1.5 whitespace-nowrap ${
             quickFilter === "todos"
               ? "bg-[#2B2B2B] text-white shadow-xs"
@@ -570,7 +576,10 @@ export default function AdminPage() {
         </button>
 
         <button
-          onClick={() => setQuickFilter("activos")}
+          onClick={() => {
+            setQuickFilter("activos");
+            setSearch("");
+          }}
           className={`px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1.5 whitespace-nowrap ${
             quickFilter === "activos"
               ? "bg-[#1F7A4C] text-white shadow-xs"
@@ -590,7 +599,10 @@ export default function AdminPage() {
         </button>
 
         <button
-          onClick={() => setQuickFilter("proximos")}
+          onClick={() => {
+            setQuickFilter("proximos");
+            setSearch("");
+          }}
           className={`px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1.5 whitespace-nowrap ${
             quickFilter === "proximos"
               ? "bg-amber-600 text-white shadow-xs"
@@ -610,7 +622,10 @@ export default function AdminPage() {
         </button>
 
         <button
-          onClick={() => setQuickFilter("vencidos")}
+          onClick={() => {
+            setQuickFilter("vencidos");
+            setSearch("");
+          }}
           className={`px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1.5 whitespace-nowrap ${
             quickFilter === "vencidos"
               ? "bg-rose-600 text-white shadow-xs"
@@ -630,7 +645,10 @@ export default function AdminPage() {
         </button>
 
         <button
-          onClick={() => setQuickFilter("desactivados")}
+          onClick={() => {
+            setQuickFilter("desactivados");
+            setSearch("");
+          }}
           className={`px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1.5 whitespace-nowrap ${
             quickFilter === "desactivados"
               ? "bg-neutral-700 text-white shadow-xs"

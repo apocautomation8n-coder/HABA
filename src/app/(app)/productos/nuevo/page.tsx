@@ -36,6 +36,7 @@ import { createClient } from "@/lib/supabase/client";
 import { formatCurrency, calculateUnitCost } from "@/lib/units";
 import { SupplyItem } from "@/components/SupplyModal";
 import { PRODUCT_CATEGORIES, serializeProductDescription, SelectedProductComponent, calculateComponentsCost, getCategoryBadge } from "@/lib/products";
+import { matchesSearch } from "@/lib/search";
 
 interface SelectedSupply {
   supply: SupplyItem;
@@ -91,6 +92,15 @@ export default function NuevoProductoPage() {
   const [componentPickerOpen, setComponentPickerOpen] = useState(false);
   const [componentSearch, setComponentSearch] = useState("");
   const [activeRecipeTab, setActiveRecipeTab] = useState<"supplies" | "components">("supplies");
+
+  // Limpiar inputs de búsqueda al cerrar los modales de selección
+  useEffect(() => {
+    if (!supplyPickerOpen) setSupplyPickerSearch("");
+  }, [supplyPickerOpen]);
+
+  useEffect(() => {
+    if (!componentPickerOpen) setComponentSearch("");
+  }, [componentPickerOpen]);
 
   // Paso 3: Tiempo / Mano de Obra (Opcional)
   const [includeLabor, setIncludeLabor] = useState(true);
@@ -1679,14 +1689,9 @@ export default function NuevoProductoPage() {
 
             <div className="overflow-y-auto flex-1 min-h-0 my-3 space-y-2 pr-1 overscroll-contain">
               {(() => {
-                const filtered = availableSupplies.filter((sup) => {
-                  if (!supplySearch.trim()) return true;
-                  const query = supplySearch.toLowerCase();
-                  return (
-                    sup.name.toLowerCase().includes(query) ||
-                    (sup.category && sup.category.toLowerCase().includes(query))
-                  );
-                });
+                const filtered = availableSupplies.filter((sup) =>
+                  matchesSearch([sup.name, sup.category], supplySearch)
+                );
 
                 if (availableSupplies.length === 0) {
                   return (
@@ -1819,7 +1824,7 @@ export default function NuevoProductoPage() {
             <div className="flex-1 overflow-y-auto space-y-2 py-2 pr-1">
               {(() => {
                 const filtered = availableProducts.filter((p) =>
-                  p.name.toLowerCase().includes(componentSearch.toLowerCase())
+                  matchesSearch([p.name, p.category, p.description], componentSearch)
                 );
 
                 if (availableProducts.length === 0) {

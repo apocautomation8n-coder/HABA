@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
+import { matchesSearch } from "@/lib/search";
 import { formatCurrency } from "@/lib/units";
 
 interface QuoteItem {
@@ -532,10 +533,9 @@ export default function PresupuestosPage() {
   };
 
   const filteredQuotes = useMemo(() => {
-    return quotes.filter(
-      (q) =>
-        q.client_name.toLowerCase().includes(search.toLowerCase()) ||
-        String(q.quote_number).toLowerCase().includes(search.toLowerCase())
+    if (!search.trim()) return quotes;
+    return quotes.filter((q) =>
+      matchesSearch([q.client_name, q.quote_number, q.notes], search)
     );
   }, [quotes, search]);
 
