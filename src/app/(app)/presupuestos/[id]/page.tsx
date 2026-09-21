@@ -21,45 +21,20 @@ import {
   Mail,
   MapPin,
   AtSign,
+  AlertTriangle,
 } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/units";
+import {
+  Quote,
+  QuoteItem,
+  UserProfile,
+  getQuoteValidity,
+  buildQuoteWhatsAppMessage,
+  parseQuoteNotes,
+} from "@/lib/quotes";
 
-interface QuoteItem {
-  id: string;
-  product_name: string;
-  channel_name: string;
-  unit_price: number;
-  quantity: number;
-  subtotal: number;
-}
-
-interface Quote {
-  id: string;
-  user_id: string;
-  quote_number: string | number;
-  client_name: string;
-  client_contact?: string | null;
-  delivery_date?: string | null;
-  discount_percent: number;
-  subtotal: number;
-  total: number;
-  notes?: string | null;
-  created_at: string;
-  quote_items?: QuoteItem[];
-}
-
-interface UserProfile {
-  business_name?: string | null;
-  full_name?: string | null;
-  email?: string | null;
-  phone?: string | null;
-  business_phone?: string | null;
-  business_email?: string | null;
-  instagram?: string | null;
-  address?: string | null;
-}
 
 export default function PresupuestoPreviewPage() {
   const params = useParams();
@@ -147,77 +122,20 @@ export default function PresupuestoPreviewPage() {
   }, [id, supabase]);
 
   // Extraer envío y notas limpias
-  const shippingCost = React.useMemo(() => {
-    if (!quote?.notes) return 0;
-    const match = quote.notes.match(/\[ENVIO:(\d+(\.\d+)?)\]/);
-    return match ? Number(match[1]) || 0 : 0;
+  const { shippingCost, cleanNotes } = React.useMemo(() => {
+    return parseQuoteNotes(quote?.notes);
   }, [quote?.notes]);
 
-  const cleanNotes = React.useMemo(() => {
-    if (!quote?.notes) return "";
-    return quote.notes.replace(/\[ENVIO:(\d+(\.\d+)?)\]\n?/, "").trim();
-  }, [quote?.notes]);
+  const validity = React.useMemo(() => {
+    if (!quote) return null;
+    return getQuoteValidity(quote);
+  }, [quote]);
 
   // Compartir por WhatsApp / Web Share API
   const handleShareWhatsApp = async () => {
     if (!quote) return;
 
-    const itemsText = (quote.quote_items || [])
-      .map(
-        (item) =>
-          `• ${item.quantity}x ${item.product_name} (${formatCurrency(item.unit_price)}) = ${formatCurrency(
-            item.subtotal
-          )}`
-      )
-      .join("\n");
-
-    const discountText =
-      quote.discount_percent > 0
-        ? `\n🏷️ Descuento (${quote.discount_percent}%): -${formatCurrency(
-            (quote.subtotal * quote.discount_percent) / 100
-          )}`
-        : "";
-
-    const shippingText =
-      shippingCost > 0
-        ? `\n🚚 Envío: ${formatCurrency(shippingCost)} (sujeto a tarifa del correo)`
-        : "";
-
-    const notesText = cleanNotes
-      ? `\n\n📝 *Condiciones / Entrega:*\n${cleanNotes}`
-      : "";
-
-    // Datos de contacto del emprendimiento para el mensaje
-    const contactLines: string[] = [];
-    const bName = profile?.business_name || (profile?.full_name ? `Taller ${profile.full_name}` : "");
-    if (bName) contactLines.push(`🌸 *${bName}*`);
-    if (profile?.business_phone || profile?.phone) {
-      contactLines.push(`📞 WhatsApp: ${profile.business_phone || profile.phone}`);
-    }
-    if (profile?.instagram) {
-      contactLines.push(`📷 Instagram: ${profile.instagram}`);
-    }
-    if (profile?.business_email || profile?.email) {
-      contactLines.push(`✉️ Email: ${profile.business_email || profile.email}`);
-    }
-    if (profile?.address) {
-      contactLines.push(`📍 Ubicación: ${profile.address}`);
-    }
-
-    const contactFooter = contactLines.length > 0
-      ? `\n\n💬 *Contacto:*\n${contactLines.join("\n")}`
-      : "";
-
-    const fullMessage =
-      `*PRESUPUESTO #${quote.quote_number}* 🌸\n\n` +
-      `*Cliente:* ${quote.client_name}\n` +
-      `*Emisión:* ${new Date(quote.created_at).toLocaleDateString("es-AR")}\n\n` +
-      `*Detalle de Productos:*\n${itemsText}\n\n` +
-      `*Subtotal:* ${formatCurrency(quote.subtotal)}${discountText}${shippingText}\n` +
-      `*TOTAL FINAL:* ${formatCurrency(quote.total)}${notesText}\n\n` +
-      `⏳ *Vigencia:* 15 días corridos con precios congelados.` +
-      contactFooter +
-      `\n\n¡Muchas gracias por tu consulta!`;
+    const fullMessage = buildQuoteWhatsAppMessage(quote, profile, validity || undefined);
 
     // 1. Intentar con Web Share API (SIN url separada para evitar que WhatsApp duplique el enlace al final)
     if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
@@ -244,6 +162,7 @@ export default function PresupuestoPreviewPage() {
 
     window.open(waUrl, "_blank");
   };
+
 
   // Imprimir / Descargar PDF nativo
   const handlePrint = () => {
@@ -389,9 +308,20 @@ export default function PresupuestoPreviewPage() {
               <h2 className="text-lg font-bold text-neutral-800">
                 Presupuesto #{quote.quote_number}
               </h2>
-              <span className="text-[10px] bg-[#DCF4D7] text-[#1F7A4C] font-bold px-2 py-0.5 rounded-full border border-[#C3EBC0]">
-                Precios Congelados
-              </span>
+              {validity?.isExpired ? (
+                <span className="text-[10px] bg-rose-50 text-rose-700 font-bold px-2 py-0.5 rounded-full border border-rose-200 flex items-center gap-1">
+                  <Clock className="w-3 h-3 text-rose-600" />
+                  <span>Vencido ({validity.formattedValidUntil})</span>
+                </span>
+              ) : (
+                <span className="text-[10px] bg-[#DCF4D7] text-[#1F7A4C] font-bold px-2 py-0.5 rounded-full border border-[#C3EBC0] flex items-center gap-1">
+                  <Clock className="w-3 h-3 text-[#1F7A4C]" />
+                  <span>
+                    Válido hasta {validity?.formattedValidUntil} ({validity?.daysRemaining}{" "}
+                    {validity?.daysRemaining === 1 ? "día" : "días"})
+                  </span>
+                </span>
+              )}
             </div>
             <p className="text-xs text-neutral-500">Vista previa oficial para el cliente</p>
           </div>
@@ -426,6 +356,30 @@ export default function PresupuestoPreviewPage() {
           </button>
         </div>
       </div>
+
+      {/* Banner de advertencia si el presupuesto ya venció */}
+      {validity?.isExpired && (
+        <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl flex items-center justify-between text-xs text-rose-900 shadow-2xs gap-3 print-hidden animate-in fade-in duration-200">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5 text-rose-600 flex-shrink-0" />
+            <div>
+              <span className="font-bold block">
+                Presupuesto vencido el {validity.formattedValidUntil}
+              </span>
+              <span className="text-[11px] text-rose-700 block">
+                El período de precios congelados expiró. Requiere revisión de costos de insumos antes de confirmar con el cliente.
+              </span>
+            </div>
+          </div>
+          <Link
+            href={`/presupuestos/nuevo?edit=${quote.id}`}
+            className="py-1.5 px-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 flex-shrink-0 shadow-xs active:scale-95"
+          >
+            <Edit2 className="w-3.5 h-3.5" />
+            <span>Actualizar Costos</span>
+          </Link>
+        </div>
+      )}
 
       {/* Hoja del Presupuesto con Branding HABA (Estructura de Documento A4) */}
       <div className="quote-sheet bg-white rounded-3xl p-6 sm:p-10 border border-[#EAF0E8] shadow-sm max-w-3xl mx-auto w-full space-y-6">
@@ -522,8 +476,19 @@ export default function PresupuestoPreviewPage() {
             </span>
             <div className="text-xs text-neutral-700 font-semibold flex items-center sm:justify-end gap-1">
               <Clock className="w-3.5 h-3.5 text-[#3BB578]" />
-              <span>Vigencia: 15 días corridos</span>
+              <span>Vigencia: {validity?.validityDays} días corridos</span>
             </div>
+            <p className="text-[11px] text-neutral-500 flex items-center sm:justify-end gap-1">
+              <span>Vence:</span>
+              <strong className={validity?.isExpired ? "text-rose-600 font-bold" : "text-neutral-700"}>
+                {validity?.formattedValidUntil}
+              </strong>
+              {validity?.isExpired ? (
+                <span className="text-[9px] bg-rose-100 text-rose-700 font-bold px-1.5 py-0.2 rounded-md">Vencido</span>
+              ) : (
+                <span className="text-[9px] bg-emerald-100 text-emerald-700 font-bold px-1.5 py-0.2 rounded-md">Vigente</span>
+              )}
+            </p>
             {quote.delivery_date && (
               <p className="text-[11px] text-neutral-500 flex items-center sm:justify-end gap-1">
                 <span>Entrega estimada:</span>
@@ -594,7 +559,7 @@ export default function PresupuestoPreviewPage() {
             <div>
               <span className="font-bold block">Precios Congelados</span>
               <span className="text-[10px] text-neutral-500">
-                Los valores quedan asegurados durante el período de vigencia.
+                Los valores quedan asegurados hasta el {validity?.formattedValidUntil} ({validity?.validityDays} días corridos desde su emisión).
               </span>
             </div>
           </div>
@@ -659,8 +624,7 @@ export default function PresupuestoPreviewPage() {
         <div className="quote-footer border-t border-neutral-200/80 pt-4 space-y-2 text-[10px] text-neutral-500">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1">
             <p>
-              <strong className="text-neutral-700">Cláusula de Vigencia:</strong> Este presupuesto tiene una validez de{" "}
-              <strong>15 días corridos</strong> desde su emisión. Transcurrido dicho plazo, los precios quedan sujetos a reajuste según costo de insumos.
+              <strong className="text-neutral-700">Cláusula de Vigencia:</strong> {validity?.formattedClause}
             </p>
           </div>
 

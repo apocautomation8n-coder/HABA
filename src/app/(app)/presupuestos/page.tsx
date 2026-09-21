@@ -20,45 +20,22 @@ import {
   Edit2,
   Eye,
   X,
+  Clock,
+  AlertTriangle,
 } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
 import { matchesSearch } from "@/lib/search";
 import { formatCurrency } from "@/lib/units";
+import {
+  Quote,
+  QuoteItem,
+  UserProfile,
+  getQuoteValidity,
+  buildQuoteWhatsAppMessage,
+  parseQuoteNotes,
+} from "@/lib/quotes";
 
-interface QuoteItem {
-  id: string;
-  product_name: string;
-  channel_name: string;
-  unit_price: number;
-  quantity: number;
-  subtotal: number;
-}
-
-interface Quote {
-  id: string;
-  quote_number: string | number;
-  client_name: string;
-  client_contact?: string;
-  delivery_date?: string;
-  discount_percent: number;
-  subtotal: number;
-  total: number;
-  notes?: string;
-  created_at: string;
-  quote_items?: QuoteItem[];
-}
-
-interface UserProfile {
-  business_name?: string | null;
-  full_name?: string | null;
-  email?: string | null;
-  phone?: string | null;
-  business_phone?: string | null;
-  business_email?: string | null;
-  instagram?: string | null;
-  address?: string | null;
-}
 
 export default function PresupuestosPage() {
   const supabase = createClient();
@@ -156,55 +133,7 @@ export default function PresupuestosPage() {
 
   // Generar mensaje y compartir por Web Share API / WhatsApp
   const shareViaWhatsApp = async (quote: Quote) => {
-    const itemsText = (quote.quote_items || [])
-      .map(
-        (item) =>
-          `• ${item.quantity}x ${item.product_name} (${formatCurrency(item.unit_price)}) = ${formatCurrency(
-            item.subtotal
-          )}`
-      )
-      .join("\n");
-
-    const discountText =
-      quote.discount_percent > 0
-        ? `\n🏷️ Descuento (${quote.discount_percent}%): -${formatCurrency(
-            (quote.subtotal * quote.discount_percent) / 100
-          )}`
-        : "";
-
-    const notesText = quote.notes ? `\n\n📝 *Condiciones / Notas:*\n${quote.notes}` : "";
-
-    // Datos de contacto del emprendimiento para el mensaje
-    const contactLines: string[] = [];
-    const bName = userProfile?.business_name || (userProfile?.full_name ? `Taller ${userProfile.full_name}` : "");
-    if (bName) contactLines.push(`🌸 *${bName}*`);
-    if (userProfile?.business_phone || userProfile?.phone) {
-      contactLines.push(`📞 WhatsApp: ${userProfile.business_phone || userProfile.phone}`);
-    }
-    if (userProfile?.instagram) {
-      contactLines.push(`📷 Instagram: ${userProfile.instagram}`);
-    }
-    if (userProfile?.business_email || userProfile?.email) {
-      contactLines.push(`✉️ Email: ${userProfile.business_email || userProfile.email}`);
-    }
-    if (userProfile?.address) {
-      contactLines.push(`📍 Ubicación: ${userProfile.address}`);
-    }
-
-    const contactFooter = contactLines.length > 0
-      ? `\n\n💬 *Contacto:*\n${contactLines.join("\n")}`
-      : "";
-
-    const fullMessage =
-      `*PRESUPUESTO #${quote.quote_number}* 🌸\n\n` +
-      `*Cliente:* ${quote.client_name}\n` +
-      `*Emisión:* ${new Date(quote.created_at).toLocaleDateString("es-AR")}\n\n` +
-      `*Detalle de Productos:*\n${itemsText}\n\n` +
-      `*Subtotal:* ${formatCurrency(quote.subtotal)}${discountText}\n` +
-      `*TOTAL FINAL:* ${formatCurrency(quote.total)}${notesText}\n\n` +
-      `⏳ *Vigencia:* 15 días corridos con precios congelados.` +
-      contactFooter +
-      `\n\n¡Muchas gracias por tu consulta!`;
+    const fullMessage = buildQuoteWhatsAppMessage(quote, userProfile);
 
     // 1. Intentar con Web Share API primero si el navegador lo soporta
     if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
@@ -237,7 +166,11 @@ export default function PresupuestosPage() {
     const printWindow = window.open("", "_blank");
     if (!printWindow) return;
 
+    const validity = getQuoteValidity(quote);
+    const { cleanNotes } = parseQuoteNotes(quote.notes);
+
     const itemsRows = (quote.quote_items || [])
+
       .map(
         (item) => `
         <tr>
@@ -462,8 +395,8 @@ export default function PresupuestosPage() {
               </div>
               <div style="text-align: right;">
                 <div class="client-title">Condiciones:</div>
-                <div style="color: #1F7A4C; font-weight: 700;">Vigencia: 15 días corridos</div>
-                <div style="color: #666; font-size: 10px; margin-top: 1px;">Precios Congelados</div>
+                <div style="color: #1F7A4C; font-weight: 700;">Vigencia: ${validity.validityDays} días corridos</div>
+                <div style="color: #666; font-size: 10px; margin-top: 1px;">Vence: ${validity.formattedValidUntil}</div>
               </div>
             </div>
 
@@ -484,7 +417,7 @@ export default function PresupuestosPage() {
             <div class="totals-wrap">
               <div class="guarantee-box">
                 <strong style="display: block; margin-bottom: 2px;">Precios Congelados</strong>
-                Los valores quedan asegurados durante el período de vigencia de 15 días corridos.
+                Los valores quedan asegurados hasta el ${validity.formattedValidUntil} (${validity.validityDays} días corridos desde su emisión).
               </div>
 
               <div class="totals-table">
@@ -509,14 +442,14 @@ export default function PresupuestosPage() {
               </div>
             </div>
 
-            ${quote.notes ? `
+            ${cleanNotes ? `
             <div class="notes-box">
               <strong>📝 Condiciones de entrega y formas de pago:</strong><br/>
-              <span style="white-space: pre-line; line-height: 1.4;">${quote.notes}</span>
+              <span style="white-space: pre-line; line-height: 1.4;">${cleanNotes}</span>
             </div>` : ""}
 
             <div class="footer">
-              <span>Vigencia: 15 días corridos con precios congelados.</span>
+              <span>${validity.formattedClause}</span>
               <span style="color: #1F7A4C; font-weight: 600;">Generado con HABA • Presupuesto Oficial</span>
             </div>
           </div>
@@ -617,22 +550,42 @@ export default function PresupuestosPage() {
         <div className="space-y-3">
           {filteredQuotes.map((quote) => {
             const isExpanded = expandedQuoteId === quote.id;
+            const validity = getQuoteValidity(quote);
+            const { cleanNotes } = parseQuoteNotes(quote.notes);
 
             return (
               <div
                 key={quote.id}
-                className="bg-white rounded-3xl p-4 border border-[#EAF0E8] shadow-sm flex flex-col space-y-3 transition hover:border-[#C3EBC0]"
+                className={`bg-white rounded-3xl p-4 border shadow-sm flex flex-col space-y-3 transition ${
+                  validity.isExpired
+                    ? "border-rose-200 hover:border-rose-300"
+                    : "border-[#EAF0E8] hover:border-[#C3EBC0]"
+                }`}
               >
                 {/* Cabecera del presupuesto */}
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-[10px] font-bold text-[#1F7A4C] bg-[#DCF4D7] px-2 py-0.5 rounded-full">
-                        {quote.quote_number}
+                        #{quote.quote_number}
                       </span>
                       <span className="text-[10px] text-neutral-400">
-                        {new Date(quote.created_at).toLocaleDateString("es-AR")}
+                        Emisión: {validity.formattedIssuedAt}
                       </span>
+                      {validity.isExpired ? (
+                        <span className="text-[10px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                          <Clock className="w-3 h-3 text-rose-600" />
+                          <span>Vencido ({validity.formattedValidUntil})</span>
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                          <Clock className="w-3 h-3 text-emerald-600" />
+                          <span>
+                            Válido hasta {validity.formattedValidUntil} ({validity.daysRemaining}{" "}
+                            {validity.daysRemaining === 1 ? "día" : "días"})
+                          </span>
+                        </span>
+                      )}
                     </div>
                     <h3 className="text-sm font-bold text-neutral-800 mt-1">
                       {quote.client_name}
@@ -653,6 +606,26 @@ export default function PresupuestosPage() {
                     </span>
                   </div>
                 </div>
+
+                {/* Alerta de presupuesto vencido si superó la fecha límite */}
+                {validity.isExpired && (
+                  <div className="p-2.5 bg-rose-50/90 border border-rose-200 rounded-2xl flex items-center justify-between text-xs text-rose-900 shadow-2xs gap-2">
+                    <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                      <AlertTriangle className="w-4 h-4 text-rose-600 flex-shrink-0" />
+                      <span className="text-[11px] font-semibold leading-tight">
+                        Presupuesto vencido — requiere revisión de costos antes de confirmar con el cliente.
+                      </span>
+                    </div>
+                    <Link
+                      href={`/presupuestos/nuevo?edit=${quote.id}`}
+                      className="py-1 px-2.5 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white rounded-xl text-[11px] font-bold flex items-center gap-1 transition shadow-xs flex-shrink-0"
+                      title="Editar y actualizar presupuesto"
+                    >
+                      <Edit2 className="w-3 h-3" />
+                      <span>Actualizar</span>
+                    </Link>
+                  </div>
+                )}
 
                 {/* Acciones Rápidas: WhatsApp, PDF, Desplegar */}
                 <div className="pt-2 border-t border-neutral-100 flex items-center justify-between">
@@ -716,9 +689,23 @@ export default function PresupuestosPage() {
                   </div>
                 </div>
 
-                {/* Detalle Desplegado de Ítems Congelados */}
+                {/* Detalle Desplegado de Ítems Congelados y Vigencia */}
                 {isExpanded && (
-                  <div className="pt-2 border-t border-neutral-100 space-y-2 animate-in fade-in-50 duration-200">
+                  <div className="pt-2 border-t border-neutral-100 space-y-2.5 animate-in fade-in-50 duration-200">
+                    {/* Cláusula y Vigencia en Vista Desplegada */}
+                    <div className="p-2.5 bg-neutral-50 rounded-xl border border-neutral-200/70 text-[11px] text-neutral-600 space-y-1">
+                      <div className="flex items-center justify-between font-semibold text-neutral-700">
+                        <span className="flex items-center gap-1">
+                          <Clock className="w-3.5 h-3.5 text-[#3BB578]" />
+                          <span>Vigencia: {validity.validityDays} días corridos</span>
+                        </span>
+                        <span>Límite: {validity.formattedValidUntil}</span>
+                      </div>
+                      <p className="text-[10px] text-neutral-400 italic">
+                        {validity.formattedClause}
+                      </p>
+                    </div>
+
                     <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider block">
                       Ítems Congelados en este Presupuesto:
                     </span>
@@ -744,10 +731,10 @@ export default function PresupuestosPage() {
                       ))}
                     </div>
 
-                    {quote.notes && (
+                    {cleanNotes && (
                       <div className="p-2.5 bg-amber-50/50 rounded-xl border border-amber-100 text-[11px] text-amber-800">
                         <strong className="block">Notas:</strong>
-                        {quote.notes}
+                        {cleanNotes}
                       </div>
                     )}
                   </div>
