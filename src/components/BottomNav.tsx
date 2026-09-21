@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Boxes, ShoppingBag, Receipt, Settings, ShieldCheck } from "lucide-react";
+import { Home, Boxes, ShoppingBag, Receipt, Wallet, Settings, ShieldCheck } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 import { checkIsAdmin, getUserDisplayName } from "@/lib/auth-helpers";
@@ -21,6 +21,7 @@ const baseNavItems: NavItem[] = [
   { label: "Insumos", href: "/insumos", icon: Boxes },
   { label: "Productos", href: "/productos", icon: ShoppingBag },
   { label: "Presupuestos", href: "/presupuestos", icon: Receipt },
+  { label: "Gastos", href: "/gastos", icon: Wallet },
   { label: "Ajustes", href: "/configuracion", icon: Settings },
 ];
 
@@ -79,13 +80,13 @@ export const BottomNav: React.FC = () => {
     : baseNavItems;
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 max-w-md mx-auto bg-white/95 backdrop-blur-md border-t border-[#EAF0E8] shadow-[0_-4px_20px_rgba(59,181,120,0.05)] px-2 pt-1.5 pb-[max(env(safe-area-inset-bottom),8px)] transition-all md:hidden">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 max-w-md mx-auto bg-white/95 backdrop-blur-md border-t border-[#EAF0E8] shadow-[0_-4px_20px_rgba(59,181,120,0.05)] px-1 sm:px-2 pt-1 pb-[max(env(safe-area-inset-bottom),6px)] transition-all md:hidden">
       {/* Mascota Onboarding anclada de forma absoluta sobre el ítem Inicio */}
       {pathname === "/dashboard" && (
         <HabaOnboardingMascot userName={userName} />
       )}
 
-      <ul className="flex items-center justify-around">
+      <ul className="flex items-center justify-between gap-0.5">
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive =
@@ -96,23 +97,23 @@ export const BottomNav: React.FC = () => {
           const hasProductAlert = isProductItem && productAlertsCount > 0;
 
           return (
-            <li key={item.href} className="flex-1">
+            <li key={item.href} className="flex-1 min-w-0">
               <Link
                 href={item.href}
-                className={`flex flex-col items-center justify-center py-1.5 px-1 rounded-2xl transition-all duration-200 font-body ${
+                className={`flex flex-col items-center justify-center py-1 px-0.5 rounded-xl transition-all duration-200 font-body ${
                   isActive
                     ? "text-[#3BB578] font-bold"
                     : "text-[#7A7A7A] hover:text-[#2B2B2B] font-medium"
                 }`}
               >
                 <div
-                  className={`relative p-1.5 rounded-xl transition-all duration-200 ${
+                  className={`relative p-1 sm:p-1.5 rounded-xl transition-all duration-200 ${
                     isActive
                       ? "bg-[#DCF4D7] text-[#3BB578] scale-105 shadow-xs"
                       : "bg-transparent text-[#7A7A7A]"
                   }`}
                 >
-                  <Icon className="w-4 h-4 sm:w-5 sm:h-5" strokeWidth={isActive ? 2.5 : 2} />
+                  <Icon className="w-4 h-4 sm:w-[18px] sm:h-[18px]" strokeWidth={isActive ? 2.5 : 2} />
                   {hasProductAlert && (
                     <span 
                       className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-amber-500 border-2 border-white rounded-full animate-pulse shadow-xs" 
@@ -120,7 +121,7 @@ export const BottomNav: React.FC = () => {
                     />
                   )}
                 </div>
-                <span className="text-[9.5px] sm:text-[10px] mt-0.5 tracking-tight truncate max-w-[50px] text-center">
+                <span className="text-[8.5px] sm:text-[9.5px] mt-0.5 tracking-tighter sm:tracking-tight truncate w-full text-center block leading-tight">
                   {item.label}
                 </span>
               </Link>

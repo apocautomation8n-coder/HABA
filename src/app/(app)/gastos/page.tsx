@@ -29,7 +29,7 @@ export default function GastosPage() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Mano de Obra State
-  const [salary, setSalary] = useState<number | string>(350000);
+  const [salary, setSalary] = useState<number | string>("");
   const [daysPerMonth, setDaysPerMonth] = useState<number | string>(20);
   const [hoursPerDay, setHoursPerDay] = useState<number | string>(6);
   const [savingLabor, setSavingLabor] = useState(false);
@@ -62,10 +62,18 @@ export default function GastosPage() {
           .maybeSingle();
 
         if (laborData) {
-          setSalary(laborData.desired_monthly_salary ?? 350000);
+          setSalary(
+            laborData.desired_monthly_salary !== null &&
+            laborData.desired_monthly_salary !== undefined &&
+            laborData.desired_monthly_salary > 0
+              ? laborData.desired_monthly_salary
+              : ""
+          );
           setDaysPerMonth(laborData.working_days_per_month ?? 20);
           setHoursPerDay(laborData.working_hours_per_day ?? 6);
           setLastSavedAt(laborData.updated_at || null);
+        } else {
+          setSalary("");
         }
       }
     } catch (err) {
@@ -101,7 +109,8 @@ export default function GastosPage() {
   const numHours = typeof hoursPerDay === "number" ? hoursPerDay : parseFloat(String(hoursPerDay)) || 0;
   const totalHoursPerMonth = numDays * numHours;
   const objetivoMensual = parsedSalary + totalMonthlyExpenses;
-  const calculatedHourlyRate = totalHoursPerMonth > 0 ? objetivoMensual / totalHoursPerMonth : 0;
+  const hasSalary = salary !== "" && salary !== null && salary !== undefined && parsedSalary > 0;
+  const calculatedHourlyRate = hasSalary && totalHoursPerMonth > 0 ? objetivoMensual / totalHoursPerMonth : 0;
   const calculatedMinuteRate = calculatedHourlyRate / 60;
 
   // Handlers para Modales de Gastos Fijos
@@ -333,13 +342,12 @@ export default function GastosPage() {
                 <input
                   type="text"
                   inputMode="numeric"
-                  value={salary !== "" && salary !== null && salary !== undefined && salary !== 0 ? formatThousands(salary) : ""}
+                  value={salary !== "" && salary !== null && salary !== undefined ? formatThousands(salary) : ""}
                   onChange={(e) => {
                     const raw = e.target.value.replace(/\D/g, "");
                     setSalary(raw ? parseInt(raw, 10) : "");
                   }}
                   placeholder="0"
-                  required
                   className="w-full pl-8 pr-4 py-2.5 text-sm font-bold text-[#2B2B2B] bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none"
                 />
               </div>

@@ -79,7 +79,7 @@ export default function SettingsPage() {
   const [copiedAccountNum, setCopiedAccountNum] = useState<boolean>(false);
 
   // Mano de Obra y Sueldo Pretendido (Punto 4)
-  const [salary, setSalary] = useState<number | string>(350000);
+  const [salary, setSalary] = useState<number | string>("");
   const [daysPerMonth, setDaysPerMonth] = useState<number | string>(20);
   const [hoursPerDay, setHoursPerDay] = useState<number | string>(6);
   const [fixedExpensesTotal, setFixedExpensesTotal] = useState<number>(0);
@@ -181,8 +181,10 @@ export default function SettingsPage() {
               .maybeSingle();
 
             if (laborData) {
-              if (laborData.desired_monthly_salary !== undefined && laborData.desired_monthly_salary !== null) {
+              if (laborData.desired_monthly_salary !== undefined && laborData.desired_monthly_salary !== null && laborData.desired_monthly_salary > 0) {
                 setSalary(laborData.desired_monthly_salary);
+              } else {
+                setSalary("");
               }
               if (laborData.working_days_per_month) {
                 setDaysPerMonth(laborData.working_days_per_month);
@@ -190,6 +192,8 @@ export default function SettingsPage() {
               if (laborData.working_hours_per_day) {
                 setHoursPerDay(laborData.working_hours_per_day);
               }
+            } else {
+              setSalary("");
             }
           } catch {
             // ignore
@@ -238,7 +242,8 @@ export default function SettingsPage() {
   const numHours = typeof hoursPerDay === "number" ? hoursPerDay : parseFloat(String(hoursPerDay)) || 0;
   const totalHoursPerMonth = numDays * numHours;
   const objetivoMensual = parsedSalary + fixedExpensesTotal;
-  const calculatedHourlyRate = totalHoursPerMonth > 0 ? objetivoMensual / totalHoursPerMonth : 0;
+  const hasSalary = salary !== "" && salary !== null && salary !== undefined && parsedSalary > 0;
+  const calculatedHourlyRate = hasSalary && totalHoursPerMonth > 0 ? objetivoMensual / totalHoursPerMonth : 0;
   const calculatedMinuteRate = calculatedHourlyRate / 60;
 
   // Guardar mano de obra y sueldo pretendido
@@ -834,7 +839,6 @@ export default function SettingsPage() {
           <div className="space-y-1">
             <label className="text-xs font-semibold text-neutral-700 flex items-center gap-1">
               <span>Sueldo Pretendido Mensual ($)</span>
-              <span className="text-rose-500">*</span>
             </label>
             <div className="relative">
               <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-neutral-400 font-bold text-xs">
@@ -843,13 +847,12 @@ export default function SettingsPage() {
               <input
                 type="text"
                 inputMode="numeric"
-                value={salary !== "" && salary !== null && salary !== undefined && salary !== 0 ? formatThousands(salary) : ""}
+                value={salary !== "" && salary !== null && salary !== undefined ? formatThousands(salary) : ""}
                 onChange={(e) => {
                   const raw = e.target.value.replace(/\D/g, "");
                   setSalary(raw ? parseInt(raw, 10) : "");
                 }}
                 placeholder="0"
-                required
                 className="w-full pl-8 pr-3.5 py-2.5 text-sm font-bold text-neutral-800 bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] focus:ring-2 focus:ring-[#DCF4D7] outline-none transition"
               />
             </div>
