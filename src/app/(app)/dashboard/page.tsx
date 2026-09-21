@@ -81,7 +81,7 @@ export default function DashboardPage() {
       />
 
       {/* Accesos directos — 4 pasteles oficiales */}
-      <div className="grid grid-cols-2 gap-2.5">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
 
         {/* Insumos — Verde pastel */}
         <Link

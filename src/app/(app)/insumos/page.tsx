@@ -300,54 +300,57 @@ export default function InsumosPage() {
         </button>
       </div>
 
-      {/* Buscador */}
-      <div className="relative">
-        <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-neutral-400">
-          <Search className="w-4 h-4" />
+      {/* Buscador y Filtros por pestaña en layout responsivo */}
+      <div className="flex flex-col md:flex-row md:items-center gap-2.5">
+        {/* Buscador */}
+        <div className="relative flex-1">
+          <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-neutral-400">
+            <Search className="w-4 h-4" />
+          </div>
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar insumo (ej: harina, caja, tela...)"
+            className="w-full pl-10 pr-10 py-2.5 text-xs bg-white border border-neutral-200 rounded-2xl focus:border-[#3BB578] focus:ring-2 focus:ring-[#DCF4D7] outline-none shadow-sm transition"
+          />
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch("")}
+              className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-neutral-400 hover:text-neutral-600 transition"
+              title="Borrar búsqueda"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
         </div>
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Buscar insumo (ej: harina, caja, tela...)"
-          className="w-full pl-10 pr-10 py-2.5 text-xs bg-white border border-neutral-200 rounded-2xl focus:border-[#3BB578] focus:ring-2 focus:ring-[#DCF4D7] outline-none shadow-sm transition"
-        />
-        {search && (
-          <button
-            type="button"
-            onClick={() => setSearch("")}
-            className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-neutral-400 hover:text-neutral-600 transition"
-            title="Borrar búsqueda"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        )}
-      </div>
 
-      {/* Filtros por pestaña */}
-      <div className="flex bg-neutral-100 p-1 rounded-2xl gap-1">
-        {(
-          [
-            { key: "todos", label: `Todos (${counts.total})` },
-            { key: "materia_prima", label: `Materia Prima (${counts.materia_prima})` },
-            { key: "packaging", label: `Packaging (${counts.packaging})` },
-          ] as const
-        ).map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => {
-              setFilter(tab.key);
-              setSearch("");
-            }}
-            className={`flex-1 py-1.5 text-[11px] font-semibold rounded-xl transition ${
-              filter === tab.key
-                ? "bg-white text-[#1F7A4C] shadow-sm"
-                : "text-neutral-500 hover:text-neutral-800"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
+        {/* Filtros por pestaña */}
+        <div className="flex bg-neutral-100 p-1 rounded-2xl gap-1 w-full md:w-auto flex-shrink-0">
+          {(
+            [
+              { key: "todos", label: `Todos (${counts.total})` },
+              { key: "materia_prima", label: `Materia Prima (${counts.materia_prima})` },
+              { key: "packaging", label: `Packaging (${counts.packaging})` },
+            ] as const
+          ).map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => {
+                setFilter(tab.key);
+                setSearch("");
+              }}
+              className={`flex-1 md:flex-none px-3 py-1.5 text-[11px] font-semibold rounded-xl transition whitespace-nowrap ${
+                filter === tab.key
+                  ? "bg-white text-[#1F7A4C] shadow-sm"
+                  : "text-neutral-500 hover:text-neutral-800"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Tip Didáctico HABA */}
@@ -392,7 +395,7 @@ export default function InsumosPage() {
           </button>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {filteredSupplies.map((supply) => {
             const unitCost = calculateUnitCost(
               supply.current_price,

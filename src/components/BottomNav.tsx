@@ -79,7 +79,7 @@ export const BottomNav: React.FC = () => {
     : baseNavItems;
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 max-w-md mx-auto bg-white/95 backdrop-blur-md border-t border-[#EAF0E8] shadow-[0_-4px_20px_rgba(59,181,120,0.05)] px-2 pt-1.5 pb-[max(env(safe-area-inset-bottom),8px)] transition-all">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 max-w-md mx-auto bg-white/95 backdrop-blur-md border-t border-[#EAF0E8] shadow-[0_-4px_20px_rgba(59,181,120,0.05)] px-2 pt-1.5 pb-[max(env(safe-area-inset-bottom),8px)] transition-all md:hidden">
       {/* Mascota Onboarding anclada de forma absoluta sobre el ítem Inicio */}
       {pathname === "/dashboard" && (
         <HabaOnboardingMascot userName={userName} />

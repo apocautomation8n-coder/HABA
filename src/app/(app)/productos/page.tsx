@@ -1491,7 +1491,7 @@ export default function ProductosPage() {
           )}
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredProducts.map((product) => {
             const isExpanded = expandedProductId === product.id;
             const retailPrice =
@@ -2249,7 +2249,7 @@ export default function ProductosPage() {
           }}
         >
           <div
-            className="bg-white w-full max-w-lg rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl border border-[#EAF0E8] flex flex-col animate-in slide-in-from-bottom-6 sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-200 overflow-hidden"
+            className="bg-white w-full max-w-lg md:max-w-4xl lg:max-w-5xl rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl border border-[#EAF0E8] flex flex-col animate-in slide-in-from-bottom-6 sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-200 overflow-hidden"
             style={{
               height: "min(92vh, 760px)",
               maxHeight: "calc(100dvh - env(safe-area-inset-top, 20px) - 10px)",
@@ -2271,8 +2271,11 @@ export default function ProductosPage() {
             </div>
 
             {/* Contenido con Scroll */}
-            <div className="overflow-y-auto pr-1 py-3 space-y-4 flex-1">
-              {/* Nombre del Producto */}
+            <div className="overflow-y-auto pr-1 py-3 flex-1">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* Columna Izquierda: Información básica y Receta */}
+                <div className="space-y-4">
+                  {/* Nombre del Producto */}
               <div>
                 <label className="text-[11px] font-semibold text-neutral-700 block mb-1">
                   Nombre del Producto: <span className="text-rose-500">*</span>
@@ -2614,7 +2617,10 @@ export default function ProductosPage() {
                   </div>
                 )}
               </div>
+            </div>
 
+            {/* Columna Derecha: Rendimiento, Resumen de Costos y Canales de Venta */}
+            <div className="space-y-4">
               {/* Rendimiento del Lote / Tanda en Edición */}
               <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200/90 space-y-2">
                 <div className="flex items-center justify-between gap-2">
@@ -2768,6 +2774,8 @@ export default function ProductosPage() {
                 )}
               </div>
             </div>
+          </div>
+        </div>
 
             {/* Footer con Acciones */}
             <div className="pt-3 flex justify-end gap-2 border-t border-neutral-100 flex-shrink-0">

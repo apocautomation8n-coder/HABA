@@ -362,7 +362,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
       }}
     >
       <div 
-        className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col border border-[#EAF0E8] animate-in slide-in-from-bottom-6 duration-200 overflow-hidden" 
+        className="bg-white w-full max-w-md md:max-w-3xl rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col border border-[#EAF0E8] animate-in slide-in-from-bottom-6 duration-200 overflow-hidden" 
         style={{ 
           height: 'min(92vh, 740px)',
           maxHeight: 'calc(100dvh - env(safe-area-inset-top, 20px) - 10px)'
@@ -426,286 +426,294 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
               )}
             </div>
 
-            {/* Categoría */}
-            <div className="space-y-1">
-              <div className="flex items-center justify-between">
-                <label className="text-[11px] font-semibold text-[#2B2B2B] flex items-center gap-1">
-                  <span>Tipo de Insumo</span>
-                </label>
-                <span className="text-[10px] text-[#7A7A7A]">
-                  {category === "materia_prima" ? "Materia que compone el producto" : "Cajas, bolsas o empaques"}
-                </span>
-              </div>
-              <div className="flex bg-[#F6F7F2] p-1 rounded-2xl gap-1 border border-[#EAF0E8]">
-                <button
-                  type="button"
-                  onClick={() => setCategory("materia_prima")}
-                  className={`flex-1 py-1.5 text-xs font-semibold rounded-xl transition ${
-                    category === "materia_prima"
-                      ? "bg-white text-[#1F7A4C] shadow-xs"
-                      : "text-[#7A7A7A] hover:text-[#2B2B2B]"
-                  }`}
-                >
-                  🧵 Materia Prima
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCategory("packaging")}
-                  className={`flex-1 py-1.5 text-xs font-semibold rounded-xl transition ${
-                    category === "packaging"
-                      ? "bg-white text-[#1F7A4C] shadow-xs"
-                      : "text-[#7A7A7A] hover:text-[#2B2B2B]"
-                  }`}
-                >
-                  📦 Packaging
-                </button>
-              </div>
-            </div>
-
-            {/* Nombre */}
-            <div className="space-y-1">
-              <label className="text-[11px] font-semibold text-[#2B2B2B]">Nombre del Insumo *</label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder={category === "packaging" ? "Ej: Caja 15x15, Sobre Kraft..." : "Ej: Cera de Soja, Tela, Cartón..."}
-                required
-                className="w-full px-3 py-2 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none transition text-[#2B2B2B]"
-              />
-            </div>
-
-            {/* Preset de Unidades */}
-            <div className="space-y-1">
-              <div className="flex items-center justify-between">
-                <label className="text-[11px] font-semibold text-[#2B2B2B] flex items-center gap-1">
-                  <span>Conversión de Unidades</span>
-                  <span className="text-[9.5px] bg-[#DCF4D7] text-[#1F7A4C] px-1.5 py-0.2 rounded font-medium">Asistente</span>
-                </label>
-                <span className="text-[10px] text-[#7A7A7A]">Reglas automáticas</span>
-              </div>
-              <select
-                value={selectedPresetId}
-                onChange={(e) => handlePresetChange(e.target.value)}
-                className="w-full px-3 py-2 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none transition text-[#2B2B2B]"
-              >
-                <optgroup label="⚖️ Peso">
-                  {UNIT_PRESETS.filter((p) => p.category === "peso").map((preset) => (
-                    <option key={preset.id} value={preset.id}>
-                      {preset.name}
-                    </option>
-                  ))}
-                </optgroup>
-                <optgroup label="📏 Longitud">
-                  {UNIT_PRESETS.filter((p) => p.category === "longitud").map((preset) => (
-                    <option key={preset.id} value={preset.id}>
-                      {preset.name}
-                    </option>
-                  ))}
-                </optgroup>
-                <optgroup label="📐 Superficie (cm2 y m2)">
-                  {UNIT_PRESETS.filter((p) => p.category === "superficie").map((preset) => (
-                    <option key={preset.id} value={preset.id}>
-                      {preset.name}
-                    </option>
-                  ))}
-                </optgroup>
-                <optgroup label="🧪 Volumen">
-                  {UNIT_PRESETS.filter((p) => p.category === "volumen").map((preset) => (
-                    <option key={preset.id} value={preset.id}>
-                      {preset.name}
-                    </option>
-                  ))}
-                </optgroup>
-                <optgroup label="📦 Unidades y Empaques">
-                  {UNIT_PRESETS.filter((p) => p.category === "unidad" && p.id !== "custom").map((preset) => (
-                    <option key={preset.id} value={preset.id}>
-                      {preset.name}
-                    </option>
-                  ))}
-                </optgroup>
-                <optgroup label="⚙️ Ajuste Manual">
-                  {UNIT_PRESETS.filter((p) => p.id === "custom").map((preset) => (
-                    <option key={preset.id} value={preset.id}>
-                      {preset.name}
-                    </option>
-                  ))}
-                </optgroup>
-              </select>
-
-              {/* Atajos rápidos para conversiones comunes incluyendo cm2 y m2 */}
-              <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                <span className="text-[10px] text-[#7A7A7A] font-medium mr-0.5">Atajos:</span>
-                {[
-                  { id: "kg-g", label: "kg → g" },
-                  { id: "m2-cm2", label: "m2 → cm2" },
-                  { id: "m2-m2", label: "m2 → m2" },
-                  { id: "cm2-cm2", label: "cm2 → cm2" },
-                  { id: "m-cm", label: "m → cm" },
-                  { id: "l-ml", label: "l → ml" },
-                  { id: "u-u", label: "u → u" },
-                ].map((chip) => (
-                  <button
-                    key={chip.id}
-                    type="button"
-                    onClick={() => handlePresetChange(chip.id)}
-                    className={`px-2 py-0.5 rounded-lg text-[10.5px] font-medium border transition-colors ${
-                      selectedPresetId === chip.id
-                        ? "bg-[#3BB578] text-white border-[#3BB578] shadow-xs"
-                        : "bg-white text-[#555] border-[#EAF0E8] hover:bg-[#F0F4EC] hover:text-[#2B2B2B]"
-                    }`}
-                  >
-                    {chip.label}
-                  </button>
-                ))}
-              </div>
-
-              {activePreset && activePreset.example && (
-                <p className="text-[10.5px] text-[#7A7A7A] italic px-1 flex items-center gap-1 mt-1">
-                  <Info className="w-3 h-3 text-[#3BB578] flex-shrink-0" />
-                  <span>{activePreset.example}</span>
-                </p>
-              )}
-            </div>
-
-            {/* Cantidad y Unidad de Compra */}
-            <div className="grid grid-cols-2 gap-2.5">
-              <div className="space-y-1">
-                <label className="text-[11px] font-semibold text-[#2B2B2B] flex items-center justify-between">
-                  <span>Cantidad *</span>
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  min="0.001"
-                  value={purchaseQuantity}
-                  onChange={(e) => setPurchaseQuantity(e.target.value)}
-                  placeholder="1"
-                  required
-                  className="w-full px-3 py-2 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B]"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[11px] font-semibold text-[#2B2B2B]">Unidad de Compra *</label>
-                <input
-                  type="text"
-                  value={purchaseUnit}
-                  onChange={(e) => {
-                    setPurchaseUnit(e.target.value);
-                    setSelectedPresetId("custom");
-                  }}
-                  placeholder="kg, m2, metro, pack..."
-                  required
-                  className="w-full px-3 py-2 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B]"
-                />
-              </div>
-            </div>
-
-            {/* Precio de Reposición Actual */}
-            <div className="space-y-1">
-              <div className="flex items-center justify-between">
-                <label className="text-[11px] font-semibold text-[#2B2B2B] flex items-center gap-1">
-                  <span>Precio de Reposición ($ ARS) *</span>
-                </label>
-                <span className="text-[9.5px] text-[#1F7A4C] bg-[#DCF4D7] px-1.5 py-0.5 rounded-md font-medium">
-                  Al día de hoy
-                </span>
-              </div>
-              <div className="relative">
-                <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-[#7A7A7A] font-bold text-xs">
-                  $
-                </span>
-                <input
-                  type="number"
-                  step="any"
-                  min="0.01"
-                  value={currentPrice}
-                  onChange={(e) => setCurrentPrice(e.target.value)}
-                  placeholder="0.00"
-                  required
-                  className="w-full pl-7 pr-3 py-2 text-xs font-semibold text-[#2B2B2B] bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none transition"
-                />
-              </div>
-              <p className="text-[10px] text-[#7A7A7A] px-1">
-                ℹ️ ¿Cuánto pagarías hoy por volver a comprarlo? Mantener este precio al día protege tus ganancias de la inflación.
-              </p>
-            </div>
-
-            {/* Unidad de Uso y Factor de Conversión */}
-            <div className="space-y-2 bg-[#F6F7F2] p-3 rounded-2xl border border-[#EAF0E8]">
-              <div className="grid grid-cols-2 gap-2.5">
+            {/* Cuadrícula de 2 columnas en Desktop */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Columna Izquierda: Datos del Insumo y Compra */}
+              <div className="space-y-3.5">
+                {/* Categoría */}
                 <div className="space-y-1">
-                  <label className="text-[10.5px] font-semibold text-[#7A7A7A]">Unidad de Uso *</label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-semibold text-[#2B2B2B] flex items-center gap-1">
+                      <span>Tipo de Insumo</span>
+                    </label>
+                    <span className="text-[10px] text-[#7A7A7A]">
+                      {category === "materia_prima" ? "Materia que compone el producto" : "Cajas, bolsas o empaques"}
+                    </span>
+                  </div>
+                  <div className="flex bg-[#F6F7F2] p-1 rounded-2xl gap-1 border border-[#EAF0E8]">
+                    <button
+                      type="button"
+                      onClick={() => setCategory("materia_prima")}
+                      className={`flex-1 py-1.5 text-xs font-semibold rounded-xl transition ${
+                        category === "materia_prima"
+                          ? "bg-white text-[#1F7A4C] shadow-xs"
+                          : "text-[#7A7A7A] hover:text-[#2B2B2B]"
+                      }`}
+                    >
+                      🧵 Materia Prima
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCategory("packaging")}
+                      className={`flex-1 py-1.5 text-xs font-semibold rounded-xl transition ${
+                        category === "packaging"
+                          ? "bg-white text-[#1F7A4C] shadow-xs"
+                          : "text-[#7A7A7A] hover:text-[#2B2B2B]"
+                      }`}
+                    >
+                      📦 Packaging
+                    </button>
+                  </div>
+                </div>
+
+                {/* Nombre */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-semibold text-[#2B2B2B]">Nombre del Insumo *</label>
                   <input
                     type="text"
-                    value={useUnit}
-                    onChange={(e) => {
-                      setUseUnit(e.target.value);
-                      setSelectedPresetId("custom");
-                    }}
-                    placeholder="g, cm2, cm, u..."
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder={category === "packaging" ? "Ej: Caja 15x15, Sobre Kraft..." : "Ej: Cera de Soja, Tela, Cartón..."}
                     required
-                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#EAF0E8] rounded-xl outline-none text-[#2B2B2B]"
+                    className="w-full px-3 py-2 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none transition text-[#2B2B2B]"
                   />
-                  <span className="text-[9.5px] text-[#999] block px-0.5">Cómo lo medís en tu producto</span>
                 </div>
+
+                {/* Cantidad y Unidad de Compra */}
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-semibold text-[#2B2B2B]">Cantidad *</label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0.001"
+                      value={purchaseQuantity}
+                      onChange={(e) => setPurchaseQuantity(e.target.value)}
+                      placeholder="1"
+                      required
+                      className="w-full px-3 py-2 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B]"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-semibold text-[#2B2B2B]">Unidad de Compra *</label>
+                    <input
+                      type="text"
+                      value={purchaseUnit}
+                      onChange={(e) => {
+                        setPurchaseUnit(e.target.value);
+                        setSelectedPresetId("custom");
+                      }}
+                      placeholder="kg, m2, metro, pack..."
+                      required
+                      className="w-full px-3 py-2 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B]"
+                    />
+                  </div>
+                </div>
+
+                {/* Precio de Reposición Actual */}
                 <div className="space-y-1">
-                  <label className="text-[10.5px] font-semibold text-[#7A7A7A]">
-                    Rinde por 1 {purchaseUnit || "compra"} *
-                  </label>
-                  <input
-                    type="number"
-                    step="any"
-                    min="0.0001"
-                    value={conversionFactor}
-                    onChange={(e) => {
-                      setConversionFactor(e.target.value);
-                      setSelectedPresetId("custom");
-                    }}
-                    placeholder="1000"
-                    required
-                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#EAF0E8] rounded-xl outline-none text-[#2B2B2B]"
-                  />
-                  <span className="text-[9.5px] text-[#999] block px-0.5">Equivalente en {useUnit}</span>
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-semibold text-[#2B2B2B] flex items-center gap-1">
+                      <span>Precio de Reposición ($ ARS) *</span>
+                    </label>
+                    <span className="text-[9.5px] text-[#1F7A4C] bg-[#DCF4D7] px-1.5 py-0.5 rounded-md font-medium">
+                      Al día de hoy
+                    </span>
+                  </div>
+                  <div className="relative">
+                    <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-[#7A7A7A] font-bold text-xs">
+                      $
+                    </span>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0.01"
+                      value={currentPrice}
+                      onChange={(e) => setCurrentPrice(e.target.value)}
+                      placeholder="0.00"
+                      required
+                      className="w-full pl-7 pr-3 py-2 text-xs font-semibold text-[#2B2B2B] bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none transition"
+                    />
+                  </div>
+                  <p className="text-[10px] text-[#7A7A7A] px-1">
+                    ℹ️ ¿Cuánto pagarías hoy por volver a comprarlo? Mantener este precio al día protege tus ganancias de la inflación.
+                  </p>
                 </div>
               </div>
 
-              {/* Explicación didáctica del rendimiento */}
-              <div className="text-[10.5px] text-[#7A7A7A] pt-1.5 border-t border-neutral-200/60 leading-tight">
-                📦 Comprás <strong className="text-[#2B2B2B]">{purchaseQuantity} {purchaseUnit}</strong> = Tenés <strong className="text-[#1F7A4C]">{totalRecipeUnits} {useUnit}</strong> disponibles para fabricar tus productos.
-              </div>
-            </div>
-
-            {/* Tarjeta de Cálculo en Vivo y Desglose Didáctico */}
-            <div className="bg-[#DCF4D7]/80 border border-[#C3EBC0] p-3 rounded-2xl space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded-lg bg-[#3BB578] text-white flex items-center justify-center">
-                    <Calculator className="w-3.5 h-3.5" />
+              {/* Columna Derecha: Conversión, Unidades de Uso y Tarjeta de Costo */}
+              <div className="space-y-3.5">
+                {/* Preset de Unidades */}
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-semibold text-[#2B2B2B] flex items-center gap-1">
+                      <span>Conversión de Unidades</span>
+                      <span className="text-[9.5px] bg-[#DCF4D7] text-[#1F7A4C] px-1.5 py-0.2 rounded font-medium">Asistente</span>
+                    </label>
+                    <span className="text-[10px] text-[#7A7A7A]">Reglas automáticas</span>
                   </div>
-                  <div>
-                    <p className="text-[11px] font-bold text-[#1F7A4C]">Costo unitario de uso:</p>
-                    <p className="text-[10px] text-[#2E9E65] font-medium">
-                      1 {useUnit} = {formatCurrency(unitCost)}
+                  <select
+                    value={selectedPresetId}
+                    onChange={(e) => handlePresetChange(e.target.value)}
+                    className="w-full px-3 py-2 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none transition text-[#2B2B2B]"
+                  >
+                    <optgroup label="⚖️ Peso">
+                      {UNIT_PRESETS.filter((p) => p.category === "peso").map((preset) => (
+                        <option key={preset.id} value={preset.id}>
+                          {preset.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="📏 Longitud">
+                      {UNIT_PRESETS.filter((p) => p.category === "longitud").map((preset) => (
+                        <option key={preset.id} value={preset.id}>
+                          {preset.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="📐 Superficie (cm2 y m2)">
+                      {UNIT_PRESETS.filter((p) => p.category === "superficie").map((preset) => (
+                        <option key={preset.id} value={preset.id}>
+                          {preset.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="🧪 Volumen">
+                      {UNIT_PRESETS.filter((p) => p.category === "volumen").map((preset) => (
+                        <option key={preset.id} value={preset.id}>
+                          {preset.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="📦 Unidades y Empaques">
+                      {UNIT_PRESETS.filter((p) => p.category === "unidad" && p.id !== "custom").map((preset) => (
+                        <option key={preset.id} value={preset.id}>
+                          {preset.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="⚙️ Ajuste Manual">
+                      {UNIT_PRESETS.filter((p) => p.id === "custom").map((preset) => (
+                        <option key={preset.id} value={preset.id}>
+                          {preset.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  </select>
+
+                  {/* Atajos rápidos para conversiones comunes */}
+                  <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                    <span className="text-[10px] text-[#7A7A7A] font-medium mr-0.5">Atajos:</span>
+                    {[
+                      { id: "kg-g", label: "kg → g" },
+                      { id: "m2-cm2", label: "m2 → cm2" },
+                      { id: "m2-m2", label: "m2 → m2" },
+                      { id: "cm2-cm2", label: "cm2 → cm2" },
+                      { id: "m-cm", label: "m → cm" },
+                      { id: "l-ml", label: "l → ml" },
+                      { id: "u-u", label: "u → u" },
+                    ].map((chip) => (
+                      <button
+                        key={chip.id}
+                        type="button"
+                        onClick={() => handlePresetChange(chip.id)}
+                        className={`px-2 py-0.5 rounded-lg text-[10.5px] font-medium border transition-colors ${
+                          selectedPresetId === chip.id
+                            ? "bg-[#3BB578] text-white border-[#3BB578] shadow-xs"
+                            : "bg-white text-[#555] border-[#EAF0E8] hover:bg-[#F0F4EC] hover:text-[#2B2B2B]"
+                        }`}
+                      >
+                        {chip.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {activePreset && activePreset.example && (
+                    <p className="text-[10.5px] text-[#7A7A7A] italic px-1 flex items-center gap-1 mt-1">
+                      <Info className="w-3 h-3 text-[#3BB578] flex-shrink-0" />
+                      <span>{activePreset.example}</span>
                     </p>
+                  )}
+                </div>
+
+                {/* Unidad de Uso y Factor de Conversión */}
+                <div className="space-y-2 bg-[#F6F7F2] p-3 rounded-2xl border border-[#EAF0E8]">
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div className="space-y-1">
+                      <label className="text-[10.5px] font-semibold text-[#7A7A7A]">Unidad de Uso *</label>
+                      <input
+                        type="text"
+                        value={useUnit}
+                        onChange={(e) => {
+                          setUseUnit(e.target.value);
+                          setSelectedPresetId("custom");
+                        }}
+                        placeholder="g, cm2, cm, u..."
+                        required
+                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#EAF0E8] rounded-xl outline-none text-[#2B2B2B]"
+                      />
+                      <span className="text-[9.5px] text-[#999] block px-0.5">Cómo lo medís en tu producto</span>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10.5px] font-semibold text-[#7A7A7A]">
+                        Rinde por 1 {purchaseUnit || "compra"} *
+                      </label>
+                      <input
+                        type="number"
+                        step="any"
+                        min="0.0001"
+                        value={conversionFactor}
+                        onChange={(e) => {
+                          setConversionFactor(e.target.value);
+                          setSelectedPresetId("custom");
+                        }}
+                        placeholder="1000"
+                        required
+                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#EAF0E8] rounded-xl outline-none text-[#2B2B2B]"
+                      />
+                      <span className="text-[9.5px] text-[#999] block px-0.5">Equivalente en {useUnit}</span>
+                    </div>
+                  </div>
+
+                  {/* Explicación didáctica del rendimiento */}
+                  <div className="text-[10.5px] text-[#7A7A7A] pt-1.5 border-t border-neutral-200/60 leading-tight">
+                    📦 Comprás <strong className="text-[#2B2B2B]">{purchaseQuantity} {purchaseUnit}</strong> = Tenés <strong className="text-[#1F7A4C]">{totalRecipeUnits} {useUnit}</strong> disponibles para fabricar tus productos.
                   </div>
                 </div>
-                <div className="text-right">
-                  <span className="text-sm sm:text-base font-black text-[#1F7A4C] font-display">
-                    {formatCurrency(unitCost)}
-                  </span>
-                  <span className="text-[9.5px] block text-[#1F7A4C] font-medium">por cada {useUnit}</span>
+
+                {/* Tarjeta de Cálculo en Vivo y Desglose Didáctico */}
+                <div className="bg-[#DCF4D7]/80 border border-[#C3EBC0] p-3 rounded-2xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 rounded-lg bg-[#3BB578] text-white flex items-center justify-center">
+                        <Calculator className="w-3.5 h-3.5" />
+                      </div>
+                      <div>
+                        <p className="text-[11px] font-bold text-[#1F7A4C]">Costo unitario de uso:</p>
+                        <p className="text-[10px] text-[#2E9E65] font-medium">
+                          1 {useUnit} = {formatCurrency(unitCost)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-sm sm:text-base font-black text-[#1F7A4C] font-display">
+                        {formatCurrency(unitCost)}
+                      </span>
+                      <span className="text-[9.5px] block text-[#1F7A4C] font-medium">por cada {useUnit}</span>
+                    </div>
+                  </div>
+
+                  {parsedPrice > 0 && totalRecipeUnits > 0 && (
+                    <div className="pt-2 border-t border-[#C3EBC0]/70 text-[10px] text-[#1F7A4C] flex items-center justify-between bg-white/70 px-2.5 py-1.5 rounded-xl font-medium">
+                      <span>💡 Fórmula:</span>
+                      <span>
+                        {formatCurrency(parsedPrice)} ÷ {totalRecipeUnits} {useUnit} = <strong>{formatCurrency(unitCost)}/{useUnit}</strong>
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
-
-              {parsedPrice > 0 && totalRecipeUnits > 0 && (
-                <div className="pt-2 border-t border-[#C3EBC0]/70 text-[10px] text-[#1F7A4C] flex items-center justify-between bg-white/70 px-2.5 py-1.5 rounded-xl font-medium">
-                  <span>💡 Fórmula:</span>
-                  <span>
-                    {formatCurrency(parsedPrice)} ÷ {totalRecipeUnits} {useUnit} = <strong>{formatCurrency(unitCost)}/{useUnit}</strong>
-                  </span>
-                </div>
-              )}
             </div>
           </div>
 

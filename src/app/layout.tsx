@@ -62,7 +62,7 @@ export default function RootLayout({
         suppressHydrationWarning
       >
         <PWAProvider>
-          <main className="w-full max-w-md min-h-screen flex flex-col px-4 pt-[env(safe-area-inset-top,4px)] pb-4 sm:px-6">
+          <main className="w-full max-w-[1400px] min-h-screen flex flex-col px-4 pt-[env(safe-area-inset-top,4px)] pb-4 sm:px-6 lg:px-8">
             {children}
           </main>
         </PWAProvider>
