@@ -5,12 +5,16 @@ import Link from "next/link";
 import { PlusCircle, ShoppingBag, Receipt, Sparkles, DollarSign, ArrowRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { InstallPwaModal } from "@/components/InstallPwaModal";
+import { OnboardingGuide } from "@/components/dashboard/OnboardingGuide";
 import { getUserDisplayName } from "@/lib/auth-helpers";
 
 export default function DashboardPage() {
   const supabase = createClient();
   const [userName, setUserName] = useState<string>("");
   const [counts, setCounts] = useState({ supplies: 0, products: 0, quotes: 0 });
+  const [hasSupplies, setHasSupplies] = useState<boolean>(false);
+  const [hasExpensesOrLabor, setHasExpensesOrLabor] = useState<boolean>(false);
+  const [hasProducts, setHasProducts] = useState<boolean>(false);
 
   useEffect(() => {
     async function loadData() {
@@ -35,18 +39,30 @@ export default function DashboardPage() {
           // ignore
         }
 
-        // Cargar contadores básicos
-        const [suppliesRes, productsRes, quotesRes] = await Promise.all([
+        // Cargar contadores básicos y estado de onboarding
+        const [suppliesRes, productsRes, quotesRes, expensesRes, laborRes] = await Promise.all([
           supabase.from("supplies").select("id", { count: "exact", head: true }),
           supabase.from("products").select("id", { count: "exact", head: true }),
           supabase.from("quotes").select("id", { count: "exact", head: true }),
+          supabase.from("fixed_expenses").select("id", { count: "exact", head: true }),
+          supabase.from("labor_settings").select("id").eq("user_id", user.id).maybeSingle(),
         ]);
 
+        const suppliesCount = suppliesRes.count || 0;
+        const productsCount = productsRes.count || 0;
+        const quotesCount = quotesRes.count || 0;
+        const expensesCount = expensesRes.count || 0;
+        const hasLabor = Boolean(laborRes.data);
+
         setCounts({
-          supplies: suppliesRes.count || 0,
-          products: productsRes.count || 0,
-          quotes: quotesRes.count || 0,
+          supplies: suppliesCount,
+          products: productsCount,
+          quotes: quotesCount,
         });
+
+        setHasSupplies(suppliesCount > 0);
+        setHasExpensesOrLabor(expensesCount > 0 || hasLabor);
+        setHasProducts(productsCount > 0);
       }
     }
     loadData();
@@ -56,6 +72,13 @@ export default function DashboardPage() {
     <div className="w-full flex flex-col space-y-3 pb-24">
       {/* Botón / Banner de Descarga PWA */}
       <InstallPwaModal />
+
+      {/* Guía Inicial / Onboarding: Comenzá acá */}
+      <OnboardingGuide
+        hasSupplies={hasSupplies}
+        hasExpensesOrLabor={hasExpensesOrLabor}
+        hasProducts={hasProducts}
+      />
 
       {/* Accesos directos — 4 pasteles oficiales */}
       <div className="grid grid-cols-2 gap-2.5">
@@ -122,29 +145,6 @@ export default function DashboardPage() {
           </div>
         </Link>
       </div>
-
-      {/* Tarjeta Destacada: Comenzá acá */}
-      <Link
-        href="/insumos"
-        className="relative overflow-hidden bg-gradient-to-r from-[#DCF4D7] via-white to-[#DCF4D7]/60 rounded-3xl p-4 border-2 border-[#3BB578]/50 shadow-sm hover:shadow-md hover:border-[#3BB578] transition-all group flex items-center justify-between"
-      >
-        <div className="flex items-center gap-3.5">
-          <div className="w-10 h-10 rounded-2xl bg-[#3BB578] text-white flex items-center justify-center flex-shrink-0 shadow-xs group-hover:scale-110 transition-transform">
-            <Sparkles className="w-5 h-5" />
-          </div>
-          <div>
-            <span className="inline-flex items-center justify-center text-xs font-bold bg-[#3BB578] text-white px-3.5 py-1 rounded-full font-body shadow-xs tracking-wide">
-              Comenzá acá
-            </span>
-            <p className="text-[11.5px] text-[#2B2B2B] mt-1.5 font-body leading-snug">
-              Cargá tus <strong>insumos y packaging</strong> para luego armar tus productos y calcular tus precios.
-            </p>
-          </div>
-        </div>
-        <div className="w-8 h-8 rounded-full bg-[#3BB578] text-white flex items-center justify-center flex-shrink-0 group-hover:translate-x-1 transition-transform ml-2 shadow-xs">
-          <ArrowRight className="w-4 h-4" />
-        </div>
-      </Link>
     </div>
   );
 }
