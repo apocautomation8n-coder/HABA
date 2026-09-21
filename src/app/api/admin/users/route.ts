@@ -3,6 +3,7 @@ import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { checkIsAdmin } from "@/lib/auth-helpers";
 import { calculatePlanEndDate, PlanType } from "@/lib/plan-helpers";
+import { formatAccountNumber, getNextAccountNumberFromList } from "@/lib/account";
 
 function getAdminClient() {
   return createSupabaseClient(
@@ -58,7 +59,7 @@ async function verifyAdminCaller(request: Request) {
   }
 }
 
-// GET: Listar todas las usuarias del sistema enriquecidas con plan y estado de cuenta
+// GET: Listar todas las usuarias del sistema enriquecidas con plan, estado de cuenta y número de cuenta
 export async function GET(request: Request) {
   try {
     const auth = await verifyAdminCaller(request);
@@ -76,9 +77,17 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: profilesError.message }, { status: 400 });
     }
 
-    // 2. Obtener usuarios de Auth para recuperar user_metadata (planes, fechas, avatar)
+    // 2. Obtener usuarios de Auth para recuperar user_metadata (planes, fechas, avatar, account_number)
     const { data: authData } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
     const authMap = new Map(authData?.users?.map((u) => [u.id, u]) || []);
+
+    // Mapa cronológico para fallback de números de cuenta si aún no están asignados
+    const chronologicalProfiles = [...(profiles || [])].sort((a, b) =>
+      new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()
+    );
+    const idToSeqMap = new Map(
+      chronologicalProfiles.map((p, idx) => [p.id, 1001 + idx])
+    );
 
     const users = (profiles || []).map((p) => {
       const authUser = authMap.get(p.id);
@@ -95,8 +104,12 @@ export async function GET(request: Request) {
         meta.account_status || (p.status === "suspended" ? "suspended" : "active");
       const avatarUrl = meta.avatar_url || null;
 
+      const fallbackSeq = idToSeqMap.get(p.id) || 1001;
+      const accountNumber = p.account_number || meta.account_number || formatAccountNumber(fallbackSeq);
+
       return {
         ...p,
+        account_number: accountNumber,
         plan_type: planType,
         plan_start_date: planStartDate,
         plan_end_date: planEndDate,
@@ -142,13 +155,25 @@ export async function POST(request: Request) {
     const endDate =
       planEndDate?.trim() || calculatePlanEndDate(startDate, planType as PlanType);
 
-    // 1. Crear usuario en Auth con confirmación automática y metadata de plan
+    // Obtener perfiles existentes para calcular el siguiente número de cuenta secuencial
+    let nextAccountNumber = "HABA-001001";
+    try {
+      const { data: existingProfiles } = await supabaseAdmin
+        .from("profiles")
+        .select("account_number, created_at");
+      nextAccountNumber = getNextAccountNumberFromList(existingProfiles || []);
+    } catch {
+      nextAccountNumber = "HABA-001001";
+    }
+
+    // 1. Crear usuario en Auth con confirmación automática, metadata de plan y account_number
     const { data: authData, error: authError } =
       await supabaseAdmin.auth.admin.createUser({
         email: email.trim().toLowerCase(),
         password,
         email_confirm: true,
         user_metadata: {
+          account_number: nextAccountNumber,
           full_name: fullName?.trim() || null,
           business_name: businessName?.trim() || null,
           plan_type: planType,
@@ -166,24 +191,31 @@ export async function POST(request: Request) {
     }
 
     // 2. Insertar o actualizar su perfil en public.profiles
-    // Compatible con check constraint: si accountStatus es active -> 'active', si no -> 'suspended'
     const profileStatus = accountStatus === "active" ? "active" : "suspended";
 
-    const { error: profileError } = await supabaseAdmin.from("profiles").upsert({
+    const profilePayload: Record<string, any> = {
       id: authData.user.id,
+      account_number: nextAccountNumber,
       email: email.trim().toLowerCase(),
       full_name: fullName?.trim() || null,
       business_name: businessName?.trim() || null,
       role: "user",
       status: profileStatus,
       updated_at: new Date().toISOString(),
-    });
+    };
+
+    let { error: profileError } = await supabaseAdmin.from("profiles").upsert(profilePayload);
 
     if (profileError) {
-      return NextResponse.json(
-        { error: profileError.message },
-        { status: 400 }
-      );
+      // Fallback si la columna account_number no existe aún en la tabla
+      delete profilePayload.account_number;
+      const { error: fallbackError } = await supabaseAdmin.from("profiles").upsert(profilePayload);
+      if (fallbackError) {
+        return NextResponse.json(
+          { error: fallbackError.message },
+          { status: 400 }
+        );
+      }
     }
 
     return NextResponse.json({ success: true, user: authData.user });
@@ -191,6 +223,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
+
 
 // PATCH: Cambiar estado o actualizar datos del usuario y de su plan
 export async function PATCH(request: Request) {

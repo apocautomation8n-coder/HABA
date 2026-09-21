@@ -20,6 +20,7 @@ import {
   Clock,
   Store,
   Filter,
+  Hash,
 } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
@@ -41,6 +42,7 @@ interface UserProfile {
   email: string;
   full_name?: string;
   business_name?: string;
+  account_number?: string;
   role: "admin" | "user";
   status: "active" | "suspended";
   created_at: string;
@@ -432,7 +434,7 @@ export default function AdminPage() {
   const filteredUsers = useMemo(() => {
     return users.filter((u) => {
       const matches = matchesSearch(
-        [u.email, u.full_name, u.business_name],
+        [u.email, u.full_name, u.business_name, u.account_number],
         search
       );
 
@@ -461,23 +463,26 @@ export default function AdminPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <HabaMascot size={70} className="animate-bounce" />
+      <div className="w-full h-96 flex flex-col items-center justify-center space-y-3 font-body">
+        <div className="w-10 h-10 border-3 border-[#3BB578] border-t-transparent rounded-full animate-spin" />
+        <p className="text-xs text-[#7A7A7A]">Cargando usuarias y planes...</p>
       </div>
     );
   }
 
   if (!isAdmin) {
     return (
-      <div className="bg-white rounded-3xl p-8 border border-rose-200 text-center space-y-3 font-body">
-        <HabaMascot size={70} />
-        <h3 className="text-base font-bold text-rose-700 font-display">Acceso Restringido</h3>
-        <p className="text-xs text-[#7A7A7A]">
-          Solo la administradora Giulianna (Gio) tiene acceso a este panel de control.
+      <div className="w-full h-96 flex flex-col items-center justify-center space-y-3 font-body p-6 text-center">
+        <div className="w-12 h-12 bg-rose-50 text-rose-600 rounded-2xl flex items-center justify-center">
+          <ShieldCheck className="w-6 h-6" />
+        </div>
+        <h2 className="text-lg font-bold text-[#2B2B2B] font-display">Acceso Restringido</h2>
+        <p className="text-xs text-[#7A7A7A] max-w-sm">
+          Esta sección está reservada exclusivamente para la administración general del sistema (SuperAdmin Gio).
         </p>
         <Link
           href="/dashboard"
-          className="inline-block mt-2 py-2 px-4 bg-neutral-100 text-[#2B2B2B] rounded-2xl text-xs font-semibold"
+          className="mt-2 py-2 px-4 bg-[#3BB578] text-white rounded-2xl text-xs font-bold shadow-xs hover:bg-[#2E9E65] transition"
         >
           Volver al Inicio
         </Link>
@@ -486,13 +491,14 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="w-full flex flex-col space-y-4 pb-12 font-body">
+    <div className="w-full flex flex-col space-y-4 font-body pb-10">
       {/* Header Admin */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-3">
           <Link
             href="/configuracion"
-            className="p-2 bg-white hover:bg-neutral-100 text-[#2B2B2B] rounded-2xl border border-[#EAF0E8] shadow-xs transition"
+            className="p-2 bg-white hover:bg-neutral-50 text-[#2B2B2B] rounded-2xl border border-[#EAF0E8] transition shadow-xs"
+            title="Volver a Configuración"
           >
             <ArrowLeft className="w-4 h-4" />
           </Link>
@@ -537,7 +543,7 @@ export default function AdminPage() {
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Buscar por email, nombre o emprendimiento..."
+          placeholder="Buscar por n° de cuenta, email, nombre o emprendimiento..."
           className="w-full pl-10 pr-10 py-2.5 text-xs bg-white border border-[#EAF0E8] rounded-2xl focus:border-[#3BB578] outline-none shadow-xs text-[#2B2B2B]"
         />
         {search && (
@@ -709,6 +715,14 @@ export default function AdminPage() {
                         <span className="text-sm font-bold text-[#2B2B2B]">
                           {u.full_name || "Sin nombre"}
                         </span>
+
+                        {/* Badge N° de Cuenta HABA */}
+                        {u.account_number && (
+                          <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-800 border border-neutral-200 flex items-center gap-1">
+                            <Hash className="w-3 h-3 text-[#3BB578]" />
+                            {u.account_number}
+                          </span>
+                        )}
 
                         {/* Badge PLAN */}
                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
@@ -1147,6 +1161,22 @@ export default function AdminPage() {
               )}
 
               <form onSubmit={handleEditUserSubmit} className="mt-3 space-y-3 flex-1 overflow-y-auto">
+                {/* ID de Cuenta HABA (Inmutable / Read-only) */}
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-[#2B2B2B] flex items-center gap-1.5">
+                    <Hash className="w-3.5 h-3.5 text-[#3BB578]" />
+                    N° de Cuenta / ID HABA
+                  </label>
+                  <input
+                    type="text"
+                    value={editModalUser.account_number || "Sin ID asignado"}
+                    disabled
+                    readOnly
+                    className="w-full px-3.5 py-2 text-xs bg-neutral-100 border border-neutral-200 rounded-2xl text-neutral-600 font-mono font-bold cursor-not-allowed select-all"
+                  />
+                  <p className="text-[10px] text-neutral-400">Identificador inalterable autogenerado por el sistema.</p>
+                </div>
+
                 <div className="space-y-1">
                   <label className="text-xs font-semibold text-[#2B2B2B]">Nombre de la usuaria</label>
                   <input

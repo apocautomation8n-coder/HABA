@@ -27,6 +27,8 @@ import {
   Phone,
   MapPin,
   AtSign,
+  Copy,
+  Hash,
 } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
@@ -73,6 +75,8 @@ export default function SettingsPage() {
   const [planStartDate, setPlanStartDate] = useState<string>("");
   const [planEndDate, setPlanEndDate] = useState<string>("");
   const [accountStatus, setAccountStatus] = useState<AccountStatus>("active");
+  const [accountNumber, setAccountNumber] = useState<string>("");
+  const [copiedAccountNum, setCopiedAccountNum] = useState<boolean>(false);
 
   // Mano de Obra y Sueldo Pretendido (Punto 4)
   const [salary, setSalary] = useState<number | string>(350000);
@@ -132,6 +136,9 @@ export default function SettingsPage() {
           if (user.user_metadata?.account_status) {
             setAccountStatus(user.user_metadata.account_status);
           }
+          if (user.user_metadata?.account_number) {
+            setAccountNumber(user.user_metadata.account_number);
+          }
 
           // Cargar perfil desde API segura (bypasea RLS recursivo)
           try {
@@ -159,6 +166,7 @@ export default function SettingsPage() {
               if (data.profile?.plan_start_date) setPlanStartDate(data.profile.plan_start_date);
               if (data.profile?.plan_end_date) setPlanEndDate(data.profile.plan_end_date);
               if (data.profile?.account_status) setAccountStatus(data.profile.account_status);
+              if (data.profile?.account_number) setAccountNumber(data.profile.account_number);
             }
           } catch {
             // ignore
@@ -285,6 +293,14 @@ export default function SettingsPage() {
     } finally {
       setSavingLabor(false);
     }
+  };
+
+  // Copiar número de cuenta al portapapeles
+  const handleCopyAccountNumber = () => {
+    if (!accountNumber) return;
+    navigator.clipboard.writeText(accountNumber);
+    setCopiedAccountNum(true);
+    setTimeout(() => setCopiedAccountNum(false), 2000);
   };
 
   // Subir foto de perfil o logo
@@ -458,10 +474,18 @@ export default function SettingsPage() {
             )}
           </div>
           <p className="text-xs text-neutral-500 truncate">{email}</p>
-          <span className="inline-flex items-center gap-1 text-[10px] text-[#1F7A4C] bg-[#DCF4D7] px-2 py-0.5 rounded-full font-semibold mt-1">
-            <ShieldCheck className="w-3 h-3" />
-            {role === "admin" ? "SuperAdmin Gio" : "Cuenta Emprendedora"}
-          </span>
+          <div className="flex items-center gap-2 mt-1 flex-wrap">
+            <span className="inline-flex items-center gap-1 text-[10px] text-[#1F7A4C] bg-[#DCF4D7] px-2 py-0.5 rounded-full font-semibold">
+              <ShieldCheck className="w-3 h-3" />
+              {role === "admin" ? "SuperAdmin Gio" : "Cuenta Emprendedora"}
+            </span>
+            {accountNumber && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold text-neutral-700 bg-neutral-100 px-2 py-0.5 rounded-full border border-neutral-200">
+                <Hash className="w-3 h-3 text-[#3BB578]" />
+                {accountNumber}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -559,6 +583,50 @@ export default function SettingsPage() {
           Datos de tu Negocio
         </h3>
         <form onSubmit={handleSave} className="space-y-3.5">
+          {/* Número de cuenta HABA (Inmutable / Read-only) */}
+          <div className="p-3.5 bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold text-neutral-700 flex items-center gap-1.5">
+                <Hash className="w-3.5 h-3.5 text-[#3BB578]" />
+                Número de cuenta HABA
+              </label>
+              <span className="text-[9.5px] bg-[#DCF4D7] text-[#1F7A4C] font-bold px-2 py-0.5 rounded-full border border-[#C3EBC0]">
+                ID Único Inalterable
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                readOnly
+                value={accountNumber || "Cargando..."}
+                className="flex-1 px-3.5 py-2 text-sm font-mono font-bold text-[#1F7A4C] bg-white border border-neutral-200 rounded-xl outline-none select-all cursor-default"
+              />
+              <button
+                type="button"
+                onClick={handleCopyAccountNumber}
+                disabled={!accountNumber}
+                title="Copiar número de cuenta"
+                className="px-3 py-2 bg-white hover:bg-neutral-50 text-neutral-700 border border-neutral-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition active:scale-95 shadow-xs"
+              >
+                {copiedAccountNum ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-[#3BB578]" />
+                    <span className="text-[#1F7A4C] font-bold">¡Copiado!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5 text-neutral-500" />
+                    <span>Copiar</span>
+                  </>
+                )}
+              </button>
+            </div>
+            <p className="text-[10.5px] text-neutral-400 flex items-center gap-1">
+              <AlertCircle className="w-3 h-3 text-neutral-400 flex-shrink-0" />
+              Identificador administrativo único e inalterable.
+            </p>
+          </div>
+
           <div className="space-y-1">
             <label className="text-xs font-semibold text-neutral-700 flex items-center gap-1.5">
               <Store className="w-3.5 h-3.5 text-[#3BB578]" />

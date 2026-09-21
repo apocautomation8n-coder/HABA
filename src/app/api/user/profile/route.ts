@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { calculatePlanEndDate } from "@/lib/plan-helpers";
+import { formatAccountNumber } from "@/lib/account";
 
 function getAdminClient() {
   return createSupabaseClient(
@@ -50,6 +51,34 @@ export async function GET(request: Request) {
       profile?.role === "admin";
 
     const meta = user.user_metadata || {};
+    let accountNumber = profile?.account_number || meta.account_number || null;
+
+    // Si aún no tiene número de cuenta (cuenta previa a la migración), asignar secuencialmente
+    if (!accountNumber) {
+      try {
+        const { data: allProfiles } = await admin
+          .from("profiles")
+          .select("id, account_number, created_at")
+          .order("created_at", { ascending: true });
+
+        if (allProfiles && allProfiles.length > 0) {
+          const userIndex = allProfiles.findIndex((p) => p.id === user.id);
+          const seq = userIndex >= 0 ? 1001 + userIndex : 1001;
+          accountNumber = formatAccountNumber(seq);
+
+          // Guardar de forma persistente en user_metadata y profiles
+          await admin.auth.admin.updateUserById(user.id, {
+            user_metadata: { ...meta, account_number: accountNumber },
+          });
+          await admin.from("profiles").update({ account_number: accountNumber }).eq("id", user.id);
+        } else {
+          accountNumber = "HABA-001001";
+        }
+      } catch {
+        accountNumber = "HABA-001001";
+      }
+    }
+
     const planType = meta.plan_type || "prueba";
     const planStartDate =
       meta.plan_start_date ||
@@ -63,6 +92,7 @@ export async function GET(request: Request) {
 
     const fullProfile = {
       id: user.id,
+      account_number: accountNumber,
       email: profile?.email || user.email,
       full_name: profile?.full_name || meta.full_name || null,
       business_name: profile?.business_name || meta.business_name || null,
@@ -80,6 +110,7 @@ export async function GET(request: Request) {
       avatar_url: avatarUrl,
       created_at: profile?.created_at || user.created_at,
     };
+
 
     return NextResponse.json({
       user,
