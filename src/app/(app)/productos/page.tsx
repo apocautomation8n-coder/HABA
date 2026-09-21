@@ -770,7 +770,7 @@ export default function ProductosPage() {
 
   const editBatchDirectCost = editSuppliesCost + editComponentsCost;
   const editMins = typeof editWorkMinutes === "number" ? editWorkMinutes : parseFloat(String(editWorkMinutes)) || 0;
-  const editBatchLaborCost = Math.round(editMins * (currentMinuteRate || 0) * 100) / 100;
+  const editBatchLaborCost = editMins > 0 ? Math.round(editMins * (currentMinuteRate || 0) * 100) / 100 : 0;
   const editBatchTotalCost = Math.round((editBatchDirectCost + editBatchLaborCost) * 100) / 100;
 
   const safeEditYield = useMemo(() => {
@@ -2020,10 +2020,13 @@ export default function ProductosPage() {
                     <input
                       type="number"
                       min="0"
-                      value={editWorkMinutes === 0 ? "" : editWorkMinutes}
-                      onChange={(e) => setEditWorkMinutes(e.target.value === "" ? "" : parseFloat(e.target.value) || 0)}
-                      placeholder="0"
-                      className="w-20 px-2.5 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl text-center font-bold outline-none focus:bg-white focus:border-[#3BB578]"
+                      value={editWorkMinutes === 0 || editWorkMinutes === "" ? "" : editWorkMinutes}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setEditWorkMinutes(val === "" ? "" : Math.max(0, parseFloat(val) || 0));
+                      }}
+                      placeholder="0 min (opcional)"
+                      className="w-28 px-2.5 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl text-center font-bold outline-none focus:bg-white focus:border-[#3BB578]"
                     />
                     <span className="text-xs text-neutral-400">min</span>
                     {Number(editWorkMinutes) >= 60 && (

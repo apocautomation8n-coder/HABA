@@ -106,9 +106,9 @@ export default function NuevoProductoPage() {
     if (!componentPickerOpen) setComponentSearch("");
   }, [componentPickerOpen]);
 
-  // Paso 3: Tiempo / Mano de Obra (Opcional)
+  // Paso 3: Tiempo / Mano de Obra (Opcional - Inicia estrictamente en 0)
   const [includeLabor, setIncludeLabor] = useState(true);
-  const [workTimeMinutes, setWorkTimeMinutes] = useState<number | string>(30);
+  const [workTimeMinutes, setWorkTimeMinutes] = useState<number | string>("");
   const [showTimeInfo, setShowTimeInfo] = useState(false);
 
   // Paso 4: Gastos Indirectos / Fijos (Opcional prorrateo sugerido)
@@ -256,11 +256,11 @@ export default function NuevoProductoPage() {
     return batchSuppliesCost + batchComponentsCost;
   }, [batchSuppliesCost, batchComponentsCost]);
 
-  // 2. Costo de Mano de Obra del lote
+  // 2. Costo de Mano de Obra del lote (estrictamente 0 si no se ingresan minutos)
   const batchLaborCost = useMemo(() => {
     if (!includeLabor) return 0;
     const mins = typeof workTimeMinutes === "number" ? workTimeMinutes : parseFloat(String(workTimeMinutes)) || 0;
-    return mins * (laborMinuteRate || 0);
+    return mins > 0 ? mins * (laborMinuteRate || 0) : 0;
   }, [includeLabor, workTimeMinutes, laborMinuteRate]);
 
   // Costo Total del Lote
@@ -1261,10 +1261,13 @@ export default function NuevoProductoPage() {
                 <input
                   type="number"
                   min="0"
-                  value={workTimeMinutes === 0 ? "" : workTimeMinutes}
-                  onChange={(e) => setWorkTimeMinutes(e.target.value === "" ? "" : parseFloat(e.target.value) || 0)}
-                  placeholder="0"
-                  className="w-24 px-3 py-2 text-sm bg-white border border-neutral-200 rounded-xl text-center font-bold outline-none focus:border-[#3BB578]"
+                  value={workTimeMinutes === 0 || workTimeMinutes === "" ? "" : workTimeMinutes}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setWorkTimeMinutes(val === "" ? "" : Math.max(0, parseFloat(val) || 0));
+                  }}
+                  placeholder="0 min (opcional)"
+                  className="w-36 px-3 py-2 text-sm bg-white border border-neutral-200 rounded-xl text-center font-bold outline-none focus:border-[#3BB578]"
                 />
                 <span className="text-sm text-neutral-500 font-medium">minutos</span>
                 {Number(workTimeMinutes) >= 60 && (
@@ -1280,7 +1283,9 @@ export default function NuevoProductoPage() {
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-[#1F7A4C] font-semibold">Cálculo:</span>
                   <span className="font-mono text-[#1F7A4C]">
-                    {workTimeMinutes || 0} min × {formatCurrency(laborMinuteRate)}/min
+                    {(Number(workTimeMinutes) || 0) > 0
+                      ? `${workTimeMinutes} min × ${formatCurrency(laborMinuteRate)}/min`
+                      : "0 min (sin tiempo productivo asignado)"}
                   </span>
                 </div>
                 <div className="flex items-center justify-between pt-1 border-t border-[#C3EBC0]">
@@ -1332,7 +1337,10 @@ export default function NuevoProductoPage() {
                     2️⃣ <strong>Para este producto:</strong> Multiplicamos los minutos de elaboración por tu valor por minuto:
                   </p>
                   <div className="bg-white p-2 rounded-xl border border-[#DCF4D7] font-mono text-[10.5px] text-[#1F7A4C]">
-                    {workTimeMinutes || 0} min × {formatCurrency(laborMinuteRate)}/min = <strong>{formatCurrency(laborCost)}</strong>
+                    {(Number(workTimeMinutes) || 0) > 0
+                      ? `${workTimeMinutes} min × ${formatCurrency(laborMinuteRate)}/min = `
+                      : "0 min × tarifa = "}
+                    <strong>{formatCurrency(laborCost)}</strong>
                   </div>
                 </div>
               </div>
