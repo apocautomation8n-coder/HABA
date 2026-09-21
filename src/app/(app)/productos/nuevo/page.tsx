@@ -37,7 +37,16 @@ import { createClient } from "@/lib/supabase/client";
 import { formatCurrency, calculateUnitCost } from "@/lib/units";
 import { SupplyModal, SupplyItem } from "@/components/SupplyModal";
 import { CategorySelector } from "@/components/CategorySelector";
-import { PRODUCT_CATEGORIES, serializeProductDescription, SelectedProductComponent, calculateComponentsCost, getCategoryBadge, validateProductYield } from "@/lib/products";
+import {
+  PRODUCT_CATEGORIES,
+  serializeProductDescription,
+  SelectedProductComponent,
+  calculateComponentsCost,
+  getCategoryBadge,
+  validateProductYield,
+  isDuplicateProductName,
+  checkProductNameExists,
+} from "@/lib/products";
 import { matchesSearch } from "@/lib/search";
 
 interface SelectedSupply {
@@ -92,6 +101,11 @@ export default function NuevoProductoPage() {
 
   // Paso 2: Subproductos / Componentes de otros productos
   const [availableProducts, setAvailableProducts] = useState<any[]>([]);
+
+  // Detección reactiva de nombre duplicado
+  const isDuplicateName = useMemo(() => {
+    return isDuplicateProductName(name, availableProducts);
+  }, [name, availableProducts]);
   const [selectedComponents, setSelectedComponents] = useState<SelectedProductComponent[]>([]);
   const [componentPickerOpen, setComponentPickerOpen] = useState(false);
   const [componentSearch, setComponentSearch] = useState("");
@@ -472,8 +486,11 @@ export default function NuevoProductoPage() {
   // Validación de Paso 1
   const validateStep1 = (): boolean => {
     const errors: { name?: string; category?: string } = {};
-    if (!name.trim()) {
+    const trimmed = name.trim();
+    if (!trimmed) {
       errors.name = "El nombre del producto es obligatorio.";
+    } else if (isDuplicateProductName(trimmed, availableProducts)) {
+      errors.name = "Ya existe un producto con este nombre. Elige un nombre diferente.";
     }
     if (!category || !category.trim()) {
       errors.category = "Seleccioná una categoría para tu producto.";
@@ -487,13 +504,21 @@ export default function NuevoProductoPage() {
       setErrorMsg(null);
       setCurrentStep(2);
     } else {
-      setErrorMsg("Completá los campos obligatorios para continuar.");
+      if (isDuplicateName) {
+        setErrorMsg("Ya existe un producto con este nombre. Elige un nombre diferente.");
+      } else {
+        setErrorMsg("Completá los campos obligatorios para continuar.");
+      }
     }
   };
 
   const handleStepClick = (targetStep: number) => {
     if (targetStep > 1 && !validateStep1()) {
-      setErrorMsg("Completá el nombre y la categoría en el Paso 1 antes de avanzar.");
+      if (isDuplicateName) {
+        setErrorMsg("Ya existe un producto con este nombre. Elige un nombre diferente.");
+      } else {
+        setErrorMsg("Completá el nombre y la categoría en el Paso 1 antes de avanzar.");
+      }
       return;
     }
     setErrorMsg(null);
@@ -504,7 +529,11 @@ export default function NuevoProductoPage() {
   const handleSaveProduct = async () => {
     setErrorMsg(null);
     if (!validateStep1()) {
-      setErrorMsg("El nombre y la categoría del producto son obligatorios");
+      if (isDuplicateName) {
+        setErrorMsg("Ya existe un producto con este nombre. Elige un nombre diferente.");
+      } else {
+        setErrorMsg("El nombre y la categoría del producto son obligatorios");
+      }
       setCurrentStep(1);
       return;
     }
@@ -539,6 +568,16 @@ export default function NuevoProductoPage() {
         isActive: true,
         yieldValue: yieldValidation.value,
       });
+
+      // Doble verificación en base de datos de nombre duplicado
+      const nameAlreadyExistsInDb = await checkProductNameExists(supabase, name.trim());
+      if (nameAlreadyExistsInDb) {
+        setErrorMsg("Ya existe un producto con este nombre. Elige un nombre diferente.");
+        setStep1Errors({ name: "Ya existe un producto con este nombre. Elige un nombre diferente." });
+        setCurrentStep(1);
+        setLoading(false);
+        return;
+      }
 
       // 1. Insertar en tabla products (costos unitarios normalizados)
       const mins = typeof workTimeMinutes === "number" ? workTimeMinutes : parseFloat(String(workTimeMinutes)) || 0;
@@ -767,20 +806,27 @@ export default function NuevoProductoPage() {
               type="text"
               value={name}
               onChange={(e) => {
-                setName(e.target.value);
+                const val = e.target.value;
+                setName(val);
                 if (step1Errors.name) setStep1Errors((prev) => ({ ...prev, name: undefined }));
+                if (isDuplicateProductName(val, availableProducts)) {
+                  setStep1Errors((prev) => ({
+                    ...prev,
+                    name: "Ya existe un producto con este nombre. Elige un nombre diferente.",
+                  }));
+                }
               }}
               placeholder="¿Qué producto vas a confeccionar?"
               className={`w-full px-3.5 py-2.5 text-xs bg-neutral-50 border rounded-2xl focus:bg-white outline-none transition ${
-                step1Errors.name
+                step1Errors.name || isDuplicateName
                   ? "border-rose-300 ring-2 ring-rose-100 bg-rose-50/20"
                   : "border-neutral-200 focus:border-[#3BB578] focus:ring-2 focus:ring-[#DCF4D7]"
               }`}
             />
-            {step1Errors.name && (
+            {(step1Errors.name || isDuplicateName) && (
               <p className="text-[11px] text-rose-500 flex items-center gap-1 mt-1 font-medium">
                 <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
-                <span>{step1Errors.name}</span>
+                <span>{step1Errors.name || "Ya existe un producto con este nombre. Elige un nombre diferente."}</span>
               </p>
             )}
           </div>
@@ -833,7 +879,8 @@ export default function NuevoProductoPage() {
             <button
               type="button"
               onClick={handleNextFromStep1}
-              className="py-2.5 px-6 bg-[#3BB578] hover:bg-[#2E9E65] text-white rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm active:scale-95"
+              disabled={isDuplicateName || !name.trim()}
+              className="py-2.5 px-6 bg-[#3BB578] hover:bg-[#2E9E65] disabled:opacity-50 text-white rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer disabled:cursor-not-allowed"
             >
               <span>Siguiente: Insumos</span>
               <ChevronRight className="w-4 h-4" />

@@ -31,6 +31,7 @@ import {
   TrendingUp,
   TrendingDown,
   Info,
+  AlertCircle,
 } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
@@ -46,6 +47,8 @@ import {
   getAllProductCategories,
   detectModifiedSupplies,
   ModifiedSupplyInfo,
+  isDuplicateProductName,
+  checkProductNameExists,
 } from "@/lib/products";
 import { matchesSearch } from "@/lib/search";
 import { SupplyModal, SupplyItem } from "@/components/SupplyModal";
@@ -432,8 +435,8 @@ export default function ProductosPage() {
       alert("Por favor ingresá un nombre para la copia del producto.");
       return;
     }
-    if (finalName.toLowerCase() === duplicateModalProduct.name.toLowerCase()) {
-      alert("El nombre debe ser distinto al del producto original para evitar confusiones.");
+    if (isDuplicateProductName(finalName, products)) {
+      alert("Ya existe un producto con este nombre. Elige un nombre diferente.");
       return;
     }
 
@@ -445,6 +448,14 @@ export default function ProductosPage() {
       } = await supabase.auth.getUser();
 
       if (!user) throw new Error("Sesión no válida");
+
+      // Doble verificación en base de datos
+      const nameExistsInDb = await checkProductNameExists(supabase, finalName);
+      if (nameExistsInDb) {
+        alert("Ya existe un producto con este nombre. Elige un nombre diferente.");
+        setDuplicatingId(null);
+        return;
+      }
 
       // 1. Obtener los insumos de la receta original
       const { data: originalSupplies, error: suppliesFetchErr } = await supabase
@@ -824,8 +835,14 @@ export default function ProductosPage() {
   // Guardar cambios del modal de edición incluyendo insumos y receta
   const handleSaveEditProduct = async () => {
     if (!editModalProduct || savingEdit) return;
-    if (!editName.trim()) {
+    const trimmedName = editName.trim();
+    if (!trimmedName) {
       alert("El nombre del producto es obligatorio.");
+      return;
+    }
+
+    if (isDuplicateProductName(trimmedName, products, editModalProduct.id)) {
+      alert("Ya existe un producto con este nombre. Elige un nombre diferente.");
       return;
     }
 
@@ -837,6 +854,14 @@ export default function ProductosPage() {
 
     try {
       setSavingEdit(true);
+
+      // Doble verificación en base de datos
+      const nameExistsInDb = await checkProductNameExists(supabase, trimmedName, editModalProduct.id);
+      if (nameExistsInDb) {
+        alert("Ya existe un producto con este nombre. Elige un nombre diferente.");
+        setSavingEdit(false);
+        return;
+      }
 
       const meta = parseProductMeta(editModalProduct.description);
       const newDescription = serializeProductDescription({
@@ -1101,6 +1126,18 @@ export default function ProductosPage() {
     if (!editModalProduct) return [];
     return detectModifiedSupplies(editModalProduct, priceHistory);
   }, [editModalProduct, priceHistory]);
+
+  // Detección reactiva de nombre duplicado en edición
+  const isDuplicateEditName = useMemo(() => {
+    if (!editModalProduct) return false;
+    return isDuplicateProductName(editName, products, editModalProduct.id);
+  }, [editName, products, editModalProduct]);
+
+  // Detección reactiva de nombre duplicado en duplicación
+  const isDuplicateDuplicateName = useMemo(() => {
+    if (!duplicateModalProduct) return false;
+    return isDuplicateProductName(duplicateNewName, products);
+  }, [duplicateNewName, products, duplicateModalProduct]);
 
   // Contadores para métricas y badges de filtro
   const counts = useMemo(() => {
@@ -2098,9 +2135,19 @@ export default function ProductosPage() {
                 value={duplicateNewName}
                 onChange={(e) => setDuplicateNewName(e.target.value)}
                 placeholder="Ej: Cuaderno A5 Rayado"
-                className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl outline-none focus:bg-white focus:border-[#3BB578] focus:ring-2 focus:ring-[#DCF4D7]"
+                className={`w-full px-3 py-2 text-xs bg-neutral-50 border rounded-2xl outline-none focus:bg-white transition ${
+                  isDuplicateDuplicateName
+                    ? "border-rose-300 ring-2 ring-rose-100 bg-rose-50/20"
+                    : "border-neutral-200 focus:border-[#3BB578] focus:ring-2 focus:ring-[#DCF4D7]"
+                }`}
                 autoFocus
               />
+              {isDuplicateDuplicateName && (
+                <p className="text-[11px] text-rose-500 flex items-center gap-1 mt-1 font-medium">
+                  <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                  <span>Ya existe un producto con este nombre. Elige un nombre diferente.</span>
+                </p>
+              )}
               <span className="text-[10px] text-neutral-400 block mt-0.5">
                 Original: {duplicateModalProduct.name}
               </span>
@@ -2110,15 +2157,15 @@ export default function ProductosPage() {
               <button
                 type="button"
                 onClick={() => setDuplicateModalProduct(null)}
-                className="py-2 px-3.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 text-xs font-semibold rounded-2xl transition"
+                className="py-2 px-3.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 text-xs font-semibold rounded-2xl transition cursor-pointer"
               >
                 Cancelar
               </button>
               <button
                 type="button"
                 onClick={handleConfirmDuplicate}
-                disabled={!duplicateNewName.trim() || duplicatingId !== null}
-                className="py-2 px-4 bg-[#3BB578] hover:bg-[#2E9E65] disabled:opacity-50 text-white text-xs font-bold rounded-2xl transition flex items-center gap-1.5 shadow-sm"
+                disabled={!duplicateNewName.trim() || isDuplicateDuplicateName || duplicatingId !== null}
+                className="py-2 px-4 bg-[#3BB578] hover:bg-[#2E9E65] disabled:opacity-50 text-white text-xs font-bold rounded-2xl transition flex items-center gap-1.5 shadow-sm cursor-pointer disabled:cursor-not-allowed"
               >
                 {duplicatingId ? (
                   <>
@@ -2191,8 +2238,18 @@ export default function ProductosPage() {
                   type="text"
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
-                  className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl outline-none focus:bg-white focus:border-[#3BB578] focus:ring-2 focus:ring-[#DCF4D7]"
+                  className={`w-full px-3 py-2 text-xs bg-neutral-50 border rounded-2xl outline-none focus:bg-white transition ${
+                    isDuplicateEditName
+                      ? "border-rose-300 ring-2 ring-rose-100 bg-rose-50/20"
+                      : "border-neutral-200 focus:border-[#3BB578] focus:ring-2 focus:ring-[#DCF4D7]"
+                  }`}
                 />
+                {isDuplicateEditName && (
+                  <p className="text-[11px] text-rose-500 flex items-center gap-1 mt-1 font-medium">
+                    <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span>Ya existe un producto con este nombre. Elige un nombre diferente.</span>
+                  </p>
+                )}
               </div>
 
               {/* Categoría y Tiempo de producción */}
@@ -2674,15 +2731,15 @@ export default function ProductosPage() {
               <button
                 type="button"
                 onClick={() => setEditModalProduct(null)}
-                className="py-2 px-4 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 text-xs font-semibold rounded-2xl transition"
+                className="py-2 px-4 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 text-xs font-semibold rounded-2xl transition cursor-pointer"
               >
                 Cancelar
               </button>
               <button
                 type="button"
                 onClick={handleSaveEditProduct}
-                disabled={savingEdit || !editName.trim()}
-                className="py-2 px-5 bg-[#3BB578] hover:bg-[#2E9E65] disabled:opacity-50 text-white text-xs font-bold rounded-2xl transition flex items-center gap-1.5 shadow-sm"
+                disabled={savingEdit || !editName.trim() || isDuplicateEditName}
+                className="py-2 px-5 bg-[#3BB578] hover:bg-[#2E9E65] disabled:opacity-50 text-white text-xs font-bold rounded-2xl transition flex items-center gap-1.5 shadow-sm cursor-pointer disabled:cursor-not-allowed"
               >
                 {savingEdit ? (
                   <>

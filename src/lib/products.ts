@@ -769,5 +769,52 @@ export function detectModifiedSupplies(
   return modified;
 }
 
+/**
+ * Valida si un nombre de producto ya existe en una lista de productos en memoria,
+ * ignorando mayúsculas/minúsculas y espacios innecesarios (trim).
+ * Permite excluir un ID (útil en edición para no autodetectar colisión).
+ */
+export function isDuplicateProductName(
+  candidateName: string,
+  existingProducts: Array<{ id: string; name: string }>,
+  excludeProductId?: string
+): boolean {
+  const normalized = candidateName.trim().toLowerCase();
+  if (!normalized) return false;
+  return existingProducts.some(
+    (p) => p.id !== excludeProductId && p.name.trim().toLowerCase() === normalized
+  );
+}
 
+/**
+ * Consulta en Supabase si ya existe un producto con el mismo nombre para el usuario actual.
+ */
+export async function checkProductNameExists(
+  supabase: any,
+  name: string,
+  excludeProductId?: string
+): Promise<boolean> {
+  const normalized = name.trim().toLowerCase();
+  if (!normalized) return false;
 
+  try {
+    let query = supabase
+      .from("products")
+      .select("id, name")
+      .ilike("name", normalized);
+
+    if (excludeProductId) {
+      query = query.neq("id", excludeProductId);
+    }
+
+    const { data, error } = await query;
+    if (error || !data) return false;
+
+    return data.some(
+      (p: any) => p.name.trim().toLowerCase() === normalized
+    );
+  } catch (err) {
+    console.error("Error al consultar existencia de producto por nombre:", err);
+    return false;
+  }
+}
