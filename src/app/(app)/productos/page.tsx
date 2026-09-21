@@ -619,6 +619,18 @@ export default function ProductosPage() {
     });
   };
 
+  // Modificar nombre de un canal en edición
+  const handleUpdatePriceChannelName = (index: number, newName: string) => {
+    setEditPrices((prev) => {
+      const updated = [...prev];
+      updated[index] = {
+        ...updated[index],
+        channel_name: newName,
+      };
+      return updated;
+    });
+  };
+
   // Agregar insumo a la receta en edición
   const handleAddSupplyToRecipe = (supplyId: string) => {
     if (!supplyId) return;
@@ -845,6 +857,7 @@ export default function ProductosPage() {
             await supabase
               .from("product_prices")
               .update({
+                channel_name: price.channel_name || "General",
                 profit_margin_percent: finalMargin,
                 selling_price: finalSelling,
               })
@@ -2284,9 +2297,17 @@ export default function ProductosPage() {
                           className="p-3 bg-white rounded-xl border border-neutral-200 shadow-2xs space-y-2"
                         >
                           <div className="flex items-center justify-between">
-                            <span className="text-xs font-bold text-neutral-800">
-                              {price.channel_name}
-                            </span>
+                            <div className="relative flex items-center flex-1 max-w-[220px] group">
+                              <input
+                                type="text"
+                                value={price.channel_name}
+                                onChange={(e) => handleUpdatePriceChannelName(idx, e.target.value)}
+                                placeholder="Nombre del canal..."
+                                className="text-xs font-bold text-neutral-800 bg-neutral-50/80 border border-neutral-200 group-hover:border-[#3BB578]/60 focus:border-[#3BB578] focus:bg-white pl-2 pr-6 py-1 rounded-lg outline-none transition w-full"
+                                title="Hacé clic para renombrar el canal de venta"
+                              />
+                              <Pencil className="w-3 h-3 text-neutral-400 group-hover:text-[#3BB578] group-focus-within:text-[#3BB578] absolute right-2 pointer-events-none transition" />
+                            </div>
                             <span className="text-[10px] font-semibold text-[#1F7A4C] bg-[#DCF4D7] px-2 py-0.5 rounded-md">
                               Ganancia: {formatCurrency(netProfit)}
                             </span>
@@ -2313,8 +2334,9 @@ export default function ProductosPage() {
                             </div>
 
                             <div>
-                              <label className="text-[10px] font-semibold text-neutral-500 block mb-1">
-                                Precio Final de Venta:
+                              <label className="text-[10px] font-semibold text-[#1F7A4C] block mb-1 flex items-center gap-1">
+                                <Pencil className="w-2.5 h-2.5 text-[#1F7A4C]" />
+                                <span>Precio de Lista ($):</span>
                               </label>
                               <div className="relative flex items-center">
                                 <span className="absolute left-2.5 text-[10px] text-neutral-400 pointer-events-none font-bold">
@@ -2325,8 +2347,8 @@ export default function ProductosPage() {
                                   step="any"
                                   value={price.selling_price === "" ? "" : price.selling_price}
                                   onChange={(e) => handleUpdatePriceSelling(idx, e.target.value)}
-                                  className="w-full pl-6 pr-2.5 py-1.5 text-xs bg-neutral-50 border border-neutral-200 rounded-xl font-black outline-none focus:bg-white focus:border-[#3BB578] text-[#1F7A4C]"
-                                  placeholder="0"
+                                  className="w-full pl-6 pr-2.5 py-1.5 text-xs bg-neutral-50 border border-[#3BB578]/50 rounded-xl font-black outline-none focus:bg-white focus:border-[#3BB578] text-[#1F7A4C] placeholder:text-neutral-300 placeholder:font-normal"
+                                  placeholder="Establecer precio manual..."
                                 />
                               </div>
                             </div>
