@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { calculatePlanEndDate } from "@/lib/plan-helpers";
-import { formatAccountNumber } from "@/lib/account";
+import { formatAccountNumber, parseAccountNumber } from "@/lib/account";
 
 function getAdminClient() {
   return createSupabaseClient(
@@ -53,29 +53,38 @@ export async function GET(request: Request) {
     const meta = user.user_metadata || {};
     let accountNumber = profile?.account_number || meta.account_number || null;
 
-    // Si aún no tiene número de cuenta (cuenta previa a la migración), asignar secuencialmente
-    if (!accountNumber) {
+    // Si aún no tiene número de cuenta o tiene el formato antiguo, asignar secuencialmente
+    if (!accountNumber || accountNumber.includes("HABA-001001")) {
       try {
         const { data: allProfiles } = await admin
           .from("profiles")
-          .select("id, account_number, created_at")
+          .select("id, created_at")
           .order("created_at", { ascending: true });
 
         if (allProfiles && allProfiles.length > 0) {
           const userIndex = allProfiles.findIndex((p) => p.id === user.id);
-          const seq = userIndex >= 0 ? 1001 + userIndex : 1001;
+          const seq = userIndex >= 0 ? userIndex + 1 : 1;
           accountNumber = formatAccountNumber(seq);
 
-          // Guardar de forma persistente en user_metadata y profiles
+          // Guardar de forma persistente en user_metadata
           await admin.auth.admin.updateUserById(user.id, {
             user_metadata: { ...meta, account_number: accountNumber },
           });
-          await admin.from("profiles").update({ account_number: accountNumber }).eq("id", user.id);
+          try {
+            await admin.from("profiles").update({ account_number: accountNumber }).eq("id", user.id);
+          } catch {
+            // Fallback si la columna no existe en profiles
+          }
         } else {
-          accountNumber = "HABA-001001";
+          accountNumber = "01";
         }
       } catch {
-        accountNumber = "HABA-001001";
+        accountNumber = "01";
+      }
+    } else {
+      const parsed = parseAccountNumber(accountNumber);
+      if (parsed !== null && parsed < 1000) {
+        accountNumber = formatAccountNumber(parsed);
       }
     }
 

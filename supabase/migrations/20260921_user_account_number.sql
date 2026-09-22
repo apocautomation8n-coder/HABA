@@ -1,15 +1,15 @@
 -- ====================================================================
--- Migración: Identificador Interno Administrativo (Número de Cuenta HABA)
+-- Migración: Identificador Interno Administrativo / ID de Usuario (01, 02, 03...)
 -- ====================================================================
 
--- 1. Crear secuencia de numeración a partir de 1001
-CREATE SEQUENCE IF NOT EXISTS public.haba_account_number_seq START WITH 1001;
+-- 1. Crear secuencia de numeración a partir de 1
+CREATE SEQUENCE IF NOT EXISTS public.haba_account_number_seq START WITH 1;
 
 -- 2. Agregar columna account_number en profiles
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS account_number TEXT;
 
 -- 3. Comentario descriptivo
-COMMENT ON COLUMN public.profiles.account_number IS 'Identificador interno administrativo único e inmutable de la cuenta (ej: HABA-001001)';
+COMMENT ON COLUMN public.profiles.account_number IS 'Identificador interno administrativo único e inmutable de la cuenta (ej: 01, 02, 03)';
 
 -- 4. Asignar secuencialmente el identificador a las cuentas ya existentes (ordenadas por created_at)
 DO $$
@@ -23,7 +23,7 @@ BEGIN
     ORDER BY created_at ASC 
   LOOP
     UPDATE public.profiles
-    SET account_number = 'HABA-' || LPAD(nextval('public.haba_account_number_seq')::TEXT, 6, '0')
+    SET account_number = LPAD(nextval('public.haba_account_number_seq')::TEXT, 2, '0')
     WHERE id = r.id;
   END LOOP;
 END;
@@ -39,7 +39,7 @@ CREATE OR REPLACE FUNCTION public.generate_haba_account_number()
 RETURNS TRIGGER AS $$
 BEGIN
   IF NEW.account_number IS NULL OR NEW.account_number = '' THEN
-    NEW.account_number := 'HABA-' || LPAD(nextval('public.haba_account_number_seq')::TEXT, 6, '0');
+    NEW.account_number := LPAD(nextval('public.haba_account_number_seq')::TEXT, 2, '0');
   END IF;
   RETURN NEW;
 END;
@@ -64,6 +64,6 @@ $$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS trg_prevent_account_number_update ON public.profiles;
 CREATE TRIGGER trg_prevent_account_number_update
-BEFORE UPDATE ON public.profiles
+BEFORE UPDATE OF account_number ON public.profiles
 FOR EACH ROW
 EXECUTE FUNCTION public.prevent_account_number_update();
