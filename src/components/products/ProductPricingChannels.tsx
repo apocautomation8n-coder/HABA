@@ -229,8 +229,8 @@ export function ProductPricingChannels({
         </div>
         <div className="text-right">
           <span className="text-[10px] text-neutral-400 block font-medium">Costo Base Unitario</span>
-          <span className="text-xs font-black text-neutral-700 bg-neutral-100 px-2 py-0.5 rounded-lg">
-            {formatCurrency(unitCost)}
+          <span className="text-xs font-black text-[#1F7A4C] bg-[#DCF4D7] px-2 py-0.5 rounded-lg border border-[#3BB578]/20">
+            {formatCurrency(unitCost)} / u
           </span>
         </div>
       </div>
@@ -249,7 +249,7 @@ export function ProductPricingChannels({
               </div>
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-bold text-[11px] text-[#1F7A4C]">
-                  Costo Base Unitario: {formatCurrency(unitCost)}
+                  Costo Base Unitario: {formatCurrency(unitCost)} / u
                 </span>
                 {safeYield > 1 && batchTotalCost !== undefined && (
                   <span className="text-[10px] bg-white text-[#1F7A4C] px-2 py-0.5 rounded-full border border-[#DCF4D7] font-semibold">
@@ -423,7 +423,7 @@ export function ProductPricingChannels({
                       <span className="text-[9px] text-neutral-400">según margen</span>
                     </div>
                     <span className="text-sm font-bold text-neutral-700">
-                      {formatCurrency(suggestedPrice)}
+                      {formatCurrency(suggestedPrice)} <span className="text-xs font-normal text-neutral-400">/ u</span>
                     </span>
                   </div>
 
@@ -431,7 +431,7 @@ export function ProductPricingChannels({
                     <div className="flex items-center justify-between mb-1">
                       <label className="text-[10px] text-[#1F7A4C] font-bold flex items-center gap-1">
                         <Pencil className="w-2.5 h-2.5 text-[#1F7A4C]" />
-                        <span>Precio de Lista ($)</span>
+                        <span>Precio de Lista ($ / u)</span>
                       </label>
                       <span className="text-[9px] font-semibold bg-[#DCF4D7] text-[#1F7A4C] px-1.5 py-0.5 rounded">
                         Editable
@@ -459,18 +459,18 @@ export function ProductPricingChannels({
                 {/* Desglose de Costo + Ganancia = Precio */}
                 <div className="pt-2 border-t border-neutral-200/60 flex items-center justify-between text-[10px] text-neutral-600 bg-white/80 px-2 py-1 rounded-xl font-medium">
                   <span>
-                    Costo: <strong>{formatCurrency(unitCost)}</strong>
+                    Costo: <strong>{formatCurrency(unitCost)} / u</strong>
                   </span>
                   <span>+</span>
                   <span>
                     Ganancia:{" "}
                     <strong className={profitAmount >= 0 ? "text-[#1F7A4C]" : "text-rose-600"}>
-                      {formatCurrency(profitAmount)}
+                      {formatCurrency(profitAmount)} / u
                     </strong>
                   </span>
                   <span>=</span>
                   <span>
-                    Precio: <strong className="text-[#2B2B2B]">{formatCurrency(channelSellingPrice)}</strong>
+                    Precio: <strong className="text-[#2B2B2B]">{formatCurrency(channelSellingPrice)} / u</strong>
                   </span>
                 </div>
               </div>

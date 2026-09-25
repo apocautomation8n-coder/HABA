@@ -58,6 +58,7 @@ import {
   ProductPricingChannels,
   ChannelPriceItem,
 } from "@/components/products/ProductPricingChannels";
+import { ProductYieldCard } from "@/components/products/ProductYieldCard";
 
 interface ProductPrice {
   id: string;
@@ -2601,69 +2602,17 @@ export default function ProductosPage() {
 
             {/* Columna Derecha: Rendimiento, Resumen de Costos y Canales de Venta */}
             <div className="space-y-4">
-              {/* Rendimiento del Lote / Tanda en Edición */}
-              <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200/90 space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <label className="text-xs font-bold text-neutral-800 flex items-center gap-1.5">
-                      <Layers className="w-3.5 h-3.5 text-[#3BB578]" />
-                      <span>Rendimiento de la Receta / Lote</span>
-                    </label>
-                    <p className="text-[10px] text-neutral-500">
-                      Unidades obtenidas con estos materiales (ej. 10 unidades)
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setEditYield((prev) => Math.max(1, (Number(prev) || 1) - 1))}
-                      className="w-6 h-6 bg-white hover:bg-neutral-100 border border-neutral-200 rounded-lg text-xs font-bold text-neutral-600 flex items-center justify-center transition shadow-2xs"
-                      title="Disminuir rendimiento"
-                    >
-                      -
-                    </button>
-                    <div className="flex items-center bg-white px-2 py-0.5 rounded-lg border border-neutral-200 focus-within:border-[#3BB578] transition shadow-2xs">
-                      <input
-                        type="number"
-                        min="1"
-                        step="any"
-                        value={editYield}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setEditYield(val === "" ? "" : Math.max(0, parseFloat(val) || 0));
-                        }}
-                        placeholder="1"
-                        className="w-12 text-center text-xs font-black text-[#1F7A4C] outline-none bg-transparent"
-                      />
-                      <span className="text-[10px] font-bold text-neutral-400 ml-1">u</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setEditYield((prev) => (Number(prev) || 0) + 1)}
-                      className="w-6 h-6 bg-white hover:bg-neutral-100 border border-neutral-200 rounded-lg text-xs font-bold text-neutral-600 flex items-center justify-center transition shadow-2xs"
-                      title="Aumentar rendimiento"
-                    >
-                      +
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Resumen Total Actualizado */}
-              <div className="bg-[#DCF4D7] border border-[#C3EBC0] p-3 rounded-2xl space-y-1.5 text-xs text-[#1F7A4C]">
-                <div className="flex justify-between items-center text-[11px]">
-                  <span>
-                    Lote ({safeEditYield} u): Insumos ({formatCurrency(editSuppliesCost)}) + Subprod. ({formatCurrency(editComponentsCost)}) + M.O ({formatCurrency(editBatchLaborCost)})
-                  </span>
-                  <span className="font-bold">{formatCurrency(editBatchTotalCost)}</span>
-                </div>
-                <div className="flex justify-between items-center font-bold pt-1.5 border-t border-[#C3EBC0]">
-                  <span>Costo Unitario Resultante (por unidad):</span>
-                  <span className="text-sm font-black text-[#1F7A4C] bg-white/70 px-2 py-0.5 rounded-lg border border-[#3BB578]/30">
-                    {formatCurrency(editTotalCost)} / u
-                  </span>
-                </div>
-              </div>
+              {/* Tarjeta Unificada de Rendimiento del Lote y Resumen de Costos */}
+              <ProductYieldCard
+                yieldValue={editYield}
+                onChangeYield={setEditYield}
+                batchMaterialsCost={editBatchDirectCost}
+                suppliesCost={editSuppliesCost}
+                componentsCost={editComponentsCost}
+                unitDirectCost={editUnitDirectCost}
+                batchLaborCost={editBatchLaborCost}
+                unitTotalCost={editTotalCost}
+              />
 
               {/* SECCIÓN DE PRECIOS POR CANAL DE VENTA */}
               <div className="p-3.5 bg-neutral-50 rounded-2xl border border-neutral-200/80">

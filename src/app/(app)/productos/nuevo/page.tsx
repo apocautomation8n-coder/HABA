@@ -59,6 +59,7 @@ import {
   ChannelPriceItem,
   DEFAULT_CHANNELS,
 } from "@/components/products/ProductPricingChannels";
+import { ProductYieldCard } from "@/components/products/ProductYieldCard";
 
 type ChannelPrice = ChannelPriceItem;
 
@@ -772,61 +773,6 @@ export default function NuevoProductoPage() {
             </div>
           </div>
 
-          {/* Tarjeta de Rendimiento del Lote / Tanda */}
-          <div className="p-3.5 bg-neutral-50 rounded-2xl border border-neutral-200/90 space-y-2">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div>
-                <label className="text-xs font-bold text-neutral-800 flex items-center gap-1.5">
-                  <Layers className="w-3.5 h-3.5 text-[#3BB578]" />
-                  <span>Rendimiento de la Receta / Lote</span>
-                </label>
-                <p className="text-[11px] text-neutral-500">
-                  ¿Cuántas unidades producís con esta receta de materiales? (Ej: 10 unidades)
-                </p>
-              </div>
-              <div className="flex items-center gap-1.5 self-start sm:self-auto">
-                <button
-                  type="button"
-                  onClick={() => setYieldValue((prev) => Math.max(1, (Number(prev) || 1) - 1))}
-                  className="w-7 h-7 bg-white hover:bg-neutral-100 border border-neutral-200 rounded-lg text-xs font-bold text-neutral-600 flex items-center justify-center transition shadow-2xs"
-                  title="Disminuir rendimiento"
-                >
-                  -
-                </button>
-                <div className="flex items-center bg-white px-2.5 py-1 rounded-xl border border-neutral-200 focus-within:border-[#3BB578] focus-within:ring-2 focus-within:ring-[#3BB578]/10 transition shadow-2xs">
-                  <input
-                    type="number"
-                    min="1"
-                    step="any"
-                    value={yieldValue}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setYieldValue(val === "" ? "" : Math.max(0, parseFloat(val) || 0));
-                    }}
-                    placeholder="1"
-                    className="w-14 text-center text-xs font-black text-[#1F7A4C] outline-none bg-transparent"
-                  />
-                  <span className="text-[11px] font-bold text-neutral-400 ml-1">unidades</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setYieldValue((prev) => (Number(prev) || 0) + 1)}
-                  className="w-7 h-7 bg-white hover:bg-neutral-100 border border-neutral-200 rounded-lg text-xs font-bold text-neutral-600 flex items-center justify-center transition shadow-2xs"
-                  title="Aumentar rendimiento"
-                >
-                  +
-                </button>
-              </div>
-            </div>
-
-            {safeYield > 1 && (
-              <div className="pt-2 border-t border-neutral-200/60 flex items-center justify-between text-[11px] text-[#1F7A4C] bg-[#DCF4D7]/40 px-2.5 py-1 rounded-xl font-medium">
-                <span>Costo total del lote: <strong>{formatCurrency(batchDirectCost)}</strong></span>
-                <span>÷ {safeYield} u =</span>
-                <span>Costo unitario materiales: <strong>{formatCurrency(unitDirectCost)} / u</strong></span>
-              </div>
-            )}
-          </div>
 
           {/* Selector de Pestañas en Paso 2: Insumos vs Subproductos */}
           <div className="flex rounded-2xl bg-neutral-100 p-1 gap-1">
@@ -1091,33 +1037,15 @@ export default function NuevoProductoPage() {
             </div>
           )}
 
-          {/* Tarjeta de Resumen Combinado de Costos de Materiales */}
-          {(selectedSupplies.length > 0 || selectedComponents.length > 0) && (
-            <div className="p-3 bg-[#F0FAF4] border border-[#C3EBC0] rounded-2xl text-xs mt-2 space-y-1.5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <span className="text-[11px] font-bold text-[#1F7A4C] block">
-                    {safeYield > 1 ? "Costo Total del Lote (Materiales):" : "Total Materiales y Subproductos:"}
-                  </span>
-                  <span className="text-[10px] text-[#2E9E65]">
-                    Insumos: {formatCurrency(suppliesCost)} | Subproductos: {formatCurrency(componentsCost)}
-                  </span>
-                </div>
-                <span className="text-sm font-black text-[#1F7A4C] font-display">
-                  {formatCurrency(batchDirectCost)}
-                </span>
-              </div>
-
-              {safeYield > 1 && (
-                <div className="pt-1.5 border-t border-[#C3EBC0]/70 flex items-center justify-between text-[11px] text-[#1F7A4C] font-bold">
-                  <span>Costo Unitario Resultante ({safeYield} unidades):</span>
-                  <span className="text-sm font-black text-[#1F7A4C] bg-[#DCF4D7] px-2 py-0.5 rounded-lg border border-[#3BB578]/30">
-                    {formatCurrency(unitDirectCost)} / u
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
+          {/* Tarjeta Unificada de Rendimiento del Lote y Resumen de Costos */}
+          <ProductYieldCard
+            yieldValue={yieldValue}
+            onChangeYield={setYieldValue}
+            batchMaterialsCost={batchDirectCost}
+            suppliesCost={suppliesCost}
+            componentsCost={componentsCost}
+            unitDirectCost={unitDirectCost}
+          />
 
           <div className="pt-3 border-t border-neutral-100 flex items-center justify-between">
             <button
