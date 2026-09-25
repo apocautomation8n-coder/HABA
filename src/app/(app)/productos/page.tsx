@@ -54,6 +54,10 @@ import { matchesSearch } from "@/lib/search";
 import { SupplyModal, SupplyItem } from "@/components/SupplyModal";
 import { CategorySelector } from "@/components/CategorySelector";
 import { PriceReviewModal } from "@/components/products/PriceReviewModal";
+import {
+  ProductPricingChannels,
+  ChannelPriceItem,
+} from "@/components/products/ProductPricingChannels";
 
 interface ProductPrice {
   id: string;
@@ -136,12 +140,7 @@ export interface EditComponentLine {
   quantity: number | string;
 }
 
-export interface EditPriceLine {
-  id: string;
-  channel_name: string;
-  profit_margin_percent: number | string;
-  selling_price: number | string;
-}
+export type EditPriceLine = ChannelPriceItem;
 
 export default function ProductosPage() {
   const supabase = createClient();
@@ -622,67 +621,6 @@ export default function ProductosPage() {
     );
   };
 
-  // Modificar margen % de un canal -> actualiza precio de venta
-  const handleUpdatePriceMargin = (index: number, newMarginStr: string) => {
-    setEditPrices((prev) => {
-      const updated = [...prev];
-      if (newMarginStr === "") {
-        updated[index] = {
-          ...updated[index],
-          profit_margin_percent: "",
-          selling_price: Math.round(editTotalCost),
-        };
-        return updated;
-      }
-      const margin = parseFloat(newMarginStr) || 0;
-      const calculatedSelling = Math.round(editTotalCost * (1 + margin / 100));
-      updated[index] = {
-        ...updated[index],
-        profit_margin_percent: margin,
-        selling_price: calculatedSelling,
-      };
-      return updated;
-    });
-  };
-
-  // Modificar precio de venta manual de un canal -> actualiza margen %
-  const handleUpdatePriceSelling = (index: number, newPriceStr: string) => {
-    setEditPrices((prev) => {
-      const updated = [...prev];
-      if (newPriceStr === "") {
-        updated[index] = {
-          ...updated[index],
-          selling_price: "",
-          profit_margin_percent: 0,
-        };
-        return updated;
-      }
-      const selling = parseFloat(newPriceStr) || 0;
-      let margin = 0;
-      if (editTotalCost > 0) {
-        margin = Math.round(((selling - editTotalCost) / editTotalCost) * 1000) / 10;
-      }
-      updated[index] = {
-        ...updated[index],
-        selling_price: selling,
-        profit_margin_percent: margin,
-      };
-      return updated;
-    });
-  };
-
-  // Modificar nombre de un canal en edición
-  const handleUpdatePriceChannelName = (index: number, newName: string) => {
-    setEditPrices((prev) => {
-      const updated = [...prev];
-      updated[index] = {
-        ...updated[index],
-        channel_name: newName,
-      };
-      return updated;
-    });
-  };
-
   // Agregar insumo a la receta en edición
   const handleAddSupplyToRecipe = (supplyId: string) => {
     if (!supplyId) return;
@@ -928,33 +866,75 @@ export default function ProductosPage() {
       }
 
       // 3. Actualizar precios por canal en product_prices
-      if (editPrices.length > 0) {
-        for (const price of editPrices) {
-          const finalMargin =
-            typeof price.profit_margin_percent === "number"
-              ? price.profit_margin_percent
-              : parseFloat(String(price.profit_margin_percent)) || 0;
-          const finalSelling =
-            typeof price.selling_price === "number"
-              ? price.selling_price
-              : parseFloat(String(price.selling_price)) || 0;
+      if (editPrices.length === 0) {
+        alert("Debes mantener al menos un canal de venta activo para el producto.");
+        setSavingEdit(false);
+        return;
+      }
 
-          if (price.id && !price.id.startsWith("new-")) {
-            await supabase
-              .from("product_prices")
-              .update({
-                channel_name: price.channel_name || "General",
-                profit_margin_percent: finalMargin,
-                selling_price: finalSelling,
-              })
-              .eq("id", price.id);
-          } else {
-            await supabase.from("product_prices").insert({
+      // Obtener los IDs originales de precios que tenía el producto en BD
+      const originalPriceIds = (editModalProduct.product_prices || [])
+        .map((p) => p.id)
+        .filter(Boolean);
+
+      // Identificar los IDs existentes que se conservaron en la edición
+      const keptPriceIds = new Set(
+        editPrices
+          .map((p) => p.id)
+          .filter((id): id is string => Boolean(id && !id.startsWith("custom-") && !id.startsWith("new-")))
+      );
+
+      // Eliminar de BD los canales que el usuario removió
+      const removedPriceIds = originalPriceIds.filter((id) => !keptPriceIds.has(id));
+      if (removedPriceIds.length > 0) {
+        const { error: delErr } = await supabase
+          .from("product_prices")
+          .delete()
+          .in("id", removedPriceIds);
+        if (delErr) {
+          console.error("Error al eliminar canales de precio removidos:", delErr);
+          throw new Error("Error al remover canales obsoletos: " + delErr.message);
+        }
+      }
+
+      // Actualizar canales existentes o insertar canales nuevos
+      for (const price of editPrices) {
+        const finalMargin =
+          typeof price.profit_margin_percent === "number"
+            ? price.profit_margin_percent
+            : parseFloat(String(price.profit_margin_percent)) || 0;
+        const finalSelling =
+          typeof price.selling_price === "number"
+            ? price.selling_price
+            : parseFloat(String(price.selling_price)) || 0;
+        const channelName = (price.channel_name || "").trim() || "General";
+
+        const isExisting = price.id && !price.id.startsWith("custom-") && !price.id.startsWith("new-");
+        if (isExisting) {
+          const { error: updateErr } = await supabase
+            .from("product_prices")
+            .update({
+              channel_name: channelName,
+              profit_margin_percent: finalMargin,
+              selling_price: finalSelling,
+            })
+            .eq("id", price.id);
+          if (updateErr) {
+            console.error("Error al actualizar canal de precio:", updateErr);
+            throw new Error(`Error al actualizar canal "${channelName}": ` + updateErr.message);
+          }
+        } else {
+          const { error: insertErr } = await supabase
+            .from("product_prices")
+            .insert({
               product_id: editModalProduct.id,
-              channel_name: price.channel_name || "General",
+              channel_name: channelName,
               profit_margin_percent: finalMargin,
               selling_price: finalSelling,
             });
+          if (insertErr) {
+            console.error("Error al insertar nuevo canal de precio:", insertErr);
+            throw new Error(`Error al agregar canal "${channelName}": ` + insertErr.message);
           }
         }
       }
@@ -2686,92 +2666,16 @@ export default function ProductosPage() {
               </div>
 
               {/* SECCIÓN DE PRECIOS POR CANAL DE VENTA */}
-              <div className="p-3.5 bg-neutral-50 rounded-2xl border border-neutral-200/80 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold text-neutral-700 flex items-center gap-1.5 uppercase tracking-wider">
-                    <DollarSign className="w-3.5 h-3.5 text-[#3BB578]" />
-                    Precios de Venta por Canal
-                  </span>
-                  <span className="text-[10px] text-neutral-400">
-                    Costo: <strong>{formatCurrency(editTotalCost)}</strong>
-                  </span>
-                </div>
-
-                {editPrices.length === 0 ? (
-                  <p className="text-[11px] text-neutral-400 italic py-2 text-center bg-white rounded-xl border border-dashed border-neutral-200">
-                    No hay canales de venta configurados para este producto.
-                  </p>
-                ) : (
-                  <div className="space-y-2.5">
-                    {editPrices.map((price, idx) => {
-                      const netProfit = Math.max(0, Number(price.selling_price || 0) - editTotalCost);
-                      return (
-                        <div
-                          key={price.id || idx}
-                          className="p-3 bg-white rounded-xl border border-neutral-200 shadow-2xs space-y-2"
-                        >
-                          <div className="flex items-center justify-between">
-                            <div className="relative flex items-center flex-1 max-w-[220px] group">
-                              <input
-                                type="text"
-                                value={price.channel_name}
-                                onChange={(e) => handleUpdatePriceChannelName(idx, e.target.value)}
-                                placeholder="Nombre del canal..."
-                                className="text-xs font-bold text-neutral-800 bg-neutral-50/80 border border-neutral-200 group-hover:border-[#3BB578]/60 focus:border-[#3BB578] focus:bg-white pl-2 pr-6 py-1 rounded-lg outline-none transition w-full"
-                                title="Hacé clic para renombrar el canal de venta"
-                              />
-                              <Pencil className="w-3 h-3 text-neutral-400 group-hover:text-[#3BB578] group-focus-within:text-[#3BB578] absolute right-2 pointer-events-none transition" />
-                            </div>
-                            <span className="text-[10px] font-semibold text-[#1F7A4C] bg-[#DCF4D7] px-2 py-0.5 rounded-md">
-                              Ganancia: {formatCurrency(netProfit)}
-                            </span>
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-2.5">
-                            <div>
-                              <label className="text-[10px] font-semibold text-neutral-500 block mb-1">
-                                Margen de ganancia:
-                              </label>
-                              <div className="relative flex items-center">
-                                <input
-                                  type="number"
-                                  step="any"
-                                  value={price.profit_margin_percent === "" ? "" : price.profit_margin_percent}
-                                  onChange={(e) => handleUpdatePriceMargin(idx, e.target.value)}
-                                  className="w-full pl-2.5 pr-6 py-1.5 text-xs bg-neutral-50 border border-neutral-200 rounded-xl font-bold outline-none focus:bg-white focus:border-[#3BB578]"
-                                  placeholder="100"
-                                />
-                                <span className="absolute right-2 text-[10px] text-neutral-400 pointer-events-none font-bold">
-                                  %
-                                </span>
-                              </div>
-                            </div>
-
-                            <div>
-                              <label className="text-[10px] font-semibold text-[#1F7A4C] block mb-1 flex items-center gap-1">
-                                <Pencil className="w-2.5 h-2.5 text-[#1F7A4C]" />
-                                <span>Precio de Lista ($):</span>
-                              </label>
-                              <div className="relative flex items-center">
-                                <span className="absolute left-2.5 text-[10px] text-neutral-400 pointer-events-none font-bold">
-                                  $
-                                </span>
-                                <input
-                                  type="number"
-                                  step="any"
-                                  value={price.selling_price === "" ? "" : price.selling_price}
-                                  onChange={(e) => handleUpdatePriceSelling(idx, e.target.value)}
-                                  className="w-full pl-6 pr-2.5 py-1.5 text-xs bg-neutral-50 border border-[#3BB578]/50 rounded-xl font-black outline-none focus:bg-white focus:border-[#3BB578] text-[#1F7A4C] placeholder:text-neutral-300 placeholder:font-normal"
-                                  placeholder="Establecer precio manual..."
-                                />
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+              <div className="p-3.5 bg-neutral-50 rounded-2xl border border-neutral-200/80">
+                <ProductPricingChannels
+                  channels={editPrices}
+                  onChange={setEditPrices}
+                  unitCost={editTotalCost}
+                  batchTotalCost={editBatchTotalCost}
+                  yieldQuantity={safeEditYield}
+                  title="Precios de Venta por Canal"
+                  subtitle="Ajustá márgenes, precios o agregá nuevos canales"
+                />
               </div>
             </div>
           </div>
