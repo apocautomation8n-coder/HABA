@@ -171,6 +171,14 @@ export function ProductPricingChannels({
   const handleAddChannel = () => {
     const trimmed = newChannelName.trim();
     if (!trimmed) return;
+    if (
+      channels.some(
+        (c) => c.channel_name.trim().toLowerCase() === trimmed.toLowerCase()
+      )
+    ) {
+      alert(`Ya existe un canal configurado con el nombre "${trimmed}". Elige un nombre diferente.`);
+      return;
+    }
     const marginNum =
       typeof newChannelMargin === "number"
         ? newChannelMargin

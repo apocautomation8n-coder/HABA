@@ -612,14 +612,26 @@ export default function ProductosPage() {
     setEditRecipeTab("supplies");
 
     // Cargar precios por canal actuales para edición
-    setEditPrices(
-      (product.product_prices || []).map((p) => ({
-        id: p.id,
-        channel_name: p.channel_name,
-        profit_margin_percent: p.profit_margin_percent ?? 0,
-        selling_price: p.selling_price ?? 0,
-      }))
-    );
+    const loadedPrices = (product.product_prices || []).map((p) => ({
+      id: p.id,
+      channel_name: p.channel_name,
+      profit_margin_percent: p.profit_margin_percent ?? 0,
+      selling_price: p.selling_price ?? 0,
+    }));
+
+    if (loadedPrices.length === 0) {
+      const baseCost = Number(product.total_cost) || Number(product.direct_cost) || 0;
+      setEditPrices([
+        {
+          id: `custom-${Date.now()}-1`,
+          channel_name: "Por Menor",
+          profit_margin_percent: 100,
+          selling_price: Math.round(baseCost * 2),
+        },
+      ]);
+    } else {
+      setEditPrices(loadedPrices);
+    }
   };
 
   // Agregar insumo a la receta en edición
@@ -904,10 +916,16 @@ export default function ProductosPage() {
           typeof price.profit_margin_percent === "number"
             ? price.profit_margin_percent
             : parseFloat(String(price.profit_margin_percent)) || 0;
-        const finalSelling =
+        let finalSelling =
           typeof price.selling_price === "number"
             ? price.selling_price
             : parseFloat(String(price.selling_price)) || 0;
+        
+        // Si el precio de venta quedó vacío o en 0 pero tiene margen, calcular según costo unitario
+        if (finalSelling === 0 && finalMargin > 0) {
+          finalSelling = Math.round(editTotalCost * (1 + finalMargin / 100));
+        }
+
         const channelName = (price.channel_name || "").trim() || "General";
 
         const isExisting = price.id && !price.id.startsWith("custom-") && !price.id.startsWith("new-");
