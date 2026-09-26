@@ -353,17 +353,6 @@ export default function InsumosPage() {
         </div>
       </div>
 
-      {/* Tip Didáctico HABA */}
-      <div className="bg-[#F0FAF4] border border-[#DCF4D7] p-3 rounded-2xl flex items-start gap-2.5">
-        <div className="w-6 h-6 rounded-xl bg-[#DCF4D7] text-[#1F7A4C] flex items-center justify-center flex-shrink-0 mt-0.5">
-          <Sparkles className="w-3.5 h-3.5" />
-        </div>
-        <div className="text-[11px] leading-snug text-[#2B2B2B]">
-          <span className="font-bold text-[#1F7A4C] block mb-0.5">💡 ¿Cómo funciona el costeo de Insumos?</span>
-          Cargás cuánto pagás el paquete o bulto al reponerlo y cómo lo usás (en gramos, metros o unidades). HABA calcula el costo por cada uso para que al crear tus productos se costeen automáticamente.
-        </div>
-      </div>
-
       {/* Listado de Insumos */}
       {loading ? (
         <div className="py-16 flex flex-col items-center justify-center text-center space-y-2">

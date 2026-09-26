@@ -863,19 +863,6 @@ export default function NuevoProductoPage() {
           {/* CONTENIDO PESTAÑA 1: INSUMOS */}
           {activeRecipeTab === "supplies" && (
             <div className="space-y-3">
-              {/* Banner Didáctico Paso 2 */}
-              <div className="bg-[#F0FAF4] border border-[#DCF4D7] rounded-2xl p-3 flex items-start gap-2.5">
-                <div className="w-5 h-5 rounded-lg bg-[#DCF4D7] text-[#1F7A4C] flex items-center justify-center flex-shrink-0 mt-0.5">
-                  <Sparkles className="w-3 h-3" />
-                </div>
-                <div className="text-[11px] leading-relaxed text-[#555]">
-                  <p className="font-bold text-[#1F7A4C] mb-0.5">¿Cómo costear los materiales?</p>
-                  <p>
-                    Ingresás la cantidad exacta que lleva 1 producto terminado. El costo se calcula automáticamente multiplicando esa cantidad por el costo unitario de reposición de cada insumo.
-                  </p>
-                </div>
-              </div>
-
               {selectedSupplies.length === 0 ? (
                 <div className="space-y-3">
                   <div className="bg-neutral-50 rounded-2xl p-6 border border-dashed border-neutral-200 text-center">
@@ -981,17 +968,6 @@ export default function NuevoProductoPage() {
           {/* CONTENIDO PESTAÑA 2: SUBPRODUCTOS / COMPONENTES */}
           {activeRecipeTab === "components" && (
             <div className="space-y-3">
-              <div className="bg-[#F0FAF4] border border-[#DCF4D7] rounded-2xl p-3 text-[11px] text-[#555] leading-snug flex items-start gap-2">
-                <Package className="w-4 h-4 text-[#3BB578] flex-shrink-0 mt-0.5" />
-                <div>
-                  <strong className="text-[#1F7A4C] block font-bold">Subproductos de tu Catálogo</strong>
-                  <span>
-                    Podés agregar productos que ya registraste (ej: Cuaderno A5 x 3, Packaging x 1). 
-                    Se sumará <strong>estrictamente su costo base de fabricación</strong>, sin incluir márgenes ni precios de venta.
-                  </span>
-                </div>
-              </div>
-
               {selectedComponents.length === 0 ? (
                 <div className="space-y-3">
                   <div className="bg-neutral-50 rounded-2xl p-6 border border-dashed border-neutral-200 text-center">

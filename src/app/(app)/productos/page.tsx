@@ -1624,19 +1624,6 @@ export default function ProductosPage() {
         )}
       </div>
 
-      {/* Tip Didáctico HABA (Punto I) */}
-      <div className="bg-[#F0FAF4] border border-[#DCF4D7] p-3 rounded-2xl flex items-start gap-2.5">
-        <div className="w-6 h-6 rounded-xl bg-[#DCF4D7] text-[#1F7A4C] flex items-center justify-center flex-shrink-0 mt-0.5">
-          <Sparkles className="w-3.5 h-3.5" />
-        </div>
-        <div className="text-[11px] leading-snug text-[#2B2B2B]">
-          <span className="font-bold text-[#1F7A4C] block mb-0.5">
-            💡 Etiquetas de estado y alertas de precios en tu taller
-          </span>
-          Los productos con la etiqueta <strong className="text-amber-700">⚠️ Revisar Precios</strong> indican que alguno de sus insumos subió de precio recientemente. Podés activar o pausar cualquier producto haciendo clic en su etiqueta de estado.
-        </div>
-      </div>
-
       {/* Listado de Productos o Estado Vacío */}
       {loading ? (
         <div className="py-16 flex flex-col items-center justify-center text-center space-y-2">
