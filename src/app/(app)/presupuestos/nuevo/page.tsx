@@ -91,12 +91,6 @@ function NuevoPresupuestoContent() {
     return formatDateToInput(addDays(new Date(), 15));
   });
 
-  const handleSelectValidityDays = (days: number) => {
-    setValidityDays(days);
-    const newDate = addDays(new Date(), days);
-    setValidUntil(formatDateToInput(newDate));
-  };
-
   const handleValidUntilDateChange = (dateStr: string) => {
     setValidUntil(dateStr);
     if (dateStr) {
@@ -658,82 +652,29 @@ function NuevoPresupuestoContent() {
       </div>
 
       {/* Formulario: Validez del Presupuesto */}
-      <div className="bg-white p-5 rounded-3xl border border-[#EAF0E8] shadow-sm space-y-4">
+      <div className="bg-white p-5 rounded-3xl border border-[#EAF0E8] shadow-sm space-y-3.5">
         <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
           <div className="flex items-center gap-2">
             <Clock className="w-5 h-5 text-[#3BB578]" />
-            <div>
-              <h3 className="text-sm font-bold text-neutral-800">2. Validez del Presupuesto</h3>
-              <p className="text-[11px] text-neutral-400">
-                Plazo de vigencia para asegurar precios congelados frente a aumentos
-              </p>
-            </div>
+            <h3 className="text-sm font-bold text-neutral-800">2. Validez del Presupuesto</h3>
           </div>
           <span className="text-[11px] font-bold text-[#1F7A4C] bg-[#DCF4D7] px-2.5 py-1 rounded-full border border-[#C3EBC0]">
             {validityDays} {validityDays === 1 ? "día" : "días"} de vigencia
           </span>
         </div>
 
-        <div className="space-y-3">
-          {/* Chips de selección rápida */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs font-semibold text-neutral-600 mr-1">Plazos frecuentes:</span>
-            {[7, 15, 30].map((days) => {
-              const isSelected = validityDays === days;
-              return (
-                <button
-                  key={days}
-                  type="button"
-                  onClick={() => handleSelectValidityDays(days)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                    isSelected
-                      ? "bg-[#3BB578] text-white shadow-xs"
-                      : "bg-neutral-100 hover:bg-neutral-200/70 text-neutral-700"
-                  }`}
-                >
-                  <Clock className="w-3.5 h-3.5" />
-                  <span>{days} días</span>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Selector de fecha límite manual */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-neutral-700 flex items-center gap-1">
-                <Calendar className="w-3.5 h-3.5 text-neutral-400" />
-                <span>Fecha Límite de Validez</span>
-              </label>
-              <input
-                type="date"
-                value={validUntil}
-                onChange={(e) => handleValidUntilDateChange(e.target.value)}
-                min={formatDateToInput(new Date())}
-                className="w-full px-3.5 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none cursor-pointer"
-              />
-            </div>
-
-            {/* Aviso informativo de vigencia calculada */}
-            <div className="flex items-center">
-              <div className="p-3 bg-[#F0FAF4] border border-[#C3EBC0] rounded-2xl text-xs text-[#1F7A4C] w-full flex items-start gap-2">
-                <Sparkles className="w-4 h-4 text-[#3BB578] flex-shrink-0 mt-0.5" />
-                <div>
-                  <span className="font-bold block">
-                    Vence el {new Date(validUntil + "T00:00:00").toLocaleDateString("es-AR", {
-                      weekday: "long",
-                      day: "numeric",
-                      month: "long",
-                      year: "numeric",
-                    })}
-                  </span>
-                  <span className="text-[11px] text-neutral-600 block mt-0.5">
-                    {validityDays} días corridos con costos asegurados para el cliente.
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
+        <div className="space-y-1 max-w-sm">
+          <label className="text-xs font-semibold text-neutral-700 flex items-center gap-1">
+            <Calendar className="w-3.5 h-3.5 text-neutral-400" />
+            <span>Fecha Límite de Validez</span>
+          </label>
+          <input
+            type="date"
+            value={validUntil}
+            onChange={(e) => handleValidUntilDateChange(e.target.value)}
+            min={formatDateToInput(new Date())}
+            className="w-full px-3.5 py-2.5 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none cursor-pointer transition shadow-2xs"
+          />
         </div>
       </div>
 
