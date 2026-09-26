@@ -48,6 +48,7 @@ import {
   checkProductNameExists,
 } from "@/lib/products";
 import { matchesSearch } from "@/lib/search";
+import { formDraftStorage } from "@/lib/formStorage";
 
 interface SelectedSupply {
   supply: SupplyItem;
@@ -70,6 +71,7 @@ export default function NuevoProductoPage() {
   const [currentStep, setCurrentStep] = useState<number>(1);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [hasRestoredDraft, setHasRestoredDraft] = useState(false);
 
   // Insumos disponibles en DB
   const [availableSupplies, setAvailableSupplies] = useState<SupplyItem[]>([]);
@@ -179,27 +181,34 @@ export default function NuevoProductoPage() {
     fetchData();
   }, [supabase]);
 
-  // Restaurar borrador de producto si el usuario salió temporalmente de la app (Punto E)
+  // Restaurar borrador de producto si el usuario salió de la app o cerró la pestaña
   useEffect(() => {
     try {
-      const saved = sessionStorage.getItem("haba_draft_nuevo_producto");
-      if (saved) {
-        const draft = JSON.parse(saved);
-        if (draft.name) setName(draft.name);
+      const draft = formDraftStorage.get<any>("haba_draft_nuevo_producto");
+      if (draft) {
+        let restored = false;
+        if (draft.name) { setName(draft.name); restored = true; }
         if (draft.category) setCategory(draft.category);
         if (draft.customCategory) setCustomCategory(draft.customCategory);
         if (draft.description) setDescription(draft.description);
         if (draft.currentStep) setCurrentStep(draft.currentStep);
         if (draft.workTimeMinutes) setWorkTimeMinutes(draft.workTimeMinutes);
         if (draft.yieldValue !== undefined) setYieldValue(draft.yieldValue);
-        if (draft.selectedSupplies && Array.isArray(draft.selectedSupplies)) {
+        if (draft.includeLabor !== undefined) setIncludeLabor(draft.includeLabor);
+        if (draft.indirectCost !== undefined) setIndirectCost(draft.indirectCost);
+        if (draft.selectedSupplies && Array.isArray(draft.selectedSupplies) && draft.selectedSupplies.length > 0) {
           setSelectedSupplies(draft.selectedSupplies);
+          restored = true;
         }
-        if (draft.selectedComponents && Array.isArray(draft.selectedComponents)) {
+        if (draft.selectedComponents && Array.isArray(draft.selectedComponents) && draft.selectedComponents.length > 0) {
           setSelectedComponents(draft.selectedComponents);
+          restored = true;
         }
         if (draft.channelPrices && Array.isArray(draft.channelPrices)) {
           setChannelPrices(draft.channelPrices);
+        }
+        if (restored) {
+          setHasRestoredDraft(true);
         }
       }
     } catch {
@@ -207,30 +216,65 @@ export default function NuevoProductoPage() {
     }
   }, []);
 
-  // Guardar borrador en sessionStorage reactivamente ante cambios (Punto E)
+  // Guardar borrador en almacenamiento local reactivamente ante cambios
   useEffect(() => {
     try {
-      if (name || category || selectedSupplies.length > 0 || selectedComponents.length > 0) {
-        sessionStorage.setItem(
-          "haba_draft_nuevo_producto",
-          JSON.stringify({
-            name,
-            category,
-            customCategory,
-            description,
-            currentStep,
-            workTimeMinutes,
-            yieldValue,
-            selectedSupplies,
-            selectedComponents,
-            channelPrices,
-          })
-        );
+      const hasContent = Boolean(
+        name.trim() ||
+        description.trim() ||
+        selectedSupplies.length > 0 ||
+        selectedComponents.length > 0 ||
+        (workTimeMinutes && Number(workTimeMinutes) > 0)
+      );
+
+      if (hasContent) {
+        formDraftStorage.set("haba_draft_nuevo_producto", {
+          name,
+          category,
+          customCategory,
+          description,
+          currentStep,
+          workTimeMinutes,
+          yieldValue,
+          includeLabor,
+          indirectCost,
+          selectedSupplies,
+          selectedComponents,
+          channelPrices,
+        });
       }
     } catch {
       // ignore
     }
-  }, [name, category, customCategory, description, currentStep, workTimeMinutes, yieldValue, selectedSupplies, selectedComponents, channelPrices]);
+  }, [
+    name,
+    category,
+    customCategory,
+    description,
+    currentStep,
+    workTimeMinutes,
+    yieldValue,
+    includeLabor,
+    indirectCost,
+    selectedSupplies,
+    selectedComponents,
+    channelPrices,
+  ]);
+
+  const handleDiscardDraft = () => {
+    formDraftStorage.remove("haba_draft_nuevo_producto");
+    setName("");
+    setCategory("Papelería & Libretas");
+    setCustomCategory("");
+    setDescription("");
+    setCurrentStep(1);
+    setWorkTimeMinutes("");
+    setYieldValue(1);
+    setSelectedSupplies([]);
+    setSelectedComponents([]);
+    setChannelPrices(DEFAULT_CHANNELS);
+    setHasRestoredDraft(false);
+  };
 
   // Cálculos reactivos de costos por Lote (Batch) y Unitarios:
   // 1. Costo directo de insumos del lote (Insumos + Packaging)
@@ -553,12 +597,8 @@ export default function NuevoProductoPage() {
         throw new Error(`Error al guardar los precios: ${pricesError.message}. Operación revertida.`);
       }
 
-      // Limpiar borrador de sesión
-      try {
-        sessionStorage.removeItem("haba_draft_nuevo_producto");
-      } catch {
-        // ignore
-      }
+      // Limpiar borrador persistente
+      formDraftStorage.remove("haba_draft_nuevo_producto");
 
       // Redirigir con éxito
       router.push("/productos");
@@ -569,10 +609,25 @@ export default function NuevoProductoPage() {
     }
   };
 
-
-
   return (
     <div className="w-full flex flex-col space-y-4 pb-12">
+      {/* Aviso si se recuperó un borrador previo */}
+      {hasRestoredDraft && (
+        <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 px-4 py-2.5 rounded-2xl text-xs text-emerald-800 animate-in fade-in slide-in-from-top-1 shadow-sm">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+            <span>Recuperamos los datos que habías cargado antes.</span>
+          </div>
+          <button
+            type="button"
+            onClick={handleDiscardDraft}
+            className="underline hover:text-red-600 font-bold ml-3 text-neutral-600 transition-colors"
+          >
+            Empezar de cero
+          </button>
+        </div>
+      )}
+
       {/* Encabezado con Volver */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">

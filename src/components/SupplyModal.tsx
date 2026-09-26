@@ -6,6 +6,7 @@ import { X, Sparkles, AlertCircle, Calculator, Info, ChevronDown, ChevronUp } fr
 import { createClient } from "@/lib/supabase/client";
 import { UNIT_PRESETS, calculateUnitCost, formatCurrency } from "@/lib/units";
 import { useModalThemeColor } from "@/hooks/useModalThemeColor";
+import { formDraftStorage } from "@/lib/formStorage";
 
 export interface SupplyItem {
   id?: string;
@@ -138,9 +139,8 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
       // Intentar restaurar borrador no guardado si el usuario salió de la app (Punto E)
       let restored = false;
       try {
-        const savedDraft = sessionStorage.getItem("haba_draft_supply_modal");
-        if (savedDraft) {
-          const draft = JSON.parse(savedDraft);
+        const draft = formDraftStorage.get<any>("haba_draft_supply_modal");
+        if (draft) {
           if (draft.name || draft.currentPrice) {
             setName(draft.name || "");
             setCategory(draft.category || "materia_prima");
@@ -171,24 +171,21 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
     }
   }, [initialSupply, isOpen]);
 
-  // Persistir en sessionStorage mientras el usuario escribe para evitar pérdidas al cambiar de pestaña o salir de la app (Punto E)
+  // Persistir en almacenamiento local mientras el usuario escribe para evitar pérdidas al cambiar de pestaña o salir de la app
   useEffect(() => {
     if (!isOpen || initialSupply) return;
     try {
-      if (name || currentPrice) {
-        sessionStorage.setItem(
-          "haba_draft_supply_modal",
-          JSON.stringify({
-            name,
-            category,
-            purchaseUnit,
-            purchaseQuantity,
-            currentPrice,
-            useUnit,
-            conversionFactor,
-            selectedPresetId,
-          })
-        );
+      if (name.trim() || currentPrice) {
+        formDraftStorage.set("haba_draft_supply_modal", {
+          name,
+          category,
+          purchaseUnit,
+          purchaseQuantity,
+          currentPrice,
+          useUnit,
+          conversionFactor,
+          selectedPresetId,
+        });
       }
     } catch {
       // ignore
@@ -320,12 +317,8 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
             changed_at: nowIso,
           });
         }
-        // Limpiar borrador guardado en sesión
-        try {
-          sessionStorage.removeItem("haba_draft_supply_modal");
-        } catch {
-          // ignore
-        }
+        // Limpiar borrador persistente
+        formDraftStorage.remove("haba_draft_supply_modal");
 
         onSuccess(newSupply as SupplyItem);
         onClose();

@@ -24,9 +24,14 @@
   --foreground: #2B2B2B;
 }
 
+html {
+  background-color: #F6F7F2;
+  color-scheme: light;
+}
+
 body {
   color: var(--haba-text-main);
-  background: var(--haba-bg);
+  background-color: var(--haba-bg);
   font-family: var(--font-nunito), "Nunito", system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   -webkit-tap-highlight-color: transparent;
 }

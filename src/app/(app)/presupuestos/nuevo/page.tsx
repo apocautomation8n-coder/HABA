@@ -37,6 +37,7 @@ import {
   parseQuoteNotes,
   formatQuoteNotes,
 } from "@/lib/quotes";
+import { formDraftStorage } from "@/lib/formStorage";
 
 
 interface ProductPrice {
@@ -74,6 +75,7 @@ function NuevoPresupuestoContent() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [quoteNumber, setQuoteNumber] = useState<string | number | null>(null);
   const [preselectedProductName, setPreselectedProductName] = useState<string | null>(null);
+  const [hasRestoredDraft, setHasRestoredDraft] = useState(false);
 
   // Productos disponibles en catálogo
   const [products, setProducts] = useState<Product[]>([]);
@@ -223,23 +225,27 @@ function NuevoPresupuestoContent() {
     fetchQuoteToEdit();
   }, [editId, supabase]);
 
-  // Restaurar borrador si el usuario salió temporalmente de la app (Punto E)
+  // Restaurar borrador si el usuario salió de la app o cerró la pestaña
   useEffect(() => {
     if (editId) return;
     try {
-      const saved = sessionStorage.getItem("haba_draft_nuevo_presupuesto");
-      if (saved) {
-        const draft = JSON.parse(saved);
-        if (draft.clientName) setClientName(draft.clientName);
-        if (draft.clientContact) setClientContact(draft.clientContact);
-        if (draft.deliveryDate) setDeliveryDate(draft.deliveryDate);
+      const draft = formDraftStorage.get<any>("haba_draft_nuevo_presupuesto");
+      if (draft) {
+        let restored = false;
+        if (draft.clientName) { setClientName(draft.clientName); restored = true; }
+        if (draft.clientContact) { setClientContact(draft.clientContact); restored = true; }
+        if (draft.deliveryDate) { setDeliveryDate(draft.deliveryDate); restored = true; }
         if (draft.validityDays !== undefined) setValidityDays(draft.validityDays);
         if (draft.validUntil) setValidUntil(draft.validUntil);
-        if (draft.notes) setNotes(draft.notes);
-        if (draft.discountPercent !== undefined) setDiscountPercent(draft.discountPercent);
-        if (draft.shippingCost !== undefined) setShippingCost(draft.shippingCost);
+        if (draft.notes) { setNotes(draft.notes); restored = true; }
+        if (draft.discountPercent !== undefined && Number(draft.discountPercent) > 0) setDiscountPercent(draft.discountPercent);
+        if (draft.shippingCost !== undefined && Number(draft.shippingCost) > 0) setShippingCost(draft.shippingCost);
         if (draft.items && Array.isArray(draft.items) && draft.items.length > 0) {
           setItems(draft.items);
+          restored = true;
+        }
+        if (restored) {
+          setHasRestoredDraft(true);
         }
       }
     } catch {
@@ -247,30 +253,51 @@ function NuevoPresupuestoContent() {
     }
   }, [editId]);
 
-  // Guardar borrador en sessionStorage reactivamente mientras se escribe (Punto E)
+  // Guardar borrador en almacenamiento local reactivamente mientras se escribe
   useEffect(() => {
     if (editId) return;
     try {
-      if (clientName || clientContact || items.length > 0 || notes || validUntil) {
-        sessionStorage.setItem(
-          "haba_draft_nuevo_presupuesto",
-          JSON.stringify({
-            clientName,
-            clientContact,
-            deliveryDate,
-            validityDays,
-            validUntil,
-            notes,
-            discountPercent,
-            shippingCost,
-            items,
-          })
-        );
+      const hasContent = Boolean(
+        clientName.trim() ||
+        clientContact.trim() ||
+        deliveryDate.trim() ||
+        notes.trim() ||
+        items.length > 0 ||
+        (shippingCost && Number(shippingCost) > 0) ||
+        (discountPercent && Number(discountPercent) > 0)
+      );
+
+      if (hasContent) {
+        formDraftStorage.set("haba_draft_nuevo_presupuesto", {
+          clientName,
+          clientContact,
+          deliveryDate,
+          validityDays,
+          validUntil,
+          notes,
+          discountPercent,
+          shippingCost,
+          items,
+        });
       }
     } catch {
       // ignore
     }
   }, [editId, clientName, clientContact, deliveryDate, validityDays, validUntil, notes, discountPercent, shippingCost, items]);
+
+  const handleDiscardDraft = () => {
+    formDraftStorage.remove("haba_draft_nuevo_presupuesto");
+    setClientName("");
+    setClientContact("");
+    setDeliveryDate("");
+    setNotes("");
+    setDiscountPercent(0);
+    setShippingCost(0);
+    setItems([]);
+    setValidityDays(15);
+    setValidUntil(formatDateToInput(addDays(new Date(), 15)));
+    setHasRestoredDraft(false);
+  };
 
   // Si viene con parámetro ?productId=[id], preseleccionar automáticamente el producto
   useEffect(() => {
@@ -515,12 +542,8 @@ function NuevoPresupuestoContent() {
         console.error("Error inserting quote items:", itemsError);
       }
 
-      // Limpiar borrador de sesión
-      try {
-        sessionStorage.removeItem("haba_draft_nuevo_presupuesto");
-      } catch {
-        // ignore
-      }
+      // Limpiar borrador persistente
+      formDraftStorage.remove("haba_draft_nuevo_presupuesto");
 
       // Redirigir a la vista previa oficial del presupuesto recién creado
       router.push(`/presupuestos/${quoteData.id}`);
@@ -533,6 +556,23 @@ function NuevoPresupuestoContent() {
 
   return (
     <div className="w-full flex flex-col space-y-4 pb-36">
+      {/* Aviso si se recuperó un borrador previo */}
+      {hasRestoredDraft && !isEditing && (
+        <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 px-4 py-2.5 rounded-2xl text-xs text-emerald-800 animate-in fade-in slide-in-from-top-1 shadow-sm">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+            <span>Recuperamos los datos del presupuesto que habías dejado sin guardar.</span>
+          </div>
+          <button
+            type="button"
+            onClick={handleDiscardDraft}
+            className="underline hover:text-red-600 font-bold ml-3 text-neutral-600 transition-colors"
+          >
+            Empezar de cero
+          </button>
+        </div>
+      )}
+
       {/* Encabezado con Volver */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">

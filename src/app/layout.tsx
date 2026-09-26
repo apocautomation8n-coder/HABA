@@ -19,6 +19,7 @@ const nunito = Nunito({
 
 export const viewport: Viewport = {
   themeColor: "#3BB578",
+  colorScheme: "light",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
@@ -32,7 +33,7 @@ export const metadata: Metadata = {
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
-    statusBarStyle: "black-translucent",
+    statusBarStyle: "default",
     title: "HABA",
   },
   icons: {
