@@ -465,6 +465,7 @@ export default function NuevoProductoPage() {
       }
 
       // 1. Insertar en tabla products (costos unitarios normalizados)
+      const nowIso = new Date().toISOString();
       const mins = typeof workTimeMinutes === "number" ? workTimeMinutes : parseFloat(String(workTimeMinutes)) || 0;
       const ind = typeof indirectCost === "number" ? indirectCost : parseFloat(String(indirectCost)) || 0;
       const { data: productData, error: productError } = await supabase
@@ -480,6 +481,8 @@ export default function NuevoProductoPage() {
           indirect_cost: ind,
           total_cost: Math.round(unitTotalCost * 100) / 100,
           needs_price_review: false,
+          created_at: nowIso,
+          updated_at: nowIso,
         })
         .select()
         .single();

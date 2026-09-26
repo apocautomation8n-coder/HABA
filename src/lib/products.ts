@@ -699,6 +699,7 @@ export async function getOutdatedProductsList(supabase: any): Promise<OutdatedPr
       .select(`
         id,
         name,
+        description,
         direct_cost,
         needs_price_review,
         product_supplies (
@@ -709,7 +710,8 @@ export async function getOutdatedProductsList(supabase: any): Promise<OutdatedPr
             name,
             current_price,
             purchase_quantity,
-            conversion_factor
+            conversion_factor,
+            updated_at
           )
         ),
         product_components!parent_product_id (
@@ -732,6 +734,7 @@ export async function getOutdatedProductsList(supabase: any): Promise<OutdatedPr
         .select(`
           id,
           name,
+          description,
           direct_cost,
           needs_price_review,
           product_supplies (
@@ -742,7 +745,8 @@ export async function getOutdatedProductsList(supabase: any): Promise<OutdatedPr
               name,
               current_price,
               purchase_quantity,
-              conversion_factor
+              conversion_factor,
+              updated_at
             )
           )
         `);
@@ -788,18 +792,20 @@ function calculateOutdatedList(products: any[]): OutdatedProductAlert[] {
     }
 
     const meta = parseProductMeta(product.description);
-    const productYield = meta.yield || 1;
+    const productYield = meta.yield > 0 ? meta.yield : 1;
     const unitMaterialsCost = currentMaterialsCost / productYield;
+    const roundedUnitCost = Math.round(unitMaterialsCost * 100) / 100;
+    const savedDirectCost = Math.round(Number(product.direct_cost || 0) * 100) / 100;
 
-    const costDifference = hasRecipe ? Math.abs(unitMaterialsCost - Number(product.direct_cost)) : 0;
-    const isCostOutdated = Boolean(product.needs_price_review || (hasRecipe && costDifference > 0.5));
+    const costDifference = hasRecipe ? Math.abs(roundedUnitCost - savedDirectCost) : 0;
+    const isCostOutdated = Boolean(product.needs_price_review || (hasRecipe && costDifference > 0.05));
 
     if (isCostOutdated) {
       outdatedProducts.push({
         id: product.id,
         name: product.name,
-        direct_cost: Number(product.direct_cost) || 0,
-        currentMaterialsCost: Math.round(unitMaterialsCost * 100) / 100,
+        direct_cost: savedDirectCost,
+        currentMaterialsCost: roundedUnitCost,
         difference: Math.round(costDifference * 100) / 100,
       });
     }
@@ -838,7 +844,7 @@ export function detectModifiedSupplies(
   }
 
   const meta = parseProductMeta(product.description);
-  const productYield = meta.yield || 1;
+  const productYield = meta.yield > 0 ? meta.yield : 1;
   const productSavedAt = new Date(product.updated_at || product.created_at || 0).getTime();
 
   const modified: ModifiedSupplyInfo[] = [];
@@ -857,31 +863,53 @@ export function detectModifiedSupplies(
       .filter((h) => h.supply_id === ps.supply_id)
       .sort((a, b) => new Date(b.changed_at).getTime() - new Date(a.changed_at).getTime());
 
+    // Cambios de precio que ocurrieron estrictamente después de que el producto fue guardado
+    // Agregamos margen de 1000ms para evitar falsos positivos por desfase de microsegundos de reloj
+    const changesAfterSave = hist.filter(
+      (h) => new Date(h.changed_at).getTime() > productSavedAt + 1000
+    );
+
+    const supplyUpdatedAt = supply.updated_at ? new Date(supply.updated_at).getTime() : 0;
+    const supplyUpdatedAfterSave = supplyUpdatedAt > productSavedAt + 1000;
+
     let prevPrice: number | null = null;
 
-    // 1. Buscar precio en historial que estaba vigente cuando se guardó el producto (changed_at <= productSavedAt)
-    const atSave = hist.find((h) => new Date(h.changed_at).getTime() <= productSavedAt);
-    if (atSave && Number(atSave.price) !== currentPrice) {
-      prevPrice = Number(atSave.price);
-    } else {
-      // 2. Si no hay entrada anterior a productSavedAt o es idéntica al currentPrice, buscar la entrada más reciente distinta a currentPrice
-      const diffEntry = hist.find((h) => Number(h.price) !== currentPrice);
-      if (diffEntry) {
-        prevPrice = Number(diffEntry.price);
+    if (changesAfterSave.length > 0) {
+      // 1. Hubo cambios en el historial de precios posteriores a la fecha de guardado del producto.
+      // El precio anterior vigente al momento de guardar era el último registro con fecha <= productSavedAt + 1000
+      const atSave = hist.find((h) => new Date(h.changed_at).getTime() <= productSavedAt + 1000);
+      if (atSave) {
+        prevPrice = Number(atSave.price);
+      } else {
+        // Si no hay registros previos a productSavedAt (ej. historial reciente), tomamos el cambio más antiguo
+        prevPrice = Number(changesAfterSave[changesAfterSave.length - 1].price);
       }
-    }
-
-    // 3. Fallback: Si no encontramos en historial pero supply.updated_at > productSavedAt
-    if (prevPrice === null) {
-      const supplyUpdatedAt = new Date(supply.updated_at || 0).getTime();
-      if (supplyUpdatedAt > productSavedAt && (product.needs_price_review || Math.abs(currentPrice) > 0)) {
-        if (hist.length > 1) {
-          prevPrice = Number(hist[hist.length - 1].price);
+    } else if (supplyUpdatedAfterSave) {
+      // 2. supply.updated_at es posterior a productSavedAt pero no hay registro nuevo en hist
+      const atSave = hist.find((h) => new Date(h.changed_at).getTime() <= productSavedAt + 1000);
+      if (atSave && Math.abs(Number(atSave.price) - currentPrice) > 0.01) {
+        prevPrice = Number(atSave.price);
+      } else if (hist.length > 0) {
+        const diffEntry = hist.find((h) => Math.abs(Number(h.price) - currentPrice) > 0.01);
+        if (diffEntry) {
+          prevPrice = Number(diffEntry.price);
+        }
+      }
+    } else if (product.needs_price_review) {
+      // 3. El producto tiene la bandera explícita needs_price_review = true
+      const atSave = hist.find((h) => new Date(h.changed_at).getTime() <= productSavedAt + 1000);
+      if (atSave && Math.abs(Number(atSave.price) - currentPrice) > 0.01) {
+        prevPrice = Number(atSave.price);
+      } else if (hist.length > 0) {
+        const diffEntry = hist.find((h) => Math.abs(Number(h.price) - currentPrice) > 0.01);
+        if (diffEntry) {
+          prevPrice = Number(diffEntry.price);
         }
       }
     }
 
-    if (prevPrice !== null && prevPrice !== currentPrice) {
+    // Solo si se detectó un precio previo que difiera en más de $0.01 del actual (evitar decimales flotantes)
+    if (prevPrice !== null && Math.abs(currentPrice - prevPrice) > 0.01) {
       const prevUnitCost = calculateUnitCost(prevPrice, purchaseQty, convFactor);
       const newUnitCost = calculateUnitCost(currentPrice, purchaseQty, convFactor);
       const priceDiff = currentPrice - prevPrice;

@@ -250,7 +250,8 @@ export default function ProductosPage() {
                 use_unit,
                 purchase_unit,
                 purchase_quantity,
-                conversion_factor
+                conversion_factor,
+                updated_at
               )
             ),
             product_components!parent_product_id (
@@ -269,7 +270,7 @@ export default function ProductosPage() {
           .order("created_at", { ascending: false }),
         supabase
           .from("supplies")
-          .select("id, name, category, current_price, use_unit, purchase_unit, purchase_quantity, conversion_factor")
+          .select("id, name, category, current_price, use_unit, purchase_unit, purchase_quantity, conversion_factor, updated_at")
           .order("name", { ascending: true }),
         supabase
           .from("supply_price_history")
@@ -306,7 +307,8 @@ export default function ProductosPage() {
                 use_unit,
                 purchase_unit,
                 purchase_quantity,
-                conversion_factor
+                conversion_factor,
+                updated_at
               )
             )
           `)
@@ -481,6 +483,7 @@ export default function ProductosPage() {
       }
 
       // 3. Insertar el nuevo producto en la tabla products
+      const nowIso = new Date().toISOString();
       const { data: newProduct, error: productError } = await supabase
         .from("products")
         .insert({
@@ -494,6 +497,8 @@ export default function ProductosPage() {
           indirect_cost: duplicateModalProduct.indirect_cost,
           total_cost: duplicateModalProduct.total_cost,
           needs_price_review: false,
+          created_at: nowIso,
+          updated_at: nowIso,
         })
         .select()
         .single();
@@ -825,6 +830,8 @@ export default function ProductosPage() {
         yieldValue: yieldValidation.value,
       });
 
+      const nowIso = new Date().toISOString();
+
       // 1. Actualizar tabla products
       const { error: prodErr } = await supabase
         .from("products")
@@ -837,6 +844,7 @@ export default function ProductosPage() {
           indirect_cost: 0,
           total_cost: editTotalCost,
           needs_price_review: false,
+          updated_at: nowIso,
         })
         .eq("id", editModalProduct.id);
 
@@ -961,6 +969,16 @@ export default function ProductosPage() {
         }
       }
 
+      setDismissedAlerts((prev) => {
+        if (!prev.has(editModalProduct.id)) return prev;
+        const next = new Set(prev);
+        next.delete(editModalProduct.id);
+        try {
+          sessionStorage.setItem("haba_dismissed_price_alerts", JSON.stringify(Array.from(next)));
+        } catch {}
+        return next;
+      });
+
       setEditModalProduct(null);
       await loadProducts();
       setSuccessToast(`¡Producto "${editName.trim()}" actualizado correctamente con sus precios e insumos!`);
@@ -981,6 +999,7 @@ export default function ProductosPage() {
     try {
       setRecalculatingId(product.id);
 
+      const nowIso = new Date().toISOString();
       const newDirectCost = Math.round(product.currentMaterialsCost * 100) / 100;
       const newLaborCost = Math.round((product.work_time_minutes || 0) * currentMinuteRate * 100) / 100;
       const newTotalCost = Math.round((newDirectCost + newLaborCost) * 100) / 100;
@@ -994,6 +1013,7 @@ export default function ProductosPage() {
           indirect_cost: 0,
           total_cost: newTotalCost,
           needs_price_review: false,
+          updated_at: nowIso,
         })
         .eq("id", product.id);
 
@@ -1017,6 +1037,16 @@ export default function ProductosPage() {
       }
 
       // 3. Actualizar estado local inmediatamente
+      setDismissedAlerts((prev) => {
+        if (!prev.has(product.id)) return prev;
+        const next = new Set(prev);
+        next.delete(product.id);
+        try {
+          sessionStorage.setItem("haba_dismissed_price_alerts", JSON.stringify(Array.from(next)));
+        } catch {}
+        return next;
+      });
+
       setProducts((prev) =>
         prev.map((p) => {
           if (p.id !== product.id) return p;
@@ -1027,6 +1057,7 @@ export default function ProductosPage() {
             indirect_cost: 0,
             total_cost: newTotalCost,
             needs_price_review: false,
+            updated_at: nowIso,
             product_prices: updatedPrices.length > 0 ? updatedPrices : p.product_prices,
           };
         })
@@ -1057,13 +1088,14 @@ export default function ProductosPage() {
       });
 
       if (product.needs_price_review) {
+        const nowIso = new Date().toISOString();
         await supabase
           .from("products")
-          .update({ needs_price_review: false })
+          .update({ needs_price_review: false, updated_at: nowIso })
           .eq("id", product.id);
 
         setProducts((prev) =>
-          prev.map((p) => (p.id === product.id ? { ...p, needs_price_review: false } : p))
+          prev.map((p) => (p.id === product.id ? { ...p, needs_price_review: false, updated_at: nowIso } : p))
         );
       }
 
@@ -1107,16 +1139,27 @@ export default function ProductosPage() {
         }, 0);
       }
 
-      const costDifference = hasRecipe ? Math.abs(currentMaterialsCost - product.direct_cost) : 0;
+      const productYield = meta.yield > 0 ? meta.yield : 1;
+      const unitMaterialsCost = hasRecipe ? currentMaterialsCost / productYield : Number(product.direct_cost || 0);
+      const roundedUnitMaterialsCost = Math.round(unitMaterialsCost * 100) / 100;
+      const savedDirectCost = Math.round(Number(product.direct_cost || 0) * 100) / 100;
+
+      const costDifference = hasRecipe ? Math.abs(roundedUnitMaterialsCost - savedDirectCost) : 0;
       const isDismissed = dismissedAlerts.has(product.id);
-      const isCostOutdated = !isDismissed && Boolean(product.needs_price_review || (hasRecipe && costDifference > 0.5));
       const modifiedSupplies = detectModifiedSupplies(product, priceHistory);
+      const hasModifiedSupplies = modifiedSupplies.length > 0;
+
+      const isCostOutdated = !isDismissed && Boolean(
+        product.needs_price_review ||
+        hasModifiedSupplies ||
+        (hasRecipe && costDifference > 0.05)
+      );
 
       return {
         ...product,
         meta,
         badge,
-        currentMaterialsCost: hasRecipe ? currentMaterialsCost : product.direct_cost,
+        currentMaterialsCost: hasRecipe ? roundedUnitMaterialsCost : savedDirectCost,
         isCostOutdated,
         modifiedSupplies,
       };
