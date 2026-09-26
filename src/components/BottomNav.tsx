@@ -107,21 +107,21 @@ export const BottomNav: React.FC = () => {
                 }`}
               >
                 <div
-                  className={`relative p-1 sm:p-1.5 rounded-xl transition-all duration-200 ${
+                  className={`relative p-1 sm:p-1.5 rounded-xl transition-all duration-200 flex items-center justify-center shrink-0 ${
                     isActive
                       ? "bg-[#DCF4D7] text-[#3BB578] scale-105 shadow-xs"
                       : "bg-transparent text-[#7A7A7A]"
                   }`}
                 >
-                  <Icon className="w-4 h-4 sm:w-[18px] sm:h-[18px]" strokeWidth={isActive ? 2.5 : 2} />
+                  <Icon className="w-4 h-4 sm:w-[18px] sm:h-[18px] shrink-0" strokeWidth={isActive ? 2.5 : 2} />
                   {hasProductAlert && (
                     <span 
-                      className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-amber-500 border-2 border-white rounded-full animate-pulse shadow-xs" 
+                      className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-amber-500 border-2 border-white rounded-full animate-pulse shadow-xs shrink-0" 
                       title={`${productAlertsCount} producto(s) con aumento de costos`}
                     />
                   )}
                 </div>
-                <span className="text-[8.5px] sm:text-[9.5px] mt-0.5 tracking-tighter sm:tracking-tight truncate w-full text-center block leading-tight">
+                <span className="text-[8.5px] sm:text-[9.5px] mt-0.5 tracking-tighter sm:tracking-tight truncate w-full text-center block leading-tight shrink-0 select-none">
                   {item.label}
                 </span>
               </Link>

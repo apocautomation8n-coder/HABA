@@ -399,8 +399,8 @@ export default function InsumosPage() {
                 className="bg-white rounded-3xl p-4 border border-[#EAF0E8] shadow-sm hover:shadow-md transition flex flex-col space-y-3 cursor-pointer group hover:border-[#C3EBC0]"
               >
                 {/* Header Card */}
-                <div className="flex items-start justify-between">
-                  <div className="flex items-start gap-2.5">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-start gap-2.5 min-w-0 flex-1">
                     <div
                       className={`w-9 h-9 rounded-2xl flex items-center justify-center flex-shrink-0 ${
                         supply.category === "packaging"
@@ -409,18 +409,18 @@ export default function InsumosPage() {
                       }`}
                     >
                       {supply.category === "packaging" ? (
-                        <Package className="w-5 h-5" />
+                        <Package className="w-5 h-5 flex-shrink-0" />
                       ) : (
-                        <Layers className="w-5 h-5" />
+                        <Layers className="w-5 h-5 flex-shrink-0" />
                       )}
                     </div>
-                    <div>
-                      <h4 className="text-sm font-bold text-neutral-800 leading-snug group-hover:text-[#1F7A4C] transition-colors">
+                    <div className="min-w-0 flex-1">
+                      <h4 className="text-sm font-bold text-neutral-800 leading-snug group-hover:text-[#1F7A4C] transition-colors truncate">
                         {supply.name}
                       </h4>
-                      <div className="flex items-center gap-1.5 mt-0.5">
+                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                         <span
-                          className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
+                          className={`text-[10px] px-2 py-0.5 rounded-full font-semibold whitespace-nowrap flex-shrink-0 ${
                             supply.category === "packaging"
                               ? "bg-amber-100/70 text-amber-800"
                               : "bg-[#DCF4D7] text-[#1F7A4C]"
@@ -428,7 +428,7 @@ export default function InsumosPage() {
                         >
                           {supply.category === "packaging" ? "Packaging" : "Materia Prima"}
                         </span>
-                        <span className="text-[10px] text-neutral-400">
+                        <span className="text-[10px] text-neutral-400 whitespace-nowrap">
                           {supply.purchase_quantity} {supply.purchase_unit}
                         </span>
                       </div>
@@ -436,13 +436,13 @@ export default function InsumosPage() {
                   </div>
 
                   {/* Acciones */}
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1 flex-shrink-0">
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         handleOpenHistoryDrawer(supply);
                       }}
-                      className="p-1.5 text-neutral-400 hover:text-amber-600 hover:bg-amber-50 rounded-xl transition"
+                      className="p-1.5 text-neutral-400 hover:text-amber-600 hover:bg-amber-50 rounded-xl transition flex-shrink-0"
                       title="Ver gráfico e historial de precios"
                     >
                       <TrendingUp className="w-4 h-4" />
@@ -453,7 +453,7 @@ export default function InsumosPage() {
                         setEditingSupply(supply);
                         setIsModalOpen(true);
                       }}
-                      className="p-1.5 text-neutral-400 hover:text-[#3BB578] hover:bg-[#DCF4D7] rounded-xl transition"
+                      className="p-1.5 text-neutral-400 hover:text-[#3BB578] hover:bg-[#DCF4D7] rounded-xl transition flex-shrink-0"
                       title="Editar insumo"
                     >
                       <Edit2 className="w-4 h-4" />
@@ -463,7 +463,7 @@ export default function InsumosPage() {
                         e.stopPropagation();
                         handleRequestDelete(supply);
                       }}
-                      className="p-1.5 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition"
+                      className="p-1.5 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition flex-shrink-0"
                       title="Eliminar insumo"
                     >
                       <Trash2 className="w-4 h-4" />

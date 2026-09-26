@@ -36,6 +36,27 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Prevenir colapso, aplastamiento o superposición de iconos SVG con texto en Android */
+svg {
+  flex-shrink: 0;
+}
+
+svg.lucide {
+  flex-shrink: 0;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+/* Garantizar que los iconos dentro de botones, links, inputs y badges mantengan siempre su tamaño */
+button svg,
+a svg,
+label svg,
+span svg,
+.flex svg,
+.inline-flex svg {
+  flex-shrink: 0;
+}
+
 /* HABA Card — estilo base para tarjetas */
 .haba-card {
   background: #ffffff;

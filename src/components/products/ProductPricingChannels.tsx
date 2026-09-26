@@ -42,18 +42,18 @@ export const DEFAULT_CHANNELS: ChannelPriceItem[] = [
 export const getChannelIcon = (id?: string, name?: string) => {
   const key = `${id || ""} ${name || ""}`.toLowerCase();
   if (key.includes("menor") || key.includes("local") || key.includes("minorista") || key.includes("directo")) {
-    return <Store className="w-4 h-4 text-emerald-600" />;
+    return <Store className="w-4 h-4 text-emerald-600 flex-shrink-0" />;
   }
   if (key.includes("mayor") || key.includes("revendedora") || key.includes("distribuidor") || key.includes("b2b")) {
-    return <Users className="w-4 h-4 text-purple-600" />;
+    return <Users className="w-4 h-4 text-purple-600 flex-shrink-0" />;
   }
   if (key.includes("delivery") || key.includes("envio") || key.includes("reparto")) {
-    return <Truck className="w-4 h-4 text-blue-600" />;
+    return <Truck className="w-4 h-4 text-blue-600 flex-shrink-0" />;
   }
   if (key.includes("web") || key.includes("online") || key.includes("tienda") || key.includes("ecommerce")) {
-    return <Globe className="w-4 h-4 text-amber-600" />;
+    return <Globe className="w-4 h-4 text-amber-600 flex-shrink-0" />;
   }
-  return <Tag className="w-4 h-4 text-neutral-500" />;
+  return <Tag className="w-4 h-4 text-neutral-500 flex-shrink-0" />;
 };
 
 export function ProductPricingChannels({
@@ -293,10 +293,10 @@ export function ProductPricingChannels({
                         value={channel.channel_name}
                         onChange={(e) => handleNameChange(idx, e.target.value)}
                         placeholder="Nombre del canal..."
-                        className="text-xs font-bold text-neutral-800 bg-white border border-neutral-200/90 group-hover:border-[#3BB578]/60 focus:border-[#3BB578] focus:ring-2 focus:ring-[#3BB578]/10 pl-2.5 pr-7 py-1 rounded-xl outline-none transition w-full shadow-2xs"
+                        className="text-xs font-bold text-neutral-800 bg-white border border-neutral-200/90 group-hover:border-[#3BB578]/60 focus:border-[#3BB578] focus:ring-2 focus:ring-[#3BB578]/10 pl-2.5 pr-8 py-1 rounded-xl outline-none transition w-full shadow-2xs"
                         title="Hacé clic para renombrar este canal de venta"
                       />
-                      <Pencil className="w-3 h-3 text-neutral-400 group-hover:text-[#3BB578] group-focus-within:text-[#3BB578] absolute right-2.5 pointer-events-none transition" />
+                      <Pencil className="w-3 h-3 text-neutral-400 group-hover:text-[#3BB578] group-focus-within:text-[#3BB578] absolute right-2.5 pointer-events-none transition flex-shrink-0" />
                     </div>
                   </div>
 
@@ -316,7 +316,7 @@ export function ProductPricingChannels({
                           : "Eliminar este canal de venta"
                       }
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
+                      <Trash2 className="w-3.5 h-3.5 flex-shrink-0" />
                     </button>
                   </div>
                 </div>
@@ -336,7 +336,7 @@ export function ProductPricingChannels({
                         value={channel.profit_margin_percent === "" ? "" : channel.profit_margin_percent}
                         onChange={(e) => handleMarginChange(idx, e.target.value)}
                         placeholder="0"
-                        className="w-full h-10 pl-3 pr-7 text-xs sm:text-sm font-bold text-[#1F7A4C] bg-transparent outline-none"
+                        className="w-full h-10 pl-3 pr-8 text-xs sm:text-sm font-bold text-[#1F7A4C] bg-transparent outline-none"
                       />
                       <span className="absolute right-2.5 text-xs font-bold text-neutral-400 pointer-events-none select-none">
                         %
@@ -360,7 +360,7 @@ export function ProductPricingChannels({
                         value={channel.selling_price === "" ? "" : channel.selling_price}
                         onChange={(e) => handlePriceChange(idx, e.target.value)}
                         placeholder="0"
-                        className="w-full h-10 pl-6 pr-3 text-xs sm:text-sm font-black text-neutral-800 bg-transparent outline-none"
+                        className="w-full h-10 pl-7 pr-3 text-xs sm:text-sm font-black text-neutral-800 bg-transparent outline-none"
                       />
                     </div>
                   </div>

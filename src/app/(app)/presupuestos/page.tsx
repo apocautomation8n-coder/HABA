@@ -573,13 +573,13 @@ export default function PresupuestosPage() {
                         Emisión: {validity.formattedIssuedAt}
                       </span>
                       {validity.isExpired ? (
-                        <span className="text-[10px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full flex items-center gap-1">
-                          <Clock className="w-3 h-3 text-rose-600" />
+                        <span className="text-[10px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full flex items-center gap-1 flex-shrink-0 whitespace-nowrap">
+                          <Clock className="w-3 h-3 text-rose-600 flex-shrink-0" />
                           <span>Vencido ({validity.formattedValidUntil})</span>
                         </span>
                       ) : (
-                        <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full flex items-center gap-1">
-                          <Clock className="w-3 h-3 text-emerald-600" />
+                        <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full flex items-center gap-1 flex-shrink-0 whitespace-nowrap">
+                          <Clock className="w-3 h-3 text-emerald-600 flex-shrink-0" />
                           <span>
                             Válido hasta {validity.formattedValidUntil} ({validity.daysRemaining}{" "}
                             {validity.daysRemaining === 1 ? "día" : "días"})
@@ -609,7 +609,7 @@ export default function PresupuestosPage() {
 
                 {/* Alerta de presupuesto vencido si superó la fecha límite */}
                 {validity.isExpired && (
-                  <div className="p-2.5 bg-rose-50/90 border border-rose-200 rounded-2xl flex items-center justify-between text-xs text-rose-900 shadow-2xs gap-2">
+                  <div className="p-2.5 bg-rose-50/90 border border-rose-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between text-xs text-rose-900 shadow-2xs gap-2">
                     <div className="flex items-center gap-1.5 min-w-0 flex-1">
                       <AlertTriangle className="w-4 h-4 text-rose-600 flex-shrink-0" />
                       <span className="text-[11px] font-semibold leading-tight">
@@ -618,51 +618,51 @@ export default function PresupuestosPage() {
                     </div>
                     <Link
                       href={`/presupuestos/nuevo?edit=${quote.id}`}
-                      className="py-1 px-2.5 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white rounded-xl text-[11px] font-bold flex items-center gap-1 transition shadow-xs flex-shrink-0"
+                      className="py-1 px-2.5 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white rounded-xl text-[11px] font-bold flex items-center justify-center gap-1 transition shadow-xs flex-shrink-0 whitespace-nowrap"
                       title="Editar y actualizar presupuesto"
                     >
-                      <Edit2 className="w-3 h-3" />
+                      <Edit2 className="w-3 h-3 flex-shrink-0" />
                       <span>Actualizar</span>
                     </Link>
                   </div>
                 )}
 
                 {/* Acciones Rápidas: WhatsApp, PDF, Desplegar */}
-                <div className="pt-2 border-t border-neutral-100 flex items-center justify-between">
+                <div className="pt-2 border-t border-neutral-100 flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <Link
                       href={`/presupuestos/${quote.id}`}
-                      className="py-1.5 px-3 bg-[#3BB578] hover:bg-[#2E9E65] text-white rounded-xl text-xs font-bold transition flex items-center gap-1 shadow-2xs active:scale-95"
+                      className="py-1.5 px-3 bg-[#3BB578] hover:bg-[#2E9E65] text-white rounded-xl text-xs font-bold transition flex items-center gap-1 shadow-2xs active:scale-95 flex-shrink-0 whitespace-nowrap"
                       title="Ver vista previa oficial del presupuesto"
                     >
-                      <Eye className="w-3.5 h-3.5" />
+                      <Eye className="w-3.5 h-3.5 flex-shrink-0" />
                       <span>Vista Previa</span>
                     </Link>
 
                     <button
                       onClick={() => shareViaWhatsApp(quote)}
-                      className="py-1.5 px-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl text-xs font-bold transition flex items-center gap-1"
+                      className="py-1.5 px-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl text-xs font-bold transition flex items-center gap-1 flex-shrink-0 whitespace-nowrap"
                       title="Enviar por WhatsApp"
                     >
-                      <Share2 className="w-3.5 h-3.5" />
+                      <Share2 className="w-3.5 h-3.5 flex-shrink-0" />
                       <span>WhatsApp</span>
                     </button>
 
                     <button
                       onClick={() => printQuote(quote)}
-                      className="py-1.5 px-3 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-xl text-xs font-bold transition flex items-center gap-1"
+                      className="py-1.5 px-3 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-xl text-xs font-bold transition flex items-center gap-1 flex-shrink-0 whitespace-nowrap"
                       title="Imprimir o Guardar PDF"
                     >
-                      <Printer className="w-3.5 h-3.5" />
+                      <Printer className="w-3.5 h-3.5 flex-shrink-0" />
                       <span>PDF</span>
                     </button>
 
                     <Link
                       href={`/presupuestos/nuevo?edit=${quote.id}`}
-                      className="py-1.5 px-3 bg-[#DCF4D7] hover:bg-[#C3EBC0] text-[#1F7A4C] rounded-xl text-xs font-bold transition flex items-center gap-1"
+                      className="py-1.5 px-3 bg-[#DCF4D7] hover:bg-[#C3EBC0] text-[#1F7A4C] rounded-xl text-xs font-bold transition flex items-center gap-1 flex-shrink-0 whitespace-nowrap"
                       title="Editar este presupuesto"
                     >
-                      <Edit2 className="w-3.5 h-3.5" />
+                      <Edit2 className="w-3.5 h-3.5 flex-shrink-0" />
                       <span>Editar</span>
                     </Link>
                   </div>

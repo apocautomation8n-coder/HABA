@@ -1745,9 +1745,9 @@ export default function ProductosPage() {
 
                       {/* Etiqueta 3: Alerta de Costo Desactualizado */}
                       {product.isCostOutdated && (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-300 animate-pulse flex-shrink-0">
-                          <AlertTriangle className="w-3 h-3 text-amber-600" />
-                          <span>Revisar Precios</span>
+                        <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-300 animate-pulse flex-shrink-0 whitespace-nowrap">
+                          <AlertTriangle className="w-3 h-3 text-amber-600 flex-shrink-0" />
+                          <span className="whitespace-nowrap">Revisar Precios</span>
                         </span>
                       )}
                     </div>
@@ -1897,11 +1897,11 @@ export default function ProductosPage() {
                 {product.isCostOutdated && (
                   <div
                     onClick={(e) => e.stopPropagation()}
-                    className="bg-amber-50/90 border border-amber-200 p-2.5 rounded-2xl flex items-center justify-between text-xs text-amber-900 shadow-2xs gap-2 cursor-default"
+                    className="bg-amber-50/90 border border-amber-200 p-2.5 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between text-xs text-amber-900 shadow-2xs gap-2 cursor-default"
                   >
                     <div className="flex items-center gap-1.5 min-w-0 flex-1">
                       <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
-                      <span className="text-[11px] font-semibold leading-tight truncate">
+                      <span className="text-[11px] font-semibold leading-tight line-clamp-1 sm:truncate">
                         {product.modifiedSupplies && product.modifiedSupplies.length > 0
                           ? product.modifiedSupplies.length === 1
                             ? `${product.modifiedSupplies[0].name} aumentó de precio`
@@ -1909,16 +1909,16 @@ export default function ProductosPage() {
                           : "Insumos cambiaron de precio"}
                       </span>
                     </div>
-                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <div className="flex items-center gap-1.5 flex-shrink-0 self-end sm:self-auto">
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           setReviewPriceProduct(product);
                         }}
-                        className="py-1 px-2.5 bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-xl text-[11px] font-bold flex items-center gap-1 transition cursor-pointer shadow-2xs"
+                        className="py-1 px-2.5 bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-xl text-[11px] font-bold flex items-center gap-1 transition cursor-pointer shadow-2xs whitespace-nowrap"
                         title="Ver desglose detallado de insumos modificados"
                       >
-                        <TrendingUp className="w-3 h-3 text-amber-700" />
+                        <TrendingUp className="w-3 h-3 text-amber-700 flex-shrink-0" />
                         <span>Ver detalle</span>
                       </button>
                       <button
@@ -1927,10 +1927,10 @@ export default function ProductosPage() {
                           handleRecalculate(product);
                         }}
                         disabled={recalculatingId === product.id}
-                        className="py-1 px-2.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white rounded-xl text-[11px] font-bold flex items-center gap-1 transition shadow-xs flex-shrink-0 disabled:opacity-50 cursor-pointer"
+                        className="py-1 px-2.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white rounded-xl text-[11px] font-bold flex items-center gap-1 transition shadow-xs flex-shrink-0 disabled:opacity-50 cursor-pointer whitespace-nowrap"
                         title="Actualizar costo directo, total y precios sugeridos"
                       >
-                        <RefreshCw className={`w-3 h-3 ${recalculatingId === product.id ? "animate-spin" : ""}`} />
+                        <RefreshCw className={`w-3 h-3 flex-shrink-0 ${recalculatingId === product.id ? "animate-spin" : ""}`} />
                         <span>{recalculatingId === product.id ? "..." : "Recalcular"}</span>
                       </button>
                       <button
@@ -1938,10 +1938,10 @@ export default function ProductosPage() {
                           e.stopPropagation();
                           handleDismissAlert(product);
                         }}
-                        className="p-1 text-amber-700 hover:text-neutral-700 hover:bg-amber-100 rounded-lg transition cursor-pointer"
+                        className="p-1 text-amber-700 hover:text-neutral-700 hover:bg-amber-100 rounded-lg transition cursor-pointer flex-shrink-0"
                         title="Omitir alerta por ahora"
                       >
-                        <X className="w-3.5 h-3.5" />
+                        <X className="w-3.5 h-3.5 flex-shrink-0" />
                       </button>
                     </div>
                   </div>
