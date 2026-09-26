@@ -1248,7 +1248,7 @@ export default function NuevoProductoPage() {
         </div>
       )}
 
-      {/* PASO 4: Precios Multicanal & Margen con Sliders */}
+      {/* PASO 4: Precios Multicanal */}
       {currentStep === 4 && (
         <div className="bg-white p-5 rounded-3xl border border-[#EAF0E8] shadow-sm space-y-4">
           <ProductPricingChannels
@@ -1257,9 +1257,7 @@ export default function NuevoProductoPage() {
             unitCost={totalCost}
             batchTotalCost={batchTotalCost}
             yieldQuantity={safeYield}
-            showExplanationBanner={true}
             title="4. Precios por Canal de Venta"
-            subtitle="Slider de margen %, precio sugerido y ganancia neta en mano"
           />
 
           <div className="pt-3 border-t border-neutral-100 flex items-center justify-between">

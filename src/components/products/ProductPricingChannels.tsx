@@ -3,7 +3,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import {
   TrendingUp,
-  SlidersHorizontal,
   Pencil,
   Trash2,
   Plus,
@@ -12,8 +11,6 @@ import {
   Users,
   Truck,
   Globe,
-  Sparkles,
-  ChevronRight,
   RotateCcw,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/units";
@@ -63,17 +60,12 @@ export function ProductPricingChannels({
   channels,
   onChange,
   unitCost,
-  batchTotalCost,
-  yieldQuantity = 1,
   title = "Precios por Canal de Venta",
-  subtitle = "Slider de margen %, precio sugerido y ganancia neta en mano",
-  showExplanationBanner = false,
   className = "",
 }: ProductPricingChannelsProps) {
   const [isAddingChannel, setIsAddingChannel] = useState(false);
   const [newChannelName, setNewChannelName] = useState("");
   const [newChannelMargin, setNewChannelMargin] = useState<number | string>(100);
-  const [showChannelInfo, setShowChannelInfo] = useState(false);
 
   // Sincronizar precios de venta cuando el costo unitario cambia
   const prevUnitCostRef = useRef<number>(unitCost);
@@ -83,16 +75,19 @@ export function ProductPricingChannels({
   useEffect(() => {
     if (prevUnitCostRef.current !== unitCost) {
       prevUnitCostRef.current = unitCost;
-      const safeCost = Math.max(0, unitCost);
+      const safeCost = Math.max(0, unitCost || 0);
       onChange(
         channelsRef.current.map((ch) => {
           const marginNum =
             typeof ch.profit_margin_percent === "number"
               ? ch.profit_margin_percent
-              : parseFloat(String(ch.profit_margin_percent)) || 0;
+              : parseFloat(String(ch.profit_margin_percent));
+
+          if (isNaN(marginNum)) return ch;
+
           return {
             ...ch,
-            selling_price: Math.round(safeCost * (1 + marginNum / 100)),
+            selling_price: safeCost > 0 ? Math.round(safeCost * (1 + marginNum / 100)) : ch.selling_price,
           };
         })
       );
@@ -111,13 +106,25 @@ export function ProductPricingChannels({
       onChange(updated);
       return;
     }
-    const marginNum = typeof marginVal === "number" ? marginVal : parseFloat(String(marginVal)) || 0;
-    const safeCost = Math.max(0, unitCost);
-    const newPrice = Math.round(safeCost * (1 + marginNum / 100));
+
+    const marginNum = typeof marginVal === "number" ? marginVal : parseFloat(String(marginVal));
+    if (isNaN(marginNum)) {
+      updated[index] = {
+        ...updated[index],
+        profit_margin_percent: marginVal,
+        selling_price: "",
+      };
+      onChange(updated);
+      return;
+    }
+
+    const safeCost = Math.max(0, unitCost || 0);
+    const calculatedPrice = safeCost > 0 ? Math.round(safeCost * (1 + marginNum / 100)) : 0;
+
     updated[index] = {
       ...updated[index],
       profit_margin_percent: marginVal,
-      selling_price: newPrice,
+      selling_price: calculatedPrice >= 0 ? calculatedPrice : 0,
     };
     onChange(updated);
   };
@@ -134,12 +141,27 @@ export function ProductPricingChannels({
       onChange(updated);
       return;
     }
-    const priceNum = typeof priceVal === "number" ? priceVal : parseFloat(String(priceVal)) || 0;
-    const safeCost = Math.max(0, unitCost);
+
+    const priceNum = typeof priceVal === "number" ? priceVal : parseFloat(String(priceVal));
+    if (isNaN(priceNum)) {
+      updated[index] = {
+        ...updated[index],
+        profit_margin_percent: "",
+        selling_price: priceVal,
+      };
+      onChange(updated);
+      return;
+    }
+
+    const safeCost = Math.max(0, unitCost || 0);
     let newMargin = 0;
     if (safeCost > 0) {
-      newMargin = Math.round(((priceNum - safeCost) / safeCost) * 100);
+      const rawMargin = ((priceNum - safeCost) / safeCost) * 100;
+      newMargin = isFinite(rawMargin) ? Math.round(rawMargin) : 0;
+    } else if (priceNum > 0) {
+      newMargin = 100;
     }
+
     updated[index] = {
       ...updated[index],
       profit_margin_percent: newMargin,
@@ -183,8 +205,8 @@ export function ProductPricingChannels({
       typeof newChannelMargin === "number"
         ? newChannelMargin
         : parseFloat(String(newChannelMargin)) || 0;
-    const safeCost = Math.max(0, unitCost);
-    const calculatedPrice = Math.round(safeCost * (1 + marginNum / 100));
+    const safeCost = Math.max(0, unitCost || 0);
+    const calculatedPrice = safeCost > 0 ? Math.round(safeCost * (1 + marginNum / 100)) : 0;
 
     onChange([
       ...channels,
@@ -203,7 +225,7 @@ export function ProductPricingChannels({
 
   // Restaurar canales sugeridos predeterminados
   const handleRestoreDefaults = () => {
-    const safeCost = Math.max(0, unitCost);
+    const safeCost = Math.max(0, unitCost || 0);
     onChange([
       {
         id: `custom-${Date.now()}-1`,
@@ -220,70 +242,15 @@ export function ProductPricingChannels({
     ]);
   };
 
-  const safeYield = yieldQuantity > 0 ? yieldQuantity : 1;
-
   return (
     <div className={`space-y-4 ${className}`}>
-      {/* Encabezado de la Sección */}
-      <div className="flex items-center justify-between border-b border-neutral-100 pb-2.5">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-xl bg-[#DCF4D7] text-[#1F7A4C] flex items-center justify-center flex-shrink-0">
-            <TrendingUp className="w-4 h-4" />
-          </div>
-          <div>
-            <h3 className="text-sm font-bold text-neutral-800">{title}</h3>
-            {subtitle && <p className="text-[11px] text-neutral-400">{subtitle}</p>}
-          </div>
+      {/* Encabezado limpio de la Sección */}
+      <div className="flex items-center gap-2 border-b border-neutral-100 pb-2.5">
+        <div className="w-8 h-8 rounded-xl bg-[#DCF4D7] text-[#1F7A4C] flex items-center justify-center flex-shrink-0">
+          <TrendingUp className="w-4 h-4" />
         </div>
-        <div className="text-right">
-          <span className="text-[10px] text-neutral-400 block font-medium">Costo Base Unitario</span>
-          <span className="text-xs font-black text-[#1F7A4C] bg-[#DCF4D7] px-2 py-0.5 rounded-lg border border-[#3BB578]/20">
-            {formatCurrency(unitCost)} / u
-          </span>
-        </div>
+        <h3 className="text-sm font-bold text-neutral-800">{title}</h3>
       </div>
-
-      {/* Banner Didáctico Opcional */}
-      {showExplanationBanner && (
-        <div className="bg-[#F0FAF4] border border-[#DCF4D7] rounded-2xl overflow-hidden transition-all">
-          <button
-            type="button"
-            onClick={() => setShowChannelInfo(!showChannelInfo)}
-            className="w-full p-2.5 sm:p-3 flex items-center justify-between text-left hover:bg-[#DCF4D7]/30 transition cursor-pointer"
-          >
-            <div className="flex items-center gap-2">
-              <div className="w-5 h-5 rounded-lg bg-[#DCF4D7] text-[#1F7A4C] flex items-center justify-center flex-shrink-0">
-                <Sparkles className="w-3 h-3" />
-              </div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-bold text-[11px] text-[#1F7A4C]">
-                  Costo Base Unitario: {formatCurrency(unitCost)} / u
-                </span>
-                {safeYield > 1 && batchTotalCost !== undefined && (
-                  <span className="text-[10px] bg-white text-[#1F7A4C] px-2 py-0.5 rounded-full border border-[#DCF4D7] font-semibold">
-                    Lote de {safeYield} u: {formatCurrency(batchTotalCost)}
-                  </span>
-                )}
-              </div>
-            </div>
-            <div className="flex items-center gap-1 text-[10px] text-[#1F7A4C] font-semibold bg-white/70 px-2 py-0.5 rounded-full border border-[#DCF4D7]">
-              <span>{showChannelInfo ? "Ocultar" : "Ver explicación"}</span>
-              <ChevronRight
-                className={`w-3 h-3 transition-transform ${showChannelInfo ? "rotate-90" : ""}`}
-              />
-            </div>
-          </button>
-          {showChannelInfo && (
-            <div className="px-3 pb-3 pt-0.5 text-[11px] leading-snug text-[#555] border-t border-[#DCF4D7]/60 animate-in fade-in duration-150">
-              <p className="pt-2">
-                Ajustá el slider del margen (%) o escribí directamente el precio de venta en pesos. HABA
-                calcula al instante el <strong>precio sugerido</strong> y tu{" "}
-                <strong>ganancia neta limpia</strong>.
-              </p>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Lista de Canales de Venta */}
       {channels.length === 0 ? (
@@ -307,17 +274,12 @@ export function ProductPricingChannels({
               typeof channel.selling_price === "number"
                 ? channel.selling_price
                 : parseFloat(String(channel.selling_price)) || 0;
-            const marginNum =
-              typeof channel.profit_margin_percent === "number"
-                ? channel.profit_margin_percent
-                : parseFloat(String(channel.profit_margin_percent)) || 0;
-            const profitAmount = channelSellingPrice - unitCost;
-            const suggestedPrice = Math.round(unitCost * (1 + marginNum / 100));
+            const profitAmount = channelSellingPrice - (unitCost || 0);
 
             return (
               <div
                 key={channel.id || idx}
-                className="p-3.5 bg-white rounded-2xl border border-neutral-200 shadow-2xs space-y-3 hover:border-[#3BB578]/50 transition"
+                className="p-3.5 bg-white rounded-2xl border border-neutral-200/90 shadow-2xs space-y-3 hover:border-[#3BB578]/50 transition"
               >
                 {/* Cabecera del Canal: Icono, Nombre Editable y Botón Eliminar */}
                 <div className="flex items-center justify-between gap-2">
@@ -359,126 +321,66 @@ export function ProductPricingChannels({
                   </div>
                 </div>
 
-                {/* Slider de Margen % con Steppers y Input Numérico */}
-                <div className="space-y-1.5 bg-white p-2.5 rounded-xl border border-neutral-200/80">
-                  <div className="flex items-center justify-between text-[11px] font-semibold text-neutral-600">
-                    <span className="flex items-center gap-1">
-                      <SlidersHorizontal className="w-3 h-3 text-neutral-400" />
-                      Margen de Ganancia:
-                    </span>
-                    <div className="flex items-center gap-1 bg-neutral-50 px-2 py-0.5 rounded-lg border border-neutral-200 focus-within:border-[#3BB578] focus-within:bg-white focus-within:ring-2 focus-within:ring-[#3BB578]/10 transition">
+                {/* Fila Horizontal: Margen de Ganancia (%) y Precio de Lista ($) */}
+                <div className="grid grid-cols-2 gap-2.5 sm:gap-3 items-end">
+                  {/* Margen de Ganancia (%) */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-neutral-700 block">
+                      Margen de Ganancia
+                    </label>
+                    <div className="relative flex items-center bg-neutral-50 hover:bg-white focus-within:bg-white rounded-xl border border-neutral-200 focus-within:border-[#3BB578] focus-within:ring-2 focus-within:ring-[#3BB578]/10 transition shadow-2xs">
                       <input
                         type="number"
                         step="any"
                         min="0"
-                        max="1000"
                         value={channel.profit_margin_percent === "" ? "" : channel.profit_margin_percent}
                         onChange={(e) => handleMarginChange(idx, e.target.value)}
                         placeholder="0"
-                        className="w-14 text-center text-xs font-bold outline-none text-[#1F7A4C] bg-transparent"
-                        title="Ingresar porcentaje de margen manual"
+                        className="w-full h-10 pl-3 pr-7 text-xs sm:text-sm font-bold text-[#1F7A4C] bg-transparent outline-none"
                       />
-                      <span className="text-xs font-bold text-neutral-400">%</span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const current =
-                          typeof channel.profit_margin_percent === "number"
-                            ? channel.profit_margin_percent
-                            : parseFloat(String(channel.profit_margin_percent)) || 0;
-                        handleMarginChange(idx, Math.max(0, current - 5));
-                      }}
-                      className="px-2 py-1 bg-neutral-100 hover:bg-neutral-200 active:scale-95 border border-neutral-200 rounded-lg text-[11px] font-bold text-neutral-600 transition shadow-2xs select-none cursor-pointer"
-                      title="Disminuir margen en 5%"
-                    >
-                      -5%
-                    </button>
-                    <input
-                      type="range"
-                      min="0"
-                      max="300"
-                      step="5"
-                      value={channel.profit_margin_percent || 0}
-                      onChange={(e) => handleMarginChange(idx, parseFloat(e.target.value) || 0)}
-                      className="w-full accent-[#3BB578] cursor-pointer h-2 bg-neutral-200 rounded-lg appearance-none touch-pan-x"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const current =
-                          typeof channel.profit_margin_percent === "number"
-                            ? channel.profit_margin_percent
-                            : parseFloat(String(channel.profit_margin_percent)) || 0;
-                        handleMarginChange(idx, current + 5);
-                      }}
-                      className="px-2 py-1 bg-neutral-100 hover:bg-neutral-200 active:scale-95 border border-neutral-200 rounded-lg text-[11px] font-bold text-neutral-600 transition shadow-2xs select-none cursor-pointer"
-                      title="Aumentar margen en 5%"
-                    >
-                      +5%
-                    </button>
-                  </div>
-                </div>
-
-                {/* Grid: Precio Sugerido y Precio de Lista Editable */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1 border-t border-neutral-200/50">
-                  <div className="bg-white p-2.5 rounded-xl border border-neutral-200 flex flex-col justify-center">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[10px] text-neutral-400 font-semibold">Precio Sugerido</span>
-                      <span className="text-[9px] text-neutral-400">según margen</span>
-                    </div>
-                    <span className="text-sm font-bold text-neutral-700">
-                      {formatCurrency(suggestedPrice)} <span className="text-xs font-normal text-neutral-400">/ u</span>
-                    </span>
-                  </div>
-
-                  <div className="bg-white p-2.5 rounded-xl border-2 border-[#3BB578] shadow-2xs hover:shadow-xs transition flex flex-col justify-between">
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="text-[10px] text-[#1F7A4C] font-bold flex items-center gap-1">
-                        <Pencil className="w-2.5 h-2.5 text-[#1F7A4C]" />
-                        <span>Precio de Lista ($ / u)</span>
-                      </label>
-                      <span className="text-[9px] font-semibold bg-[#DCF4D7] text-[#1F7A4C] px-1.5 py-0.5 rounded">
-                        Editable
+                      <span className="absolute right-2.5 text-xs font-bold text-neutral-400 pointer-events-none select-none">
+                        %
                       </span>
                     </div>
-                    <div className="relative flex items-center">
-                      <span className="absolute left-2.5 text-xs font-black text-[#1F7A4C] pointer-events-none">
+                  </div>
+
+                  {/* Precio de Lista ($) */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-neutral-700 block">
+                      Precio de Lista
+                    </label>
+                    <div className="relative flex items-center bg-neutral-50 hover:bg-white focus-within:bg-white rounded-xl border border-neutral-200 focus-within:border-[#3BB578] focus-within:ring-2 focus-within:ring-[#3BB578]/10 transition shadow-2xs">
+                      <span className="absolute left-2.5 text-xs font-bold text-neutral-400 pointer-events-none select-none">
                         $
                       </span>
                       <input
                         type="number"
                         step="any"
+                        min="0"
                         value={channel.selling_price === "" ? "" : channel.selling_price}
                         onChange={(e) => handlePriceChange(idx, e.target.value)}
-                        placeholder="Establecer precio manual..."
-                        className="w-full pl-6 pr-2 py-1 text-xs font-black text-[#1F7A4C] bg-neutral-50/60 hover:bg-neutral-50 focus:bg-white rounded-lg outline-none border border-transparent focus:border-[#3BB578] transition placeholder:text-neutral-300 placeholder:font-normal"
+                        placeholder="0"
+                        className="w-full h-10 pl-6 pr-3 text-xs sm:text-sm font-black text-neutral-800 bg-transparent outline-none"
                       />
                     </div>
-                    <span className="text-[9px] text-neutral-400 mt-1">
-                      Podés escribir el precio directamente y el margen se recalcula.
-                    </span>
                   </div>
                 </div>
 
-                {/* Desglose de Costo + Ganancia = Precio */}
-                <div className="pt-2 border-t border-neutral-200/60 flex items-center justify-between text-[10px] text-neutral-600 bg-white/80 px-2 py-1 rounded-xl font-medium">
+                {/* Desglose compacto: Costo + Ganancia = Total */}
+                <div className="pt-2 border-t border-neutral-100 flex items-center justify-between text-[10.5px] text-neutral-500 font-medium">
                   <span>
-                    Costo: <strong>{formatCurrency(unitCost)} / u</strong>
+                    Costo: <strong className="text-neutral-700">{formatCurrency(unitCost)}</strong>
                   </span>
                   <span>+</span>
                   <span>
                     Ganancia:{" "}
                     <strong className={profitAmount >= 0 ? "text-[#1F7A4C]" : "text-rose-600"}>
-                      {formatCurrency(profitAmount)} / u
+                      {formatCurrency(profitAmount)}
                     </strong>
                   </span>
                   <span>=</span>
                   <span>
-                    Precio: <strong className="text-[#2B2B2B]">{formatCurrency(channelSellingPrice)} / u</strong>
+                    Total: <strong className="text-neutral-900 font-bold">{formatCurrency(channelSellingPrice)}</strong>
                   </span>
                 </div>
               </div>

@@ -2828,7 +2828,6 @@ export default function ProductosPage() {
                   batchTotalCost={editBatchTotalCost}
                   yieldQuantity={safeEditYield}
                   title="Precios de Venta por Canal"
-                  subtitle="Ajustá márgenes, precios o agregá nuevos canales"
                 />
               </div>
             </div>
