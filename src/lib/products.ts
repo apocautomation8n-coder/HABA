@@ -3,6 +3,7 @@
  */
 
 import { calculateUnitCost } from "./units";
+import { createClient } from "./supabase/client";
 
 export interface ProductCategory {
   id: string;
@@ -278,7 +279,83 @@ export function saveStoredCustomCategories(cats: CustomCategoryItem[]): void {
 }
 
 /**
+ * Normaliza una cadena de categoría quitando acentos, mayúsculas y espacios sobrantes.
+ */
+export function normalizeCategoryString(str?: string | null): string {
+  if (!str) return "";
+  return str
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+/**
+ * Genera un identificador determinista y estable para cualquier categoría (preset o personalizada).
+ */
+export function getCategoryId(label: string): string {
+  const norm = normalizeCategoryString(label);
+  const preset = PRODUCT_CATEGORIES.find(
+    (c) => normalizeCategoryString(c.id) === norm || normalizeCategoryString(c.label) === norm
+  );
+  if (preset) return preset.id;
+  const slug = norm.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return `custom-${slug || "cat"}`;
+}
+
+/**
+ * Determina de forma robusta e insensible a acentos/mayúsculas/espacios
+ * si un producto pertenece a una categoría seleccionada en los filtros.
+ */
+export function isCategoryMatch(
+  productCategory: string | undefined | null,
+  selectedCategoryFilter: string | undefined | null,
+  allCategories?: CustomCategoryItem[]
+): boolean {
+  if (!selectedCategoryFilter || selectedCategoryFilter === "all") return true;
+
+  const normProduct = normalizeCategoryString(productCategory);
+  const normFilter = normalizeCategoryString(selectedCategoryFilter);
+
+  if (!normProduct) return normFilter === "otro";
+  if (normProduct === normFilter) return true;
+
+  // Comparar por ID determinista del producto
+  const productId = getCategoryId(productCategory || "");
+  if (productId === selectedCategoryFilter || normalizeCategoryString(productId) === normFilter) {
+    return true;
+  }
+
+  // Buscar objeto de la categoría seleccionada en el catálogo
+  const cats = allCategories || getAllProductCategories();
+  const selectedCat = cats.find(
+    (c) =>
+      c.id === selectedCategoryFilter ||
+      normalizeCategoryString(c.id) === normFilter ||
+      normalizeCategoryString(c.label) === normFilter
+  );
+
+  if (selectedCat) {
+    const normCatLabel = normalizeCategoryString(selectedCat.label);
+    const normCatId = normalizeCategoryString(selectedCat.id);
+
+    if (normProduct === normCatLabel || normProduct === normCatId) return true;
+    if (productId === selectedCat.id || normalizeCategoryString(productId) === normCatId) return true;
+
+    // Coincidencia para categorías compuestas ("Papelería & Libretas" vs "Papelería")
+    const pFirst = normProduct.split("&")[0].split("/")[0].trim();
+    const fFirst = normCatLabel.split("&")[0].split("/")[0].trim();
+    if (pFirst && fFirst && (pFirst === fFirst || normCatLabel.includes(pFirst) || normProduct.includes(fFirst))) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
  * Obtiene la lista completa y unificada de categorías (presets + personalizadas + categorías de productos existentes)
+ * garantizando IDs deterministas y estables entre renders.
  */
 export function getAllProductCategories(existingProducts?: { description?: string | null }[]): CustomCategoryItem[] {
   const baseCategories: CustomCategoryItem[] = PRODUCT_CATEGORIES.map((cat) => ({
@@ -294,27 +371,35 @@ export function getAllProductCategories(existingProducts?: { description?: strin
   const categoryMap = new Map<string, CustomCategoryItem>();
 
   for (const cat of baseCategories) {
-    categoryMap.set(cat.label.toLowerCase(), cat);
+    categoryMap.set(normalizeCategoryString(cat.label), cat);
   }
 
   for (const cat of storedCustom) {
-    categoryMap.set(cat.label.toLowerCase(), { ...cat, isCustom: true });
+    const normKey = normalizeCategoryString(cat.label);
+    categoryMap.set(normKey, {
+      ...cat,
+      id: cat.id || getCategoryId(cat.label),
+      isCustom: true,
+    });
   }
 
-  // Extraer también cualquier categoría presente en los productos existentes
+  // Extraer también cualquier categoría presente en los productos existentes de forma estable
   if (existingProducts && Array.isArray(existingProducts)) {
     for (const p of existingProducts) {
       const meta = parseProductMeta(p.description);
-      if (meta.category && meta.category.trim() && !categoryMap.has(meta.category.toLowerCase())) {
+      const catTrimmed = (meta.category || "").trim();
+      const normKey = normalizeCategoryString(catTrimmed);
+      if (catTrimmed && !categoryMap.has(normKey)) {
+        const stableId = getCategoryId(catTrimmed);
         const newCat: CustomCategoryItem = {
-          id: `custom-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-          label: meta.category.trim(),
+          id: stableId,
+          label: catTrimmed,
           icon: meta.categoryIcon || "🏷️",
           color: "#1F7A4C",
           bgColor: "#DCF4D7",
           isCustom: true,
         };
-        categoryMap.set(meta.category.toLowerCase(), newCat);
+        categoryMap.set(normKey, newCat);
       }
     }
   }
@@ -328,7 +413,7 @@ export function getAllProductCategories(existingProducts?: { description?: strin
 export function createProductCategory(label: string, icon: string = "🏷️"): CustomCategoryItem {
   const trimmedLabel = label.trim();
   const existing = getStoredCustomCategories();
-  const id = `custom-${Date.now()}`;
+  const id = getCategoryId(trimmedLabel);
   const newCat: CustomCategoryItem = {
     id,
     label: trimmedLabel,
@@ -338,34 +423,39 @@ export function createProductCategory(label: string, icon: string = "🏷️"): 
     isCustom: true,
   };
 
-  // Evitar duplicados por nombre
-  const filtered = existing.filter((c) => c.label.toLowerCase() !== trimmedLabel.toLowerCase());
+  // Evitar duplicados por nombre normalizado
+  const normNew = normalizeCategoryString(trimmedLabel);
+  const filtered = existing.filter((c) => normalizeCategoryString(c.label) !== normNew);
   const updated = [...filtered, newCat];
   saveStoredCustomCategories(updated);
   return newCat;
 }
 
 /**
- * Renombra una categoría personalizada y actualiza en Supabase todos los productos que la utilicen
+ * Renombra una categoría personalizada y actualiza en Supabase todos los productos que la utilicen.
+ * Utiliza la API /api/categories/[id] y como fallback directo el cliente Supabase.
  */
 export async function updateProductCategory(
   oldLabel: string,
   newLabel: string,
   newIcon?: string,
-  supabase?: any
-): Promise<{ updatedCount: number }> {
+  supabaseClient?: any
+): Promise<{ updatedCount: number; success: boolean }> {
   const trimmedOld = oldLabel.trim();
   const trimmedNew = newLabel.trim();
   if (!trimmedNew || trimmedOld.toLowerCase() === trimmedNew.toLowerCase()) {
-    return { updatedCount: 0 };
+    return { updatedCount: 0, success: true };
   }
+
+  const normOld = normalizeCategoryString(trimmedOld);
 
   // 1. Actualizar en localStorage
   const stored = getStoredCustomCategories();
   const updatedStored = stored.map((cat) => {
-    if (cat.label.toLowerCase() === trimmedOld.toLowerCase()) {
+    if (normalizeCategoryString(cat.label) === normOld) {
       return {
         ...cat,
+        id: getCategoryId(trimmedNew),
         label: trimmedNew,
         icon: newIcon || cat.icon || "🏷️",
       };
@@ -374,18 +464,42 @@ export async function updateProductCategory(
   });
   saveStoredCustomCategories(updatedStored);
 
-  // 2. Actualizar productos en Supabase si se provee el cliente
   let updatedCount = 0;
-  if (supabase) {
+
+  // 2. Intentar actualización vía API Route si estamos en el cliente
+  if (typeof window !== "undefined") {
     try {
-      const { data: products } = await supabase
+      const res = await fetch(`/api/categories/${encodeURIComponent(trimmedOld)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          oldName: trimmedOld,
+          newName: trimmedNew,
+          icon: newIcon,
+        }),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        updatedCount = json.updatedProductsCount || 0;
+        return { updatedCount, success: true };
+      }
+    } catch (apiErr) {
+      console.warn("Fallo llamando a /api/categories/[id], utilizando cliente directo:", apiErr);
+    }
+  }
+
+  // 3. Fallback directo a Supabase (usando cliente inyectado o cliente del navegador)
+  const client = supabaseClient || (typeof window !== "undefined" ? createClient() : null);
+  if (client) {
+    try {
+      const { data: products } = await client
         .from("products")
         .select("id, description");
 
       if (products && products.length > 0) {
         for (const prod of products) {
           const meta = parseProductMeta(prod.description);
-          if (meta.category.toLowerCase() === trimmedOld.toLowerCase()) {
+          if (normalizeCategoryString(meta.category) === normOld) {
             const updatedDescription = serializeProductDescription({
               cleanDescription: meta.cleanDescription,
               category: trimmedNew,
@@ -393,7 +507,7 @@ export async function updateProductCategory(
               yieldValue: meta.yield,
             });
 
-            await supabase
+            await client
               .from("products")
               .update({ description: updatedDescription })
               .eq("id", prod.id);
@@ -404,39 +518,65 @@ export async function updateProductCategory(
       }
     } catch (err) {
       console.error("Error al actualizar productos tras renombrar categoría:", err);
+      return { updatedCount, success: false };
     }
   }
 
-  return { updatedCount };
+  return { updatedCount, success: true };
 }
 
 /**
- * Elimina una categoría personalizada y reasigna los productos que la utilicen a 'Otro' en Supabase
+ * Elimina una categoría personalizada y reasigna los productos que la utilicen a 'Otro' en Supabase.
+ * Utiliza la API /api/categories/[id] y como fallback directo el cliente Supabase.
  */
 export async function deleteProductCategory(
   label: string,
-  supabase?: any,
+  supabaseClient?: any,
   reassignTo: string = "Otro"
-): Promise<{ affectedCount: number }> {
+): Promise<{ affectedCount: number; success: boolean }> {
   const trimmed = label.trim();
+  const normLabel = normalizeCategoryString(trimmed);
 
   // 1. Eliminar de localStorage
   const stored = getStoredCustomCategories();
-  const updatedStored = stored.filter((c) => c.label.toLowerCase() !== trimmed.toLowerCase());
+  const updatedStored = stored.filter((c) => normalizeCategoryString(c.label) !== normLabel);
   saveStoredCustomCategories(updatedStored);
 
-  // 2. Reasignar productos en Supabase si se provee el cliente
   let affectedCount = 0;
-  if (supabase) {
+
+  // 2. Intentar eliminación vía API Route si estamos en el cliente
+  if (typeof window !== "undefined") {
     try {
-      const { data: products } = await supabase
+      const res = await fetch(`/api/categories/${encodeURIComponent(trimmed)}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: trimmed,
+          reassignTo,
+        }),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        affectedCount = json.affectedProductsCount || 0;
+        return { affectedCount, success: true };
+      }
+    } catch (apiErr) {
+      console.warn("Fallo llamando a DELETE /api/categories/[id], utilizando cliente directo:", apiErr);
+    }
+  }
+
+  // 3. Fallback directo a Supabase
+  const client = supabaseClient || (typeof window !== "undefined" ? createClient() : null);
+  if (client) {
+    try {
+      const { data: products } = await client
         .from("products")
         .select("id, description");
 
       if (products && products.length > 0) {
         for (const prod of products) {
           const meta = parseProductMeta(prod.description);
-          if (meta.category.toLowerCase() === trimmed.toLowerCase()) {
+          if (normalizeCategoryString(meta.category) === normLabel) {
             const updatedDescription = serializeProductDescription({
               cleanDescription: meta.cleanDescription,
               category: reassignTo,
@@ -444,7 +584,7 @@ export async function deleteProductCategory(
               yieldValue: meta.yield,
             });
 
-            await supabase
+            await client
               .from("products")
               .update({ description: updatedDescription })
               .eq("id", prod.id);
@@ -455,10 +595,11 @@ export async function deleteProductCategory(
       }
     } catch (err) {
       console.error("Error al reasignar productos tras eliminar categoría:", err);
+      return { affectedCount, success: false };
     }
   }
 
-  return { affectedCount };
+  return { affectedCount, success: true };
 }
 
 /**

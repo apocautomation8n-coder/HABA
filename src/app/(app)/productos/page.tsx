@@ -49,6 +49,9 @@ import {
   ModifiedSupplyInfo,
   isDuplicateProductName,
   checkProductNameExists,
+  isCategoryMatch,
+  getCategoryId,
+  normalizeCategoryString,
 } from "@/lib/products";
 import { matchesSearch } from "@/lib/search";
 import { SupplyModal, SupplyItem } from "@/components/SupplyModal";
@@ -1151,8 +1154,14 @@ export default function ProductosPage() {
 
       if (p.isCostOutdated) alerts++;
 
-      const catKey = p.meta.category.toLowerCase();
-      byCategory[catKey] = (byCategory[catKey] || 0) + 1;
+      const catLabel = p.meta.category || "Otro";
+      const catId = getCategoryId(catLabel);
+      const normLabel = normalizeCategoryString(catLabel);
+
+      byCategory[catId] = (byCategory[catId] || 0) + 1;
+      if (normLabel && normLabel !== catId) {
+        byCategory[normLabel] = (byCategory[normLabel] || 0) + 1;
+      }
     });
 
     return {
@@ -1167,13 +1176,15 @@ export default function ProductosPage() {
   // Categorías que tienen al menos un producto, o las predefinidas y personalizadas
   const activeCategories = useMemo(() => {
     const allCats = getAllProductCategories(products);
-    return allCats.map((cat) => ({
-      ...cat,
-      count:
-        counts.byCategory[cat.id.toLowerCase()] ||
-        counts.byCategory[cat.label.toLowerCase()] ||
-        0,
-    }));
+    return allCats.map((cat) => {
+      const catId = cat.id;
+      const normLabel = normalizeCategoryString(cat.label);
+      const count = counts.byCategory[catId] || counts.byCategory[normLabel] || 0;
+      return {
+        ...cat,
+        count,
+      };
+    });
   }, [counts.byCategory, products]);
 
   // Filtrado de productos
@@ -1188,13 +1199,9 @@ export default function ProductosPage() {
         if (!match) return false;
       }
 
-      // 2. Filtro por categoría
+      // 2. Filtro por categoría (normalizado, insensible a acentos, IDs deterministas vs Etiquetas)
       if (selectedCategory !== "all") {
-        const allCats = getAllProductCategories(products);
-        const selectedObj = allCats.find((c) => c.id === selectedCategory || c.label.toLowerCase() === selectedCategory.toLowerCase());
-        const matchCat =
-          p.meta.category.toLowerCase() === selectedCategory.toLowerCase() ||
-          (selectedObj && p.meta.category.toLowerCase() === selectedObj.label.toLowerCase());
+        const matchCat = isCategoryMatch(p.meta.category, selectedCategory, activeCategories);
         if (!matchCat) return false;
       }
 
@@ -1207,7 +1214,7 @@ export default function ProductosPage() {
 
       return true;
     });
-  }, [productsWithMeta, search, selectedCategory, statusFilter, onlyAlerts]);
+  }, [productsWithMeta, search, selectedCategory, statusFilter, onlyAlerts, activeCategories]);
 
   const hasActiveFilters =
     search.trim() !== "" ||

@@ -59,6 +59,7 @@ export function CategorySelector({
   // Estado para confirmar eliminación
   const [deletingCat, setDeletingCat] = useState<CustomCategoryItem | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [toastMsg, setToastMsg] = useState<{ text: string; type: "success" | "error" } | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -127,6 +128,8 @@ export function CategorySelector({
     setNewCatName("");
     setIsCreating(false);
     setIsOpen(false);
+    setToastMsg({ text: `Categoría "${trimmed}" creada exitosamente`, type: "success" });
+    setTimeout(() => setToastMsg(null), 3500);
     onCategoriesChanged?.();
   };
 
@@ -140,7 +143,7 @@ export function CategorySelector({
 
     setIsProcessing(true);
     try {
-      await updateProductCategory(cat.label, trimmed, editIcon || cat.icon, supabase);
+      const res = await updateProductCategory(cat.label, trimmed, editIcon || cat.icon, supabase);
       loadCategories();
 
       // Si la categoría editada era la seleccionada, actualizar selección
@@ -149,6 +152,18 @@ export function CategorySelector({
       }
 
       setEditingCatId(null);
+      if (res.success) {
+        setToastMsg({
+          text: `Categoría renombrada a "${trimmed}" (${res.updatedCount} productos actualizados)`,
+          type: "success",
+        });
+      } else {
+        setToastMsg({
+          text: `Error al actualizar categoría en base de datos`,
+          type: "error",
+        });
+      }
+      setTimeout(() => setToastMsg(null), 4000);
       onCategoriesChanged?.();
     } finally {
       setIsProcessing(false);
@@ -161,15 +176,28 @@ export function CategorySelector({
 
     setIsProcessing(true);
     try {
-      await deleteProductCategory(deletingCat.label, supabase, "Otro");
+      const labelToDelete = deletingCat.label;
+      const res = await deleteProductCategory(labelToDelete, supabase, "Otro");
       loadCategories();
 
       // Si la categoría eliminada era la que estaba seleccionada, cambiar a "Otro"
-      if (value.toLowerCase() === deletingCat.label.toLowerCase()) {
+      if (value.toLowerCase() === labelToDelete.toLowerCase()) {
         onChange("Otro");
       }
 
       setDeletingCat(null);
+      if (res.success) {
+        setToastMsg({
+          text: `Categoría "${labelToDelete}" eliminada (${res.affectedCount} productos reasignados a "Otro")`,
+          type: "success",
+        });
+      } else {
+        setToastMsg({
+          text: `Error al eliminar categoría en base de datos`,
+          type: "error",
+        });
+      }
+      setTimeout(() => setToastMsg(null), 4000);
       onCategoriesChanged?.();
     } finally {
       setIsProcessing(false);
@@ -215,9 +243,36 @@ export function CategorySelector({
 
       {/* Menú Desplegable Enriquecido */}
       {isOpen && (
-        <div className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-white rounded-2xl border border-neutral-200/90 shadow-xl overflow-hidden animate-in fade-in-50 zoom-in-95 duration-150">
+        <div className="absolute left-0 right-0 top-full mt-1.5 z-[70] bg-white rounded-2xl border border-neutral-200/90 shadow-2xl overflow-hidden animate-in fade-in-50 zoom-in-95 duration-150 max-h-[75vh] flex flex-col">
+          {/* Feedback Toast de Acción */}
+          {toastMsg && (
+            <div
+              className={`p-2 px-3 text-xs font-semibold flex items-center justify-between border-b animate-in fade-in duration-150 ${
+                toastMsg.type === "success"
+                  ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                  : "bg-rose-50 text-rose-800 border-rose-200"
+              }`}
+            >
+              <div className="flex items-center gap-1.5 min-w-0">
+                {toastMsg.type === "success" ? (
+                  <Check className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+                ) : (
+                  <AlertTriangle className="w-3.5 h-3.5 text-rose-600 flex-shrink-0" />
+                )}
+                <span className="truncate">{toastMsg.text}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setToastMsg(null)}
+                className="text-neutral-400 hover:text-neutral-600 ml-2 text-xs"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
           {/* Header con Buscador */}
-          <div className="p-2 border-b border-neutral-100 bg-neutral-50/60">
+          <div className="p-2 border-b border-neutral-100 bg-neutral-50/60 flex-shrink-0">
             <div className="relative flex items-center">
               <Search className="w-3.5 h-3.5 text-neutral-400 absolute left-2.5 pointer-events-none" />
               <input
@@ -355,8 +410,8 @@ export function CategorySelector({
             </div>
           )}
 
-          {/* Lista de Categorías */}
-          <div className="max-h-56 overflow-y-auto p-1.5 space-y-0.5">
+          {/* Lista de Categorías con scroll móvil optimizado y espaciado inferior seguro */}
+          <div className="flex-1 max-h-[min(22rem,50vh)] overflow-y-auto p-1.5 pb-10 sm:pb-3 space-y-1 touch-pan-y overscroll-contain pb-[max(env(safe-area-inset-bottom,2.5rem),2.5rem)] sm:pb-2">
             {filteredCategories.length === 0 ? (
               <div className="p-4 text-center text-xs text-neutral-400">
                 No se encontraron categorías.
