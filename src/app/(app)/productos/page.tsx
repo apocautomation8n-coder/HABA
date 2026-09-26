@@ -1,12 +1,13 @@
 "use client";
 
-import React, { useEffect, useState, useMemo, useCallback } from "react";
+import React, { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import {
   ShoppingBag,
   Plus,
   Search,
+  ArrowUpDown,
   Sparkles,
   Trash2,
   Tag,
@@ -69,6 +70,23 @@ interface ProductPrice {
   profit_margin_percent: number;
   selling_price: number;
 }
+
+type ProductSortOption =
+  | "recent"
+  | "oldest"
+  | "alpha-asc"
+  | "alpha-desc"
+  | "price-desc"
+  | "price-asc";
+
+const SORT_OPTIONS: { id: ProductSortOption; label: string; shortLabel: string }[] = [
+  { id: "recent", label: "Más recientes primero", shortLabel: "Recientes" },
+  { id: "oldest", label: "Más antiguos primero", shortLabel: "Antiguos" },
+  { id: "alpha-asc", label: "Nombre: A → Z", shortLabel: "A → Z" },
+  { id: "alpha-desc", label: "Nombre: Z → A", shortLabel: "Z → A" },
+  { id: "price-desc", label: "Precio: Mayor a menor", shortLabel: "$ Mayor" },
+  { id: "price-asc", label: "Precio: Menor a mayor", shortLabel: "$ Menor" },
+];
 
 export interface ProductSupplyItem {
   id: string;
@@ -172,6 +190,30 @@ export default function ProductosPage() {
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
   const [onlyAlerts, setOnlyAlerts] = useState<boolean>(false);
+
+  // Ordenamiento compacto
+  const [sortBy, setSortBy] = useState<ProductSortOption>("recent");
+  const [isSortOpen, setIsSortOpen] = useState(false);
+  const sortRef = useRef<HTMLDivElement>(null);
+
+  // Cerrar dropdown de ordenamiento al hacer clic fuera o presionar Escape
+  useEffect(() => {
+    if (!isSortOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (sortRef.current && !sortRef.current.contains(e.target as Node)) {
+        setIsSortOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setIsSortOpen(false);
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isSortOpen]);
 
   // Acordeón desplegado
   const [expandedProductId, setExpandedProductId] = useState<string | null>(null);
@@ -1230,9 +1272,25 @@ export default function ProductosPage() {
     });
   }, [counts.byCategory, products]);
 
-  // Filtrado de productos
+  // Helper para obtener el precio de referencia para ordenamiento (Por Menor / Minorista, o primer precio o costo)
+  const getProductPriceValue = useCallback((p: any): number => {
+    if (p.product_prices && p.product_prices.length > 0) {
+      const retail = p.product_prices.find((pr: any) => {
+        const name = (pr.channel_name || "").toLowerCase();
+        return name.includes("menor") || name.includes("minorista");
+      });
+      if (retail && typeof retail.selling_price === "number") {
+        return retail.selling_price;
+      }
+      const firstPrice = p.product_prices.find((pr: any) => typeof pr.selling_price === "number");
+      if (firstPrice) return firstPrice.selling_price;
+    }
+    return Number(p.total_cost) || Number(p.direct_cost) || 0;
+  }, []);
+
+  // Filtrado y Ordenamiento de productos reactivo en cliente
   const filteredProducts = useMemo(() => {
-    return productsWithMeta.filter((p) => {
+    const list = productsWithMeta.filter((p) => {
       // 1. Búsqueda por texto (nombre, categoría, descripción limpia) con normalización de acentos y mayúsculas
       if (search.trim()) {
         const match = matchesSearch(
@@ -1257,19 +1315,50 @@ export default function ProductosPage() {
 
       return true;
     });
-  }, [productsWithMeta, search, selectedCategory, statusFilter, onlyAlerts, activeCategories]);
+
+    return list.sort((a, b) => {
+      switch (sortBy) {
+        case "recent": {
+          const tA = new Date(a.created_at || 0).getTime();
+          const tB = new Date(b.created_at || 0).getTime();
+          return tB - tA;
+        }
+        case "oldest": {
+          const tA = new Date(a.created_at || 0).getTime();
+          const tB = new Date(b.created_at || 0).getTime();
+          return tA - tB;
+        }
+        case "alpha-asc": {
+          return a.name.localeCompare(b.name, "es", { sensitivity: "base" });
+        }
+        case "alpha-desc": {
+          return b.name.localeCompare(a.name, "es", { sensitivity: "base" });
+        }
+        case "price-desc": {
+          return getProductPriceValue(b) - getProductPriceValue(a);
+        }
+        case "price-asc": {
+          return getProductPriceValue(a) - getProductPriceValue(b);
+        }
+        default:
+          return 0;
+      }
+    });
+  }, [productsWithMeta, search, selectedCategory, statusFilter, onlyAlerts, activeCategories, sortBy, getProductPriceValue]);
 
   const hasActiveFilters =
     search.trim() !== "" ||
     selectedCategory !== "all" ||
     statusFilter !== "all" ||
-    onlyAlerts;
+    onlyAlerts ||
+    sortBy !== "recent";
 
   const resetFilters = () => {
     setSearch("");
     setSelectedCategory("all");
     setStatusFilter("all");
     setOnlyAlerts(false);
+    setSortBy("recent");
   };
 
   return (
@@ -1336,28 +1425,98 @@ export default function ProductosPage() {
         </button>
       </div>
 
-      {/* Buscador reactivo */}
-      <div className="relative">
-        <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-neutral-400">
-          <Search className="w-4 h-4" />
+      {/* Buscador reactivo + Control Compacto de Ordenamiento */}
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1 min-w-0">
+          <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-neutral-400">
+            <Search className="w-4 h-4" />
+          </div>
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar por nombre, categoría o detalle..."
+            className="w-full pl-10 pr-10 py-2.5 text-xs bg-white border border-neutral-200 rounded-2xl focus:border-[#3BB578] focus:ring-2 focus:ring-[#DCF4D7] outline-none shadow-sm transition"
+          />
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch("")}
+              className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-neutral-400 hover:text-neutral-600 transition cursor-pointer"
+              title="Borrar búsqueda"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
         </div>
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Buscar por nombre, categoría o detalle..."
-          className="w-full pl-10 pr-10 py-2.5 text-xs bg-white border border-neutral-200 rounded-2xl focus:border-[#3BB578] focus:ring-2 focus:ring-[#DCF4D7] outline-none shadow-sm transition"
-        />
-        {search && (
+
+        {/* Dropdown Compacto de Ordenamiento */}
+        <div className="relative flex-shrink-0" ref={sortRef}>
           <button
             type="button"
-            onClick={() => setSearch("")}
-            className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-neutral-400 hover:text-neutral-600 transition"
-            title="Borrar búsqueda"
+            onClick={() => setIsSortOpen((prev) => !prev)}
+            className={`h-[42px] px-3 rounded-2xl border text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer active:scale-95 ${
+              sortBy !== "recent"
+                ? "bg-[#DCF4D7] text-[#1F7A4C] border-[#3BB578]"
+                : "bg-white text-neutral-700 border-neutral-200 hover:border-[#3BB578] hover:bg-neutral-50"
+            }`}
+            title="Ordenar productos"
+            aria-expanded={isSortOpen}
           >
-            <X className="w-4 h-4" />
+            <ArrowUpDown className="w-3.5 h-3.5 text-current flex-shrink-0" />
+            <span className="hidden sm:inline">
+              {SORT_OPTIONS.find((o) => o.id === sortBy)?.shortLabel || "Ordenar"}
+            </span>
+            <span className="inline sm:hidden">
+              {SORT_OPTIONS.find((o) => o.id === sortBy)?.shortLabel || "Orden"}
+            </span>
+            <ChevronDown className={`w-3 h-3 text-current transition-transform duration-200 ${isSortOpen ? "rotate-180" : ""}`} />
           </button>
-        )}
+
+          {/* Menú desplegable flotante */}
+          {isSortOpen && (
+            <div className="absolute right-0 mt-1.5 w-52 sm:w-56 bg-white rounded-2xl border border-neutral-200 shadow-xl py-1.5 z-40 animate-in fade-in zoom-in-95 duration-150">
+              <div className="px-3 py-1.5 border-b border-neutral-100 flex items-center justify-between text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
+                <span>Ordenar por</span>
+                {sortBy !== "recent" && (
+                  <button
+                    onClick={() => {
+                      setSortBy("recent");
+                      setIsSortOpen(false);
+                    }}
+                    className="text-[#1F7A4C] hover:underline normal-case font-semibold cursor-pointer"
+                  >
+                    Restablecer
+                  </button>
+                )}
+              </div>
+              <div className="p-1 space-y-0.5">
+                {SORT_OPTIONS.map((opt) => {
+                  const isSelected = sortBy === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      onClick={() => {
+                        setSortBy(opt.id);
+                        setIsSortOpen(false);
+                      }}
+                      className={`w-full text-left px-3 py-2 rounded-xl text-xs flex items-center justify-between transition cursor-pointer ${
+                        isSelected
+                          ? "bg-[#DCF4D7] text-[#1F7A4C] font-bold"
+                          : "text-neutral-700 hover:bg-neutral-50 hover:text-neutral-900"
+                      }`}
+                    >
+                      <span className="truncate">{opt.label}</span>
+                      {isSelected && (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-[#1F7A4C] flex-shrink-0 ml-1.5" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Filtros de Categoría (Scroll horizontal de chips) */}
@@ -1414,7 +1573,7 @@ export default function ProductosPage() {
         })}
       </div>
 
-      {/* Barra de Filtros Secundarios: Estado (Todos / Activos / Inactivos) + Alerta */}
+      {/* Barra de Filtros Secundarios: Estado (Todos / Activos / Inactivos) */}
       <div className="flex items-center justify-between gap-2 flex-wrap text-xs">
         {/* Píldoras de estado */}
         <div className="p-1 bg-neutral-100 rounded-2xl flex text-xs font-semibold">
@@ -1452,42 +1611,17 @@ export default function ProductosPage() {
           </button>
         </div>
 
-        {/* Chip toggle de alertas y botón de limpiar */}
-        <div className="flex items-center gap-1.5">
+        {/* Botón de limpiar filtros activos si corresponde */}
+        {hasActiveFilters && (
           <button
-            onClick={() => setOnlyAlerts(!onlyAlerts)}
-            className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition flex items-center gap-1 border ${
-              onlyAlerts
-                ? "bg-amber-500 text-white border-amber-600 shadow-sm"
-                : counts.alerts > 0
-                ? "bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100"
-                : "bg-white text-neutral-400 border-neutral-200"
-            }`}
-            title="Filtrar solo productos que requieran revisión de costo"
+            onClick={resetFilters}
+            className="flex items-center gap-1.5 px-3 py-1 text-xs font-semibold text-neutral-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition cursor-pointer"
+            title="Limpiar todos los filtros"
           >
-            <AlertTriangle className="w-3 h-3" />
-            <span>Alerta Costo</span>
-            {counts.alerts > 0 && (
-              <span
-                className={`text-[9px] px-1 rounded-full font-black ${
-                  onlyAlerts ? "bg-white text-amber-800" : "bg-amber-200 text-amber-900"
-                }`}
-              >
-                {counts.alerts}
-              </span>
-            )}
+            <X className="w-3.5 h-3.5" />
+            <span>Limpiar filtros</span>
           </button>
-
-          {hasActiveFilters && (
-            <button
-              onClick={resetFilters}
-              className="p-1 text-neutral-400 hover:text-rose-600 rounded-lg transition"
-              title="Limpiar todos los filtros"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          )}
-        </div>
+        )}
       </div>
 
       {/* Tip Didáctico HABA (Punto I) */}
@@ -1569,14 +1703,15 @@ export default function ProductosPage() {
                 }}
                 aria-expanded={isExpanded}
               >
-                {/* Cabecera de la tarjeta: Título a la izquierda, botones de acción a la derecha */}
-                <div className="flex items-start justify-between gap-2">
-                  {/* Información Principal y Badges */}
-                  <div className="flex-1 min-w-0 pr-1">
-                    <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
+                {/* Cabecera de la tarjeta estructurada para máximo aprovechamiento del ancho */}
+                <div className="w-full flex flex-col space-y-2">
+                  {/* Fila 1: Badges de contexto a la izquierda, Acciones compactas a la derecha */}
+                  <div className="flex items-center justify-between gap-2 min-w-0">
+                    {/* Badges de Categoría, Estado y Alerta */}
+                    <div className="flex items-center gap-1.5 flex-wrap min-w-0 flex-1">
                       {/* Badge 1: Categoría */}
                       <span
-                        className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border shadow-2xs"
+                        className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border shadow-2xs flex-shrink-0"
                         style={{
                           backgroundColor: product.badge.bgColor,
                           color: product.badge.color,
@@ -1584,7 +1719,7 @@ export default function ProductosPage() {
                         }}
                       >
                         <span>{product.badge.icon}</span>
-                        <span className="truncate max-w-[120px]">{product.badge.label}</span>
+                        <span className="truncate max-w-[130px]">{product.badge.label}</span>
                       </span>
 
                       {/* Badge 2: Estado Activo / Inactivo (Interactivo con toggle) */}
@@ -1594,7 +1729,7 @@ export default function ProductosPage() {
                           handleToggleStatus(product, isActive);
                         }}
                         disabled={togglingId === product.id}
-                        className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border transition active:scale-95 cursor-pointer ${
+                        className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border transition active:scale-95 cursor-pointer flex-shrink-0 ${
                           isActive
                             ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
                             : "bg-neutral-100 text-neutral-600 border-neutral-300 hover:bg-neutral-200"
@@ -1623,16 +1758,106 @@ export default function ProductosPage() {
 
                       {/* Etiqueta 3: Alerta de Costo Desactualizado */}
                       {product.isCostOutdated && (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-300 animate-pulse">
+                        <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-300 animate-pulse flex-shrink-0">
                           <AlertTriangle className="w-3 h-3 text-amber-600" />
                           <span>Revisar Precios</span>
                         </span>
                       )}
                     </div>
 
-                    {/* Nombre del producto */}
+                    {/* Acciones de la Tarjeta alineadas a la derecha */}
+                    <div className="flex items-center gap-0.5 flex-shrink-0">
+                      {/* Botón de alternar estado rápido */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleToggleStatus(product, isActive);
+                        }}
+                        disabled={togglingId === product.id}
+                        className={`p-1.5 rounded-xl transition cursor-pointer ${
+                          isActive
+                            ? "text-emerald-600 hover:bg-emerald-50"
+                            : "text-neutral-400 hover:text-emerald-600 hover:bg-neutral-100"
+                        }`}
+                        title={isActive ? "Pausar producto" : "Activar producto"}
+                      >
+                        <Power className="w-4 h-4" />
+                      </button>
+
+                      {/* Botón de duplicar producto */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDuplicate(product);
+                        }}
+                        disabled={duplicatingId === product.id}
+                        className="p-1.5 text-neutral-400 hover:text-[#1F7A4C] hover:bg-[#DCF4D7] rounded-xl transition disabled:opacity-50 cursor-pointer"
+                        title="Duplicar producto (receta y precios)"
+                      >
+                        {duplicatingId === product.id ? (
+                          <Loader2 className="w-4 h-4 animate-spin text-[#3BB578]" />
+                        ) : (
+                          <Copy className="w-4 h-4" />
+                        )}
+                      </button>
+
+                      {/* Botón de editar producto */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenEdit(product);
+                        }}
+                        className="p-1.5 text-neutral-400 hover:text-[#1F7A4C] hover:bg-[#DCF4D7] rounded-xl transition cursor-pointer"
+                        title="Editar detalles del producto"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+
+                      {/* Botón de crear presupuesto desde producto */}
+                      <Link
+                        href={`/presupuestos/nuevo?productId=${product.id}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="p-1.5 text-neutral-400 hover:text-[#1F7A4C] hover:bg-[#DCF4D7] rounded-xl transition"
+                        title="Crear presupuesto con este producto"
+                      >
+                        <Receipt className="w-4 h-4" />
+                      </Link>
+
+                      {/* Botón de eliminar */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDelete(product);
+                        }}
+                        className="p-1.5 text-neutral-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition cursor-pointer"
+                        title="Eliminar producto"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+
+                      {/* Botón de desplegar acordeón */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setExpandedProductId(isExpanded ? null : product.id);
+                        }}
+                        className="p-1.5 text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 rounded-xl transition cursor-pointer"
+                        title={isExpanded ? "Ocultar detalles" : "Ver detalles y componentes"}
+                        aria-label={isExpanded ? "Ocultar detalles" : "Ver detalles"}
+                      >
+                        <ChevronDown
+                          className={`w-4 h-4 transition-transform duration-200 ${
+                            isExpanded ? "rotate-180 text-[#1F7A4C]" : ""
+                          }`}
+                        />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Fila 2: Nombre del Producto expandiéndose a todo el ancho disponible */}
+                  <div className="w-full min-w-0">
                     <h3
-                      className={`text-sm font-bold break-words leading-tight ${
+                      className={`text-sm sm:text-base font-bold break-words line-clamp-2 leading-snug w-full ${
                         isActive ? "text-neutral-800" : "text-neutral-500 line-through decoration-neutral-300"
                       }`}
                     >
@@ -1641,98 +1866,10 @@ export default function ProductosPage() {
 
                     {/* Descripción limpia si existe */}
                     {product.meta.cleanDescription && (
-                      <p className="text-[11px] text-neutral-500 line-clamp-2 mt-1 leading-snug">
+                      <p className="text-[11px] text-neutral-500 line-clamp-2 mt-1 leading-snug break-words">
                         {product.meta.cleanDescription}
                       </p>
                     )}
-                  </div>
-
-                  {/* Acciones de la Tarjeta */}
-                  <div className="flex items-center gap-0.5">
-                    {/* Botón de alternar estado rápido */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleToggleStatus(product, isActive);
-                      }}
-                      disabled={togglingId === product.id}
-                      className={`p-1.5 rounded-xl transition cursor-pointer ${
-                        isActive
-                          ? "text-emerald-600 hover:bg-emerald-50"
-                          : "text-neutral-400 hover:text-emerald-600 hover:bg-neutral-100"
-                      }`}
-                      title={isActive ? "Pausar producto" : "Activar producto"}
-                    >
-                      <Power className="w-4 h-4" />
-                    </button>
-
-                    {/* Botón de duplicar producto */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDuplicate(product);
-                      }}
-                      disabled={duplicatingId === product.id}
-                      className="p-1.5 text-neutral-400 hover:text-[#1F7A4C] hover:bg-[#DCF4D7] rounded-xl transition disabled:opacity-50 cursor-pointer"
-                      title="Duplicar producto (receta y precios)"
-                    >
-                      {duplicatingId === product.id ? (
-                        <Loader2 className="w-4 h-4 animate-spin text-[#3BB578]" />
-                      ) : (
-                        <Copy className="w-4 h-4" />
-                      )}
-                    </button>
-
-                    {/* Botón de editar producto (Punto H) */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleOpenEdit(product);
-                      }}
-                      className="p-1.5 text-neutral-400 hover:text-[#1F7A4C] hover:bg-[#DCF4D7] rounded-xl transition cursor-pointer"
-                      title="Editar detalles del producto"
-                    >
-                      <Pencil className="w-4 h-4" />
-                    </button>
-
-                    {/* Botón de crear presupuesto desde producto */}
-                    <Link
-                      href={`/presupuestos/nuevo?productId=${product.id}`}
-                      onClick={(e) => e.stopPropagation()}
-                      className="p-1.5 text-neutral-400 hover:text-[#1F7A4C] hover:bg-[#DCF4D7] rounded-xl transition"
-                      title="Crear presupuesto con este producto"
-                    >
-                      <Receipt className="w-4 h-4" />
-                    </Link>
-
-                    {/* Botón de eliminar */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDelete(product);
-                      }}
-                      className="p-1.5 text-neutral-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition cursor-pointer"
-                      title="Eliminar producto"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-
-                    {/* Botón de desplegar acordeón */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setExpandedProductId(isExpanded ? null : product.id);
-                      }}
-                      className="p-1.5 text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 rounded-xl transition cursor-pointer"
-                      title={isExpanded ? "Ocultar detalles" : "Ver detalles y componentes"}
-                      aria-label={isExpanded ? "Ocultar detalles" : "Ver detalles"}
-                    >
-                      <ChevronDown
-                        className={`w-4 h-4 transition-transform duration-200 ${
-                          isExpanded ? "rotate-180 text-[#1F7A4C]" : ""
-                        }`}
-                      />
-                    </button>
                   </div>
                 </div>
 
