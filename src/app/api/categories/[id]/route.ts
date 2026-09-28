@@ -1,6 +1,13 @@
 import { NextResponse } from "next/server";
 import { createClient as createServerClient } from "@/lib/supabase/server";
-import { parseProductMeta, serializeProductDescription } from "@/lib/products";
+import {
+  parseProductMeta,
+  serializeProductDescription,
+  normalizeCategoryString,
+  getCategoryId,
+} from "@/lib/products";
+
+export const dynamic = "force-dynamic";
 
 export async function PATCH(
   request: Request,
@@ -33,6 +40,7 @@ export async function PATCH(
 
     // Target name to search: if oldName provided use it, otherwise use decoded id
     const targetOldName = trimmedOld || decodeURIComponent(id).trim();
+    const targetOldId = decodeURIComponent(id).trim();
 
     // Actualizar todos los productos del usuario que tengan esta categoría
     const { data: userProducts, error: fetchErr } = await supabase
@@ -46,11 +54,22 @@ export async function PATCH(
     }
 
     let updatedCount = 0;
-    const normTarget = targetOldName.toLowerCase();
+    const normTargetName = normalizeCategoryString(targetOldName);
+    const normTargetId = normalizeCategoryString(targetOldId);
+    const expectedOldId = getCategoryId(targetOldName);
 
     for (const prod of userProducts || []) {
       const meta = parseProductMeta(prod.description);
-      if (meta.category.trim().toLowerCase() === normTarget) {
+      const metaNorm = normalizeCategoryString(meta.category);
+      const metaId = getCategoryId(meta.category);
+
+      const isMatch =
+        metaNorm === normTargetName ||
+        metaNorm === normTargetId ||
+        metaId === normTargetId ||
+        metaId === expectedOldId;
+
+      if (isMatch) {
         const updatedDescription = serializeProductDescription({
           cleanDescription: meta.cleanDescription,
           category: trimmedNew,
@@ -74,7 +93,7 @@ export async function PATCH(
       message: `Categoría renombrada a "${trimmedNew}" exitosamente`,
       updatedProductsCount: updatedCount,
       category: {
-        id,
+        id: getCategoryId(trimmedNew),
         label: trimmedNew,
         icon: icon || "🏷️",
       },
@@ -105,6 +124,7 @@ export async function DELETE(
     }
 
     let targetName = decodeURIComponent(id).trim();
+    let targetId = decodeURIComponent(id).trim();
     let reassignTo = "Otro";
 
     // Intentar leer body opcional si se envía
@@ -131,11 +151,22 @@ export async function DELETE(
     }
 
     let affectedCount = 0;
-    const normTarget = targetName.toLowerCase();
+    const normTargetName = normalizeCategoryString(targetName);
+    const normTargetId = normalizeCategoryString(targetId);
+    const expectedTargetId = getCategoryId(targetName);
 
     for (const prod of userProducts || []) {
       const meta = parseProductMeta(prod.description);
-      if (meta.category.trim().toLowerCase() === normTarget) {
+      const metaNorm = normalizeCategoryString(meta.category);
+      const metaId = getCategoryId(meta.category);
+
+      const isMatch =
+        metaNorm === normTargetName ||
+        metaNorm === normTargetId ||
+        metaId === normTargetId ||
+        metaId === expectedTargetId;
+
+      if (isMatch) {
         const updatedDescription = serializeProductDescription({
           cleanDescription: meta.cleanDescription,
           category: reassignTo,

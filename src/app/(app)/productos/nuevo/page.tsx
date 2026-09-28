@@ -776,6 +776,19 @@ export default function NuevoProductoPage() {
               existingProducts={availableProducts}
               supabase={supabase}
               error={step1Errors.category}
+              onCategoriesChanged={async () => {
+                try {
+                  const { data } = await supabase
+                    .from("products")
+                    .select("id, name, description, direct_cost, total_cost")
+                    .order("name", { ascending: true });
+                  if (data) {
+                    setAvailableProducts(data);
+                  }
+                } catch (err) {
+                  console.error("Error al recargar productos tras cambio de categoría:", err);
+                }
+              }}
             />
 
             {step1Errors.category && (

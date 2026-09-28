@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { PRODUCT_CATEGORIES, parseProductMeta } from "@/lib/products";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   try {
     const supabase = await createServerClient();

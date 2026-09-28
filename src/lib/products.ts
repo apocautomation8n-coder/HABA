@@ -24,6 +24,134 @@ export const PRODUCT_CATEGORIES: ProductCategory[] = [
   { id: "otro", label: "Otro", icon: "✨", color: "#374151", bgColor: "#F3F4F6" },
 ];
 
+export interface CustomCategoryItem {
+  id: string;
+  label: string;
+  icon: string;
+  color?: string;
+  bgColor?: string;
+  isCustom?: boolean;
+}
+
+export const CUSTOM_CATEGORIES_STORAGE_KEY = "haba_custom_product_categories";
+export const DELETED_CATEGORIES_STORAGE_KEY = "haba_deleted_product_categories";
+
+/**
+ * Normaliza una cadena de categoría quitando acentos, mayúsculas y espacios sobrantes.
+ */
+export function normalizeCategoryString(str?: string | null): string {
+  if (!str) return "";
+  return str
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+/**
+ * Genera un identificador determinista y estable para cualquier categoría (preset o personalizada).
+ */
+export function getCategoryId(label: string): string {
+  const norm = normalizeCategoryString(label);
+  const preset = PRODUCT_CATEGORIES.find(
+    (c) => normalizeCategoryString(c.id) === norm || normalizeCategoryString(c.label) === norm
+  );
+  if (preset) return preset.id;
+  const slug = norm.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return `custom-${slug || "cat"}`;
+}
+
+/**
+ * Obtiene las categorías personalizadas guardadas en localStorage
+ */
+export function getStoredCustomCategories(): CustomCategoryItem[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(CUSTOM_CATEGORIES_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Guarda las categorías personalizadas en localStorage
+ */
+export function saveStoredCustomCategories(cats: CustomCategoryItem[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(CUSTOM_CATEGORIES_STORAGE_KEY, JSON.stringify(cats));
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Obtiene la lista de nombres o IDs de categorías eliminadas por el usuario
+ */
+export function getDeletedCategories(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(DELETED_CATEGORIES_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Guarda la lista de categorías eliminadas en localStorage
+ */
+export function saveDeletedCategories(items: string[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(DELETED_CATEGORIES_STORAGE_KEY, JSON.stringify(items));
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Marca una categoría como eliminada (por nombre o id)
+ */
+export function markCategoryAsDeleted(labelOrId: string): void {
+  const norm = normalizeCategoryString(labelOrId);
+  if (!norm || norm === "otro") return;
+  const current = getDeletedCategories();
+  const normList = current.map(normalizeCategoryString);
+  if (!normList.includes(norm)) {
+    saveDeletedCategories([...current, labelOrId.trim()]);
+  }
+}
+
+/**
+ * Desmarca una categoría como eliminada si el usuario la vuelve a crear o renombrar
+ */
+export function unmarkCategoryAsDeleted(labelOrId: string): void {
+  const norm = normalizeCategoryString(labelOrId);
+  if (!norm) return;
+  const current = getDeletedCategories();
+  saveDeletedCategories(current.filter((c) => normalizeCategoryString(c) !== norm));
+}
+
+/**
+ * Verifica si una categoría ha sido eliminada por el usuario
+ */
+export function isCategoryDeleted(labelOrId?: string | null): boolean {
+  if (!labelOrId || typeof window === "undefined") return false;
+  const norm = normalizeCategoryString(labelOrId);
+  if (!norm || norm === "otro") return false;
+  const deleted = getDeletedCategories();
+  const deletedSet = new Set(deleted.map(normalizeCategoryString));
+  if (deletedSet.has(norm)) return true;
+  const id = getCategoryId(labelOrId);
+  return deletedSet.has(normalizeCategoryString(id));
+}
+
 export interface ParsedProductMeta {
   category: string;
   categoryIcon: string;
@@ -56,16 +184,32 @@ export function parseProductMeta(rawDescription?: string | null): ParsedProductM
   const catMatch = text.match(/\[Categoría:\s*([^\]]+)\]/i);
   if (catMatch) {
     const rawCat = catMatch[1].trim();
-    const matchedPreset = PRODUCT_CATEGORIES.find(
-      (c) => c.id.toLowerCase() === rawCat.toLowerCase() || c.label.toLowerCase() === rawCat.toLowerCase()
-    );
-
-    if (matchedPreset) {
-      categoryLabel = matchedPreset.label;
-      categoryIcon = matchedPreset.icon;
-    } else {
-      categoryLabel = rawCat;
+    if (isCategoryDeleted(rawCat)) {
+      categoryLabel = "Otro";
       categoryIcon = "✨";
+    } else {
+      const matchedPreset = PRODUCT_CATEGORIES.find(
+        (c) => c.id.toLowerCase() === rawCat.toLowerCase() || c.label.toLowerCase() === rawCat.toLowerCase()
+      );
+
+      if (matchedPreset) {
+        categoryLabel = matchedPreset.label;
+        categoryIcon = matchedPreset.icon;
+      } else {
+        const stored = getStoredCustomCategories();
+        const matchedStored = stored.find(
+          (c) =>
+            normalizeCategoryString(c.label) === normalizeCategoryString(rawCat) ||
+            normalizeCategoryString(c.id) === normalizeCategoryString(rawCat)
+        );
+        if (matchedStored) {
+          categoryLabel = matchedStored.label;
+          categoryIcon = matchedStored.icon || "🏷️";
+        } else {
+          categoryLabel = rawCat;
+          categoryIcon = "✨";
+        }
+      }
     }
     text = text.replace(catMatch[0], "");
   }
@@ -240,69 +384,6 @@ export function getCategoryBadge(categoryStr?: string) {
   };
 }
 
-export interface CustomCategoryItem {
-  id: string;
-  label: string;
-  icon: string;
-  color?: string;
-  bgColor?: string;
-  isCustom?: boolean;
-}
-
-const CUSTOM_CATEGORIES_STORAGE_KEY = "haba_custom_product_categories";
-
-/**
- * Obtiene las categorías personalizadas guardadas en localStorage
- */
-export function getStoredCustomCategories(): CustomCategoryItem[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = localStorage.getItem(CUSTOM_CATEGORIES_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-/**
- * Guarda las categorías personalizadas en localStorage
- */
-export function saveStoredCustomCategories(cats: CustomCategoryItem[]): void {
-  if (typeof window === "undefined") return;
-  try {
-    localStorage.setItem(CUSTOM_CATEGORIES_STORAGE_KEY, JSON.stringify(cats));
-  } catch {
-    // ignore
-  }
-}
-
-/**
- * Normaliza una cadena de categoría quitando acentos, mayúsculas y espacios sobrantes.
- */
-export function normalizeCategoryString(str?: string | null): string {
-  if (!str) return "";
-  return str
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
-}
-
-/**
- * Genera un identificador determinista y estable para cualquier categoría (preset o personalizada).
- */
-export function getCategoryId(label: string): string {
-  const norm = normalizeCategoryString(label);
-  const preset = PRODUCT_CATEGORIES.find(
-    (c) => normalizeCategoryString(c.id) === norm || normalizeCategoryString(c.label) === norm
-  );
-  if (preset) return preset.id;
-  const slug = norm.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-  return `custom-${slug || "cat"}`;
-}
-
 /**
  * Determina de forma robusta e insensible a acentos/mayúsculas/espacios
  * si un producto pertenece a una categoría seleccionada en los filtros.
@@ -355,19 +436,35 @@ export function isCategoryMatch(
 
 /**
  * Obtiene la lista completa y unificada de categorías (presets + personalizadas + categorías de productos existentes)
- * garantizando IDs deterministas y estables entre renders.
+ * filtrando aquellas que hayan sido eliminadas por el usuario, y garantizando IDs deterministas.
  */
 export function getAllProductCategories(existingProducts?: { description?: string | null }[]): CustomCategoryItem[] {
-  const baseCategories: CustomCategoryItem[] = PRODUCT_CATEGORIES.map((cat) => ({
-    id: cat.id,
-    label: cat.label,
-    icon: cat.icon,
-    color: cat.color,
-    bgColor: cat.bgColor,
-    isCustom: false,
-  }));
+  const deleted = getDeletedCategories();
+  const deletedSet = new Set(deleted.map(normalizeCategoryString));
 
-  const storedCustom = getStoredCustomCategories();
+  // Presets predeterminados (excepto los eliminados o editados)
+  const baseCategories: CustomCategoryItem[] = PRODUCT_CATEGORIES
+    .filter((cat) => {
+      if (cat.id === "otro") return true;
+      const normLabel = normalizeCategoryString(cat.label);
+      const normId = normalizeCategoryString(cat.id);
+      return !deletedSet.has(normLabel) && !deletedSet.has(normId);
+    })
+    .map((cat) => ({
+      id: cat.id,
+      label: cat.label,
+      icon: cat.icon,
+      color: cat.color,
+      bgColor: cat.bgColor,
+      isCustom: false,
+    }));
+
+  const storedCustom = getStoredCustomCategories().filter((cat) => {
+    const normLabel = normalizeCategoryString(cat.label);
+    const normId = normalizeCategoryString(cat.id);
+    return !deletedSet.has(normLabel) && !deletedSet.has(normId);
+  });
+
   const categoryMap = new Map<string, CustomCategoryItem>();
 
   for (const cat of baseCategories) {
@@ -389,8 +486,13 @@ export function getAllProductCategories(existingProducts?: { description?: strin
       const meta = parseProductMeta(p.description);
       const catTrimmed = (meta.category || "").trim();
       const normKey = normalizeCategoryString(catTrimmed);
-      if (catTrimmed && !categoryMap.has(normKey)) {
-        const stableId = getCategoryId(catTrimmed);
+      const stableId = getCategoryId(catTrimmed);
+      if (
+        catTrimmed &&
+        !deletedSet.has(normKey) &&
+        !deletedSet.has(normalizeCategoryString(stableId)) &&
+        !categoryMap.has(normKey)
+      ) {
         const newCat: CustomCategoryItem = {
           id: stableId,
           label: catTrimmed,
@@ -412,6 +514,9 @@ export function getAllProductCategories(existingProducts?: { description?: strin
  */
 export function createProductCategory(label: string, icon: string = "🏷️"): CustomCategoryItem {
   const trimmedLabel = label.trim();
+  unmarkCategoryAsDeleted(trimmedLabel);
+  unmarkCategoryAsDeleted(getCategoryId(trimmedLabel));
+
   const existing = getStoredCustomCategories();
   const id = getCategoryId(trimmedLabel);
   const newCat: CustomCategoryItem = {
@@ -428,18 +533,24 @@ export function createProductCategory(label: string, icon: string = "🏷️"): 
   const filtered = existing.filter((c) => normalizeCategoryString(c.label) !== normNew);
   const updated = [...filtered, newCat];
   saveStoredCustomCategories(updated);
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("haba_categories_changed"));
+  }
+
   return newCat;
 }
 
 /**
- * Renombra una categoría personalizada y actualiza en Supabase todos los productos que la utilicen.
+ * Renombra una categoría (preset o personalizada) y actualiza en Supabase todos los productos que la utilicen.
  * Utiliza la API /api/categories/[id] y como fallback directo el cliente Supabase.
  */
 export async function updateProductCategory(
   oldLabel: string,
   newLabel: string,
   newIcon?: string,
-  supabaseClient?: any
+  supabaseClient?: any,
+  oldId?: string
 ): Promise<{ updatedCount: number; success: boolean }> {
   const trimmedOld = oldLabel.trim();
   const trimmedNew = newLabel.trim();
@@ -448,11 +559,26 @@ export async function updateProductCategory(
   }
 
   const normOld = normalizeCategoryString(trimmedOld);
+  const normOldId = oldId ? normalizeCategoryString(oldId) : getCategoryId(trimmedOld);
 
-  // 1. Actualizar en localStorage
+  // 1. Marcar el nombre/ID anterior como eliminado para que no resurja como preset o producto residual
+  markCategoryAsDeleted(trimmedOld);
+  if (oldId) markCategoryAsDeleted(oldId);
+  markCategoryAsDeleted(getCategoryId(trimmedOld));
+
+  // 2. Asegurarse de que el nuevo nombre no esté en la lista de eliminadas
+  unmarkCategoryAsDeleted(trimmedNew);
+  unmarkCategoryAsDeleted(getCategoryId(trimmedNew));
+
+  // 3. Actualizar o agregar en storedCustom
   const stored = getStoredCustomCategories();
+  let foundInStored = false;
   const updatedStored = stored.map((cat) => {
-    if (normalizeCategoryString(cat.label) === normOld) {
+    if (
+      normalizeCategoryString(cat.label) === normOld ||
+      (oldId && normalizeCategoryString(cat.id) === normOldId)
+    ) {
+      foundInStored = true;
       return {
         ...cat,
         id: getCategoryId(trimmedNew),
@@ -462,14 +588,31 @@ export async function updateProductCategory(
     }
     return cat;
   });
+
+  if (!foundInStored) {
+    // Si era un preset o venía de producto, agregamos la nueva categoría a stored
+    updatedStored.push({
+      id: getCategoryId(trimmedNew),
+      label: trimmedNew,
+      icon: newIcon || "🏷️",
+      color: "#1F7A4C",
+      bgColor: "#DCF4D7",
+      isCustom: true,
+    });
+  }
+
   saveStoredCustomCategories(updatedStored);
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("haba_categories_changed"));
+  }
 
   let updatedCount = 0;
 
-  // 2. Intentar actualización vía API Route si estamos en el cliente
+  // 4. Actualización vía API Route si estamos en el cliente
   if (typeof window !== "undefined") {
     try {
-      const res = await fetch(`/api/categories/${encodeURIComponent(trimmedOld)}`, {
+      const res = await fetch(`/api/categories/${encodeURIComponent(oldId || trimmedOld)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -488,7 +631,7 @@ export async function updateProductCategory(
     }
   }
 
-  // 3. Fallback directo a Supabase (usando cliente inyectado o cliente del navegador)
+  // 5. Fallback directo a Supabase (usando cliente inyectado o cliente del navegador)
   const client = supabaseClient || (typeof window !== "undefined" ? createClient() : null);
   if (client) {
     try {
@@ -499,7 +642,13 @@ export async function updateProductCategory(
       if (products && products.length > 0) {
         for (const prod of products) {
           const meta = parseProductMeta(prod.description);
-          if (normalizeCategoryString(meta.category) === normOld) {
+          const metaNorm = normalizeCategoryString(meta.category);
+          const metaId = getCategoryId(meta.category);
+          if (
+            metaNorm === normOld ||
+            (oldId && normalizeCategoryString(oldId) === metaNorm) ||
+            (oldId && metaId === oldId)
+          ) {
             const updatedDescription = serializeProductDescription({
               cleanDescription: meta.cleanDescription,
               category: trimmedNew,
@@ -526,28 +675,43 @@ export async function updateProductCategory(
 }
 
 /**
- * Elimina una categoría personalizada y reasigna los productos que la utilicen a 'Otro' en Supabase.
+ * Elimina una categoría (preset o personalizada) y reasigna los productos que la utilicen a 'Otro' en Supabase.
  * Utiliza la API /api/categories/[id] y como fallback directo el cliente Supabase.
  */
 export async function deleteProductCategory(
   label: string,
   supabaseClient?: any,
-  reassignTo: string = "Otro"
+  reassignTo: string = "Otro",
+  catId?: string
 ): Promise<{ affectedCount: number; success: boolean }> {
   const trimmed = label.trim();
   const normLabel = normalizeCategoryString(trimmed);
+  const normCatId = catId ? normalizeCategoryString(catId) : getCategoryId(trimmed);
 
-  // 1. Eliminar de localStorage
+  // 1. Marcar como eliminada
+  markCategoryAsDeleted(trimmed);
+  if (catId) markCategoryAsDeleted(catId);
+  markCategoryAsDeleted(getCategoryId(trimmed));
+
+  // 2. Eliminar de localStorage
   const stored = getStoredCustomCategories();
-  const updatedStored = stored.filter((c) => normalizeCategoryString(c.label) !== normLabel);
+  const updatedStored = stored.filter(
+    (c) =>
+      normalizeCategoryString(c.label) !== normLabel &&
+      (!catId || normalizeCategoryString(c.id) !== normCatId)
+  );
   saveStoredCustomCategories(updatedStored);
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("haba_categories_changed"));
+  }
 
   let affectedCount = 0;
 
-  // 2. Intentar eliminación vía API Route si estamos en el cliente
+  // 3. Intentar eliminación vía API Route si estamos en el cliente
   if (typeof window !== "undefined") {
     try {
-      const res = await fetch(`/api/categories/${encodeURIComponent(trimmed)}`, {
+      const res = await fetch(`/api/categories/${encodeURIComponent(catId || trimmed)}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -565,7 +729,7 @@ export async function deleteProductCategory(
     }
   }
 
-  // 3. Fallback directo a Supabase
+  // 4. Fallback directo a Supabase
   const client = supabaseClient || (typeof window !== "undefined" ? createClient() : null);
   if (client) {
     try {
@@ -576,7 +740,13 @@ export async function deleteProductCategory(
       if (products && products.length > 0) {
         for (const prod of products) {
           const meta = parseProductMeta(prod.description);
-          if (normalizeCategoryString(meta.category) === normLabel) {
+          const metaNorm = normalizeCategoryString(meta.category);
+          const metaId = getCategoryId(meta.category);
+          if (
+            metaNorm === normLabel ||
+            (catId && normalizeCategoryString(catId) === metaNorm) ||
+            (catId && metaId === catId)
+          ) {
             const updatedDescription = serializeProductDescription({
               cleanDescription: meta.cleanDescription,
               category: reassignTo,

@@ -20,6 +20,8 @@ import {
   updateProductCategory,
   deleteProductCategory,
   getCategoryBadge,
+  normalizeCategoryString,
+  getCategoryId,
 } from "@/lib/products";
 import { matchesSearch } from "@/lib/search";
 
@@ -74,6 +76,17 @@ export function CategorySelector({
     loadCategories();
   }, [existingProducts]);
 
+  // Sincronización entre instancias cuando cambian las categorías
+  useEffect(() => {
+    const handleCategoryChanged = () => {
+      loadCategories();
+    };
+    window.addEventListener("haba_categories_changed", handleCategoryChanged);
+    return () => {
+      window.removeEventListener("haba_categories_changed", handleCategoryChanged);
+    };
+  }, [existingProducts]);
+
   // Click outside para cerrar
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -117,8 +130,11 @@ export function CategorySelector({
   }, [categories, search]);
 
   // Guardar nueva categoría
-  const handleCreateSubmit = (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
+  const handleCreateSubmit = (e?: React.FormEvent | React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
     const trimmed = newCatName.trim();
     if (!trimmed) return;
 
@@ -133,28 +149,49 @@ export function CategorySelector({
     onCategoriesChanged?.();
   };
 
-  // Guardar edición de categoría
-  const handleEditSubmit = async (cat: CustomCategoryItem) => {
+  // Guardar edición de categoría con actualización reactiva inmediata y propagación prevenida
+  const handleEditSubmit = async (cat: CustomCategoryItem, e?: React.FormEvent | React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
     const trimmed = editName.trim();
     if (!trimmed) {
       setEditingCatId(null);
       return;
     }
 
+    const updatedIcon = editIcon || cat.icon || "🏷️";
+    const oldLabel = cat.label;
+    const oldId = cat.id;
+
+    // Actualización reactiva INMEDIATA en la UI local
+    setCategories((prev) =>
+      prev.map((c) =>
+        c.id === oldId || normalizeCategoryString(c.label) === normalizeCategoryString(oldLabel)
+          ? { ...c, label: trimmed, icon: updatedIcon, id: getCategoryId(trimmed) }
+          : c
+      )
+    );
+
+    // Si la categoría editada era la seleccionada actualmente, actualizar selección
+    if (
+      value.toLowerCase() === oldLabel.toLowerCase() ||
+      value.toLowerCase() === oldId.toLowerCase()
+    ) {
+      onChange(trimmed);
+    }
+
+    setEditingCatId(null);
     setIsProcessing(true);
+
     try {
-      const res = await updateProductCategory(cat.label, trimmed, editIcon || cat.icon, supabase);
+      const res = await updateProductCategory(oldLabel, trimmed, updatedIcon, supabase, oldId);
       loadCategories();
 
-      // Si la categoría editada era la seleccionada, actualizar selección
-      if (value.toLowerCase() === cat.label.toLowerCase()) {
-        onChange(trimmed);
-      }
-
-      setEditingCatId(null);
       if (res.success) {
         setToastMsg({
-          text: `Categoría renombrada a "${trimmed}" (${res.updatedCount} productos actualizados)`,
+          text: `Categoría actualizada a "${trimmed}" (${res.updatedCount} productos actualizados)`,
           type: "success",
         });
       } else {
@@ -165,27 +202,55 @@ export function CategorySelector({
       }
       setTimeout(() => setToastMsg(null), 4000);
       onCategoriesChanged?.();
+    } catch (err) {
+      console.error("Error al actualizar categoría:", err);
+      setToastMsg({
+        text: `Error inesperado al guardar categoría`,
+        type: "error",
+      });
+      setTimeout(() => setToastMsg(null), 4000);
+      loadCategories();
     } finally {
       setIsProcessing(false);
     }
   };
 
-  // Confirmar eliminación
-  const handleDeleteConfirm = async () => {
-    if (!deletingCat) return;
+  // Confirmar eliminación con actualización reactiva inmediata y propagación prevenida
+  const handleDeleteConfirm = async (e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    if (!deletingCat || isProcessing) return;
 
+    const catToDelete = deletingCat;
+    const labelToDelete = catToDelete.label;
+    const idToDelete = catToDelete.id;
+
+    // Actualización reactiva INMEDIATA en la UI local
+    setCategories((prev) =>
+      prev.filter(
+        (c) =>
+          c.id !== idToDelete &&
+          normalizeCategoryString(c.label) !== normalizeCategoryString(labelToDelete)
+      )
+    );
+
+    // Si la categoría eliminada era la seleccionada, cambiar a "Otro"
+    if (
+      value.toLowerCase() === labelToDelete.toLowerCase() ||
+      value.toLowerCase() === idToDelete.toLowerCase()
+    ) {
+      onChange("Otro");
+    }
+
+    setDeletingCat(null);
     setIsProcessing(true);
+
     try {
-      const labelToDelete = deletingCat.label;
-      const res = await deleteProductCategory(labelToDelete, supabase, "Otro");
+      const res = await deleteProductCategory(labelToDelete, supabase, "Otro", idToDelete);
       loadCategories();
 
-      // Si la categoría eliminada era la que estaba seleccionada, cambiar a "Otro"
-      if (value.toLowerCase() === labelToDelete.toLowerCase()) {
-        onChange("Otro");
-      }
-
-      setDeletingCat(null);
       if (res.success) {
         setToastMsg({
           text: `Categoría "${labelToDelete}" eliminada (${res.affectedCount} productos reasignados a "Otro")`,
@@ -199,6 +264,14 @@ export function CategorySelector({
       }
       setTimeout(() => setToastMsg(null), 4000);
       onCategoriesChanged?.();
+    } catch (err) {
+      console.error("Error al eliminar categoría:", err);
+      setToastMsg({
+        text: `Error inesperado al eliminar categoría`,
+        type: "error",
+      });
+      setTimeout(() => setToastMsg(null), 4000);
+      loadCategories();
     } finally {
       setIsProcessing(false);
     }
@@ -374,7 +447,13 @@ export function CategorySelector({
 
           {/* Diálogo de Confirmación de Eliminación */}
           {deletingCat && (
-            <div className="p-3 bg-rose-50 border-b border-rose-200 text-xs space-y-2 animate-in fade-in duration-150">
+            <div
+              className="p-3 bg-rose-50 border-b border-rose-200 text-xs space-y-2 animate-in fade-in duration-150"
+              onClick={(e) => {
+                e.stopPropagation();
+              }}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
               <div className="flex items-start gap-2 text-rose-800">
                 <AlertTriangle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
                 <div>
@@ -387,7 +466,11 @@ export function CategorySelector({
               <div className="flex justify-end gap-2 pt-1">
                 <button
                   type="button"
-                  onClick={() => setDeletingCat(null)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    setDeletingCat(null);
+                  }}
                   disabled={isProcessing}
                   className="px-2.5 py-1 bg-white hover:bg-neutral-100 text-neutral-600 rounded-lg text-[11px] font-semibold border border-neutral-200 transition"
                 >
@@ -395,9 +478,13 @@ export function CategorySelector({
                 </button>
                 <button
                   type="button"
-                  onClick={handleDeleteConfirm}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    handleDeleteConfirm(e);
+                  }}
                   disabled={isProcessing}
-                  className="px-3 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 transition shadow-xs"
+                  className="px-3 py-1 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 transition shadow-xs"
                 >
                   {isProcessing ? (
                     <Loader2 className="w-3 h-3 animate-spin" />
@@ -428,10 +515,15 @@ export function CategorySelector({
                     <div
                       key={cat.id}
                       className="p-1.5 bg-[#F0FAF4] rounded-xl border border-[#3BB578] flex items-center gap-1.5 animate-in fade-in-50 duration-150"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                      }}
+                      onMouseDown={(e) => e.stopPropagation()}
                     >
                       <input
                         type="text"
                         value={editIcon}
+                        onClick={(e) => e.stopPropagation()}
                         onChange={(e) => setEditIcon(e.target.value)}
                         className="w-7 text-center text-sm py-1 bg-white border border-neutral-200 rounded-lg outline-none"
                         maxLength={2}
@@ -439,11 +531,17 @@ export function CategorySelector({
                       <input
                         type="text"
                         value={editName}
+                        onClick={(e) => e.stopPropagation()}
                         onChange={(e) => setEditName(e.target.value)}
                         onKeyDown={(e) => {
                           if (e.key === "Enter") {
                             e.preventDefault();
-                            handleEditSubmit(cat);
+                            e.stopPropagation();
+                            handleEditSubmit(cat, e);
+                          } else if (e.key === "Escape") {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setEditingCatId(null);
                           }
                         }}
                         className="flex-1 px-2 py-1 text-xs bg-white border border-neutral-200 rounded-lg outline-none focus:border-[#3BB578]"
@@ -451,16 +549,30 @@ export function CategorySelector({
                       />
                       <button
                         type="button"
-                        onClick={() => handleEditSubmit(cat)}
-                        className="p-1 bg-[#3BB578] text-white rounded-lg hover:bg-[#2E9E65] transition"
+                        disabled={isProcessing}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          handleEditSubmit(cat, e);
+                        }}
+                        className="p-1 bg-[#3BB578] text-white rounded-lg hover:bg-[#2E9E65] disabled:opacity-50 transition flex items-center justify-center min-w-[28px] min-h-[28px]"
                         title="Guardar cambios"
                       >
-                        <Check className="w-3.5 h-3.5" />
+                        {isProcessing ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Check className="w-3.5 h-3.5" />
+                        )}
                       </button>
                       <button
                         type="button"
-                        onClick={() => setEditingCatId(null)}
-                        className="p-1 text-neutral-400 hover:text-neutral-600 rounded-lg transition"
+                        disabled={isProcessing}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          setEditingCatId(null);
+                        }}
+                        className="p-1 text-neutral-400 hover:text-neutral-600 rounded-lg transition min-w-[28px] min-h-[28px] flex items-center justify-center"
                         title="Cancelar"
                       >
                         <X className="w-3.5 h-3.5" />
@@ -478,6 +590,7 @@ export function CategorySelector({
                         : "hover:bg-neutral-100 text-neutral-700"
                     }`}
                     onClick={() => {
+                      if (editingCatId || isProcessing) return;
                       onChange(cat.label);
                       setIsOpen(false);
                     }}
@@ -500,12 +613,16 @@ export function CategorySelector({
                       {/* Botones de acción rápida en hover (Editar y Eliminar) */}
                       <div
                         className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 transition"
-                        onClick={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                        }}
                       >
                         <button
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
+                            e.preventDefault();
                             setEditingCatId(cat.id);
                             setEditName(cat.label);
                             setEditIcon(cat.icon);
@@ -520,6 +637,7 @@ export function CategorySelector({
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
+                              e.preventDefault();
                               setDeletingCat(cat);
                             }}
                             className="p-1 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition"
