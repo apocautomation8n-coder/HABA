@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ShoppingBag,
   Plus,
@@ -152,6 +153,10 @@ export interface EditSupplyLine {
   use_unit: string;
   unit_cost: number;
   quantity: number | string;
+  current_price?: number;
+  purchase_unit?: string;
+  purchase_quantity?: number;
+  conversion_factor?: number;
 }
 
 export interface EditComponentLine {
@@ -166,6 +171,7 @@ export type EditPriceLine = ChannelPriceItem;
 
 export default function ProductosPage() {
   const supabase = createClient();
+  const router = useRouter();
 
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -640,6 +646,10 @@ export default function ProductosPage() {
         use_unit: s?.use_unit || "u",
         unit_cost: unitCost,
         quantity: ps.quantity || 1,
+        current_price: s?.current_price,
+        purchase_unit: s?.purchase_unit,
+        purchase_quantity: s?.purchase_quantity,
+        conversion_factor: s?.conversion_factor,
       };
     });
     setEditSupplies(initialSupplies);
@@ -706,6 +716,10 @@ export default function ProductosPage() {
         use_unit: supply.use_unit || "u",
         unit_cost: unitCost,
         quantity: 1,
+        current_price: supply.current_price,
+        purchase_unit: supply.purchase_unit,
+        purchase_quantity: supply.purchase_quantity,
+        conversion_factor: supply.conversion_factor,
       },
     ]);
     setSelectedSupplyToAdd("");
@@ -743,6 +757,10 @@ export default function ProductosPage() {
           use_unit: createdSupply.use_unit || "u",
           unit_cost: unitCost,
           quantity: 1,
+          current_price: createdSupply.current_price,
+          purchase_unit: createdSupply.purchase_unit,
+          purchase_quantity: createdSupply.purchase_quantity,
+          conversion_factor: createdSupply.conversion_factor,
         },
       ]);
       setSuccessToast(`¡Insumo "${createdSupply.name}" creado y agregado al producto!`);
@@ -864,15 +882,36 @@ export default function ProductosPage() {
         return;
       }
 
-      const meta = parseProductMeta(editModalProduct.description);
+      const nowIso = new Date().toISOString();
+
+      // Construir snapshots de precios de reposición vigentes para los insumos de la receta
+      const priceSnapshots: Record<string, number> = {};
+      for (const s of editSupplies) {
+        if (s.supply_id) {
+          const catSupply = allSupplies.find((as) => as.id === s.supply_id);
+          const currentPrice = catSupply ? Number(catSupply.current_price || 0) : Number(s.current_price || 0);
+          priceSnapshots[s.supply_id] = currentPrice;
+        }
+      }
+
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem(
+            `haba_product_review_${editModalProduct.id}`,
+            JSON.stringify({ lastReviewedAt: nowIso, priceSnapshots })
+          );
+        } catch {}
+      }
+
+      const meta = parseProductMeta(editModalProduct.description, editModalProduct.id);
       const newDescription = serializeProductDescription({
         cleanDescription: editDescription.trim(),
         category: editCategory || meta.category,
         isActive: meta.isActive,
         yieldValue: yieldValidation.value,
+        lastReviewedAt: nowIso,
+        priceSnapshots,
       });
-
-      const nowIso = new Date().toISOString();
 
       // 1. Actualizar tabla products
       const { error: prodErr } = await supabase
@@ -1011,6 +1050,50 @@ export default function ProductosPage() {
         }
       }
 
+      // Preparar el estado actualizado de product_supplies para la UI inmediata
+      const updatedProductSuppliesForState = editSupplies.map((s, idx) => {
+        const catSupply = allSupplies.find((as) => as.id === s.supply_id);
+        const currentPrice = catSupply ? Number(catSupply.current_price || 0) : Number(s.current_price || 0);
+        return {
+          id: s.id || `ps-temp-${idx}`,
+          product_id: editModalProduct.id,
+          supply_id: s.supply_id,
+          quantity: typeof s.quantity === "number" ? s.quantity : parseFloat(String(s.quantity)) || 0,
+          supplies: catSupply
+            ? { ...catSupply, current_price: currentPrice }
+            : {
+                id: s.supply_id,
+                name: s.name,
+                current_price: currentPrice,
+                use_unit: s.use_unit,
+                purchase_unit: s.purchase_unit || "u",
+                purchase_quantity: s.purchase_quantity || 1,
+                conversion_factor: s.conversion_factor || 1,
+                updated_at: nowIso,
+              },
+        };
+      });
+
+      // Actualizar estado local inmediatamente para reactividad instantánea sin desfase de caché
+      setProducts((prev) =>
+        prev.map((p) => {
+          if (p.id !== editModalProduct.id) return p;
+          return {
+            ...p,
+            name: editName.trim(),
+            description: newDescription,
+            work_time_minutes: editMins,
+            direct_cost: editDirectCost,
+            labor_cost: editLaborCost,
+            indirect_cost: 0,
+            total_cost: editTotalCost,
+            needs_price_review: false,
+            updated_at: nowIso,
+            product_supplies: updatedProductSuppliesForState as any,
+          };
+        })
+      );
+
       setDismissedAlerts((prev) => {
         if (!prev.has(editModalProduct.id)) return prev;
         const next = new Set(prev);
@@ -1023,6 +1106,7 @@ export default function ProductosPage() {
 
       setEditModalProduct(null);
       await loadProducts();
+      router.refresh();
       setSuccessToast(`¡Producto "${editName.trim()}" actualizado correctamente con sus precios e insumos!`);
       setTimeout(() => {
         setSuccessToast(null);
@@ -1046,10 +1130,40 @@ export default function ProductosPage() {
       const newLaborCost = Math.round((product.work_time_minutes || 0) * currentMinuteRate * 100) / 100;
       const newTotalCost = Math.round((newDirectCost + newLaborCost) * 100) / 100;
 
+      // Construir snapshots de precios actuales de reposición para que la alerta se limpie
+      const priceSnapshots: Record<string, number> = {};
+      if (product.product_supplies) {
+        for (const ps of product.product_supplies) {
+          if (ps.supply_id) {
+            priceSnapshots[ps.supply_id] = Number(ps.supplies?.current_price || 0);
+          }
+        }
+      }
+
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem(
+            `haba_product_review_${product.id}`,
+            JSON.stringify({ lastReviewedAt: nowIso, priceSnapshots })
+          );
+        } catch {}
+      }
+
+      const meta = parseProductMeta(product.description, product.id);
+      const newDescription = serializeProductDescription({
+        cleanDescription: meta.cleanDescription,
+        category: meta.category,
+        isActive: meta.isActive,
+        yieldValue: meta.yield,
+        lastReviewedAt: nowIso,
+        priceSnapshots,
+      });
+
       // 1. Actualizar producto en Supabase
       const { error: prodErr } = await supabase
         .from("products")
         .update({
+          description: newDescription,
           direct_cost: newDirectCost,
           labor_cost: newLaborCost,
           indirect_cost: 0,
@@ -1094,6 +1208,7 @@ export default function ProductosPage() {
           if (p.id !== product.id) return p;
           return {
             ...p,
+            description: newDescription,
             direct_cost: newDirectCost,
             labor_cost: newLaborCost,
             indirect_cost: 0,
@@ -1104,6 +1219,9 @@ export default function ProductosPage() {
           };
         })
       );
+
+      await loadProducts();
+      router.refresh();
 
       setSuccessToast(`¡Costos y precios recalculados para "${product.name}"!`);
       setTimeout(() => {
@@ -1120,6 +1238,7 @@ export default function ProductosPage() {
   // Omitir o descartar la alerta de modificación de precios
   const handleDismissAlert = async (product: any) => {
     try {
+      const nowIso = new Date().toISOString();
       setDismissedAlerts((prev) => {
         const next = new Set(prev);
         next.add(product.id);
@@ -1129,17 +1248,46 @@ export default function ProductosPage() {
         return next;
       });
 
-      if (product.needs_price_review) {
-        const nowIso = new Date().toISOString();
-        await supabase
-          .from("products")
-          .update({ needs_price_review: false, updated_at: nowIso })
-          .eq("id", product.id);
-
-        setProducts((prev) =>
-          prev.map((p) => (p.id === product.id ? { ...p, needs_price_review: false, updated_at: nowIso } : p))
-        );
+      const priceSnapshots: Record<string, number> = {};
+      if (product.product_supplies) {
+        for (const ps of product.product_supplies) {
+          if (ps.supply_id) {
+            priceSnapshots[ps.supply_id] = Number(ps.supplies?.current_price || 0);
+          }
+        }
       }
+
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem(
+            `haba_product_review_${product.id}`,
+            JSON.stringify({ lastReviewedAt: nowIso, priceSnapshots })
+          );
+        } catch {}
+      }
+
+      const meta = parseProductMeta(product.description, product.id);
+      const newDescription = serializeProductDescription({
+        cleanDescription: meta.cleanDescription,
+        category: meta.category,
+        isActive: meta.isActive,
+        yieldValue: meta.yield,
+        lastReviewedAt: nowIso,
+        priceSnapshots,
+      });
+
+      await supabase
+        .from("products")
+        .update({ needs_price_review: false, updated_at: nowIso, description: newDescription })
+        .eq("id", product.id);
+
+      setProducts((prev) =>
+        prev.map((p) =>
+          p.id === product.id
+            ? { ...p, needs_price_review: false, updated_at: nowIso, description: newDescription }
+            : p
+        )
+      );
 
       setSuccessToast(`Alerta de precios descartada para "${product.name}".`);
       setTimeout(() => setSuccessToast(null), 3500);
@@ -1904,8 +2052,8 @@ export default function ProductosPage() {
                       <span className="text-[11px] font-semibold leading-tight line-clamp-1 sm:truncate">
                         {product.modifiedSupplies && product.modifiedSupplies.length > 0
                           ? product.modifiedSupplies.length === 1
-                            ? `${product.modifiedSupplies[0].name} aumentó de precio`
-                            : `${product.modifiedSupplies.length} insumos aumentaron de precio`
+                            ? `${product.modifiedSupplies[0].name} ${product.modifiedSupplies[0].isIncrease ? "aumentó" : "bajó"} de precio`
+                            : `${product.modifiedSupplies.length} insumos cambiaron de precio`
                           : "Insumos cambiaron de precio"}
                       </span>
                     </div>
@@ -2000,12 +2148,17 @@ export default function ProductosPage() {
                                       className={`inline-flex items-center gap-0.5 text-[9px] font-extrabold px-1.5 py-0.2 rounded border ${
                                         mod.isIncrease
                                           ? "bg-amber-100 text-amber-800 border-amber-300"
-                                          : "bg-emerald-100 text-emerald-800 border-emerald-300"
+                                          : "bg-sky-100 text-sky-800 border-sky-300"
                                       }`}
                                     >
-                                      {mod.isIncrease ? "+" : ""}
-                                      {formatCurrency(mod.priceDiff)} ({mod.isIncrease ? "+" : ""}
-                                      {mod.percentChange}%)
+                                      {mod.isIncrease ? (
+                                        <TrendingUp className="w-2.5 h-2.5 text-amber-700" />
+                                      ) : (
+                                        <TrendingDown className="w-2.5 h-2.5 text-sky-700" />
+                                      )}
+                                      {mod.isIncrease
+                                        ? `+${formatCurrency(mod.priceDiff)} (+${mod.percentChange}%)`
+                                        : `-${formatCurrency(Math.abs(mod.priceDiff))} (-${mod.percentChange}%)`}
                                     </span>
                                   </div>
                                   <div className="text-[10px] text-neutral-500 mt-0.5">
@@ -2014,9 +2167,14 @@ export default function ProductosPage() {
                                 </div>
                                 <div className="text-right flex-shrink-0">
                                   <span className="text-[10px] text-neutral-400 block">Impacto en costo:</span>
-                                  <span className="font-bold text-amber-900 text-xs">
-                                    {mod.isIncrease ? "+" : ""}
-                                    {formatCurrency(mod.costImpact)}
+                                  <span
+                                    className={`font-bold text-xs ${
+                                      mod.isIncrease ? "text-amber-900" : "text-sky-900"
+                                    }`}
+                                  >
+                                    {mod.isIncrease
+                                      ? `+${formatCurrency(mod.costImpact)}`
+                                      : `-${formatCurrency(mod.costImpact)}`}
                                   </span>
                                 </div>
                               </div>
@@ -2126,7 +2284,9 @@ export default function ProductosPage() {
                                 key={item.id}
                                 className={`p-2.5 rounded-2xl border flex items-center justify-between text-xs transition gap-2 ${
                                   isModified
-                                    ? "bg-amber-50/70 border-amber-300 ring-1 ring-amber-300/50 hover:bg-amber-50"
+                                    ? modInfo?.isIncrease
+                                      ? "bg-amber-50/70 border-amber-300 ring-1 ring-amber-300/50 hover:bg-amber-50"
+                                      : "bg-sky-50/70 border-sky-300 ring-1 ring-sky-300/50 hover:bg-sky-50"
                                     : "bg-neutral-50/80 border-neutral-200/60 hover:bg-neutral-50"
                                 }`}
                               >
@@ -2140,17 +2300,33 @@ export default function ProductosPage() {
                                         {supply.category === "packaging" ? "Packaging" : "Materia prima"}
                                       </span>
                                     )}
-                                    {isModified && (
-                                      <span className="inline-flex items-center gap-0.5 text-[9px] font-extrabold px-1.5 py-0.5 rounded-md bg-amber-200 text-amber-900 border border-amber-300 flex-shrink-0">
-                                        <TrendingUp className="w-2.5 h-2.5" />
-                                        Aumentó {modInfo ? `(+${modInfo.percentChange}%)` : ""}
+                                    {isModified && modInfo && (
+                                      <span
+                                        className={`inline-flex items-center gap-0.5 text-[9px] font-extrabold px-1.5 py-0.5 rounded-md border flex-shrink-0 ${
+                                          modInfo.isIncrease
+                                            ? "bg-amber-100 text-amber-900 border-amber-300"
+                                            : "bg-sky-100 text-sky-900 border-sky-300"
+                                        }`}
+                                      >
+                                        {modInfo.isIncrease ? (
+                                          <TrendingUp className="w-2.5 h-2.5 text-amber-700" />
+                                        ) : (
+                                          <TrendingDown className="w-2.5 h-2.5 text-sky-700" />
+                                        )}
+                                        {modInfo.isIncrease
+                                          ? `Aumentó (+${modInfo.percentChange}%)`
+                                          : `Bajó (-${modInfo.percentChange}%)`}
                                       </span>
                                     )}
                                   </div>
                                   <span className="text-[10px] text-neutral-400 block mt-0.5">
                                     {item.quantity} {supply?.use_unit || "u"} • {formatCurrency(unitCost)} /{supply?.use_unit || "u"}
                                     {isModified && modInfo && (
-                                      <span className="text-amber-800 font-semibold ml-1">
+                                      <span
+                                        className={`font-semibold ml-1 ${
+                                          modInfo.isIncrease ? "text-amber-800" : "text-sky-800"
+                                        }`}
+                                      >
                                         (antes {formatCurrency(modInfo.prevUnitCost)}/{modInfo.useUnit})
                                       </span>
                                     )}
@@ -2161,8 +2337,14 @@ export default function ProductosPage() {
                                     {formatCurrency(subtotalCost)}
                                   </span>
                                   {isModified && modInfo && (
-                                    <span className="text-[9.5px] font-bold text-amber-700 block">
-                                      +{formatCurrency(modInfo.costImpact)}
+                                    <span
+                                      className={`text-[9.5px] font-bold block ${
+                                        modInfo.isIncrease ? "text-amber-700" : "text-sky-700"
+                                      }`}
+                                    >
+                                      {modInfo.isIncrease
+                                        ? `+${formatCurrency(modInfo.costImpact)}`
+                                        : `-${formatCurrency(modInfo.costImpact)}`}
                                     </span>
                                   )}
                                 </div>
@@ -2607,7 +2789,7 @@ export default function ProductosPage() {
                         <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
                         <span className="text-[11px] leading-tight">
                           Hay {editModalModifiedSupplies.length}{" "}
-                          {editModalModifiedSupplies.length === 1 ? "insumo con aumento detectado" : "insumos con aumento detectado"}. Al guardar se recalculará el costo directo con los valores vigentes.
+                          {editModalModifiedSupplies.length === 1 ? "insumo con cambio de precio detectado" : "insumos con cambio de precio detectados"}. Al guardar se actualizará el costo directo con los valores vigentes.
                         </span>
                       </div>
                     )}
@@ -2632,7 +2814,9 @@ export default function ProductosPage() {
                               key={item.supply_id || idx}
                               className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 text-xs transition ${
                                 isModified
-                                  ? "bg-amber-50/60 border-amber-300 ring-1 ring-amber-300/40"
+                                  ? modInfo?.isIncrease
+                                    ? "bg-amber-50/60 border-amber-300 ring-1 ring-amber-300/40"
+                                    : "bg-sky-50/60 border-sky-300 ring-1 ring-sky-300/40"
                                   : "bg-white border-neutral-200"
                               }`}
                             >
@@ -2641,17 +2825,33 @@ export default function ProductosPage() {
                                   <span className="font-bold text-neutral-800 break-words whitespace-normal block">
                                     {item.name}
                                   </span>
-                                  {isModified && (
-                                    <span className="inline-flex items-center gap-0.5 text-[9px] font-extrabold px-1.5 py-0.2 rounded bg-amber-200 text-amber-900 border border-amber-300">
-                                      <TrendingUp className="w-2.5 h-2.5" />
-                                      Aumentó {modInfo ? `(+${modInfo.percentChange}%)` : ""}
+                                  {isModified && modInfo && (
+                                    <span
+                                      className={`inline-flex items-center gap-0.5 text-[9px] font-extrabold px-1.5 py-0.2 rounded border ${
+                                        modInfo.isIncrease
+                                          ? "bg-amber-200 text-amber-900 border-amber-300"
+                                          : "bg-sky-100 text-sky-900 border-sky-300"
+                                      }`}
+                                    >
+                                      {modInfo.isIncrease ? (
+                                        <TrendingUp className="w-2.5 h-2.5 text-amber-800" />
+                                      ) : (
+                                        <TrendingDown className="w-2.5 h-2.5 text-sky-800" />
+                                      )}
+                                      {modInfo.isIncrease
+                                        ? `Aumentó (+${modInfo.percentChange}%)`
+                                        : `Bajó (-${modInfo.percentChange}%)`}
                                     </span>
                                   )}
                                 </div>
                                 <span className="text-[10px] text-neutral-400 block mt-0.5">
                                   {formatCurrency(item.unit_cost)} / {item.use_unit}
                                   {isModified && modInfo && (
-                                    <span className="text-amber-800 font-semibold ml-1">
+                                    <span
+                                      className={`font-semibold ml-1 ${
+                                        modInfo.isIncrease ? "text-amber-800" : "text-sky-800"
+                                      }`}
+                                    >
                                       (antes {formatCurrency(modInfo.prevUnitCost)}/{modInfo.useUnit})
                                     </span>
                                   )}

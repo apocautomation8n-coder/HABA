@@ -2,7 +2,7 @@
  * Módulo de utilidades y constantes de Productos para HABA
  */
 
-import { calculateUnitCost } from "./units";
+import { calculateUnitCost, formatCurrency } from "./units";
 import { createClient } from "./supabase/client";
 
 export interface ProductCategory {
@@ -158,19 +158,35 @@ export interface ParsedProductMeta {
   isActive: boolean;
   yield: number;
   cleanDescription: string;
+  lastReviewedAt?: string | null;
+  priceSnapshots?: Record<string, number>;
 }
 
 /**
  * Parsea los metadatos estructurados dentro del campo description del producto
  */
-export function parseProductMeta(rawDescription?: string | null): ParsedProductMeta {
+export function parseProductMeta(rawDescription?: string | null, productId?: string): ParsedProductMeta {
   if (!rawDescription) {
+    let lastReviewedAt: string | null = null;
+    let priceSnapshots: Record<string, number> = {};
+    if (typeof window !== "undefined" && productId) {
+      try {
+        const stored = localStorage.getItem(`haba_product_review_${productId}`);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          lastReviewedAt = parsed.lastReviewedAt || null;
+          priceSnapshots = parsed.priceSnapshots || {};
+        }
+      } catch {}
+    }
     return {
       category: "Otro",
       categoryIcon: "✨",
       isActive: true,
       yield: 1,
       cleanDescription: "",
+      lastReviewedAt,
+      priceSnapshots,
     };
   }
 
@@ -236,7 +252,49 @@ export function parseProductMeta(rawDescription?: string | null): ParsedProductM
     text = text.replace(yieldMatch[0], "");
   }
 
-  // 4. Limpiar cualquier tag residual de foto si existiese
+  // 4. Extraer [Revisión: ...]
+  let lastReviewedAt: string | null = null;
+  const revMatch = text.match(/\[Revisi[oó]n:\s*([^\]]+)\]/i);
+  if (revMatch) {
+    lastReviewedAt = revMatch[1].trim();
+    text = text.replace(revMatch[0], "");
+  }
+
+  // 5. Extraer [PreciosRef: ...]
+  let priceSnapshots: Record<string, number> = {};
+  const snapMatch = text.match(/\[PreciosRef:\s*([^\]]+)\]/i);
+  if (snapMatch) {
+    const rawSnapshots = snapMatch[1].trim();
+    const pairs = rawSnapshots.split(";");
+    for (const pair of pairs) {
+      const [sId, pStr] = pair.split("=");
+      if (sId && pStr) {
+        const val = parseFloat(pStr.trim());
+        if (!isNaN(val)) {
+          priceSnapshots[sId.trim()] = val;
+        }
+      }
+    }
+    text = text.replace(snapMatch[0], "");
+  }
+
+  // 6. Si no estaban en texto pero están en localStorage, leer de ahí como respaldo
+  if (typeof window !== "undefined" && productId) {
+    try {
+      const stored = localStorage.getItem(`haba_product_review_${productId}`);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (!lastReviewedAt && parsed.lastReviewedAt) {
+          lastReviewedAt = parsed.lastReviewedAt;
+        }
+        if (Object.keys(priceSnapshots).length === 0 && parsed.priceSnapshots) {
+          priceSnapshots = parsed.priceSnapshots;
+        }
+      }
+    } catch {}
+  }
+
+  // 7. Limpiar cualquier tag residual de foto si existiese
   text = text.replace(/\[Foto:\s*[^\]]+\]/gi, "");
 
   return {
@@ -245,6 +303,8 @@ export function parseProductMeta(rawDescription?: string | null): ParsedProductM
     isActive,
     yield: yieldVal,
     cleanDescription: text.trim(),
+    lastReviewedAt,
+    priceSnapshots,
   };
 }
 
@@ -256,11 +316,15 @@ export function serializeProductDescription({
   category,
   isActive = true,
   yieldValue = 1,
+  lastReviewedAt,
+  priceSnapshots,
 }: {
   cleanDescription?: string;
   category?: string;
   isActive?: boolean;
   yieldValue?: number;
+  lastReviewedAt?: string | null;
+  priceSnapshots?: Record<string, number>;
 }): string {
   const metaTags: string[] = [];
 
@@ -277,6 +341,20 @@ export function serializeProductDescription({
   const safeYield = typeof yieldValue === "number" ? yieldValue : parseFloat(String(yieldValue)) || 1;
   if (safeYield > 1) {
     metaTags.push(`[Rendimiento: ${safeYield}]`);
+  }
+
+  if (lastReviewedAt) {
+    metaTags.push(`[Revisión: ${lastReviewedAt.trim()}]`);
+  }
+
+  if (priceSnapshots && Object.keys(priceSnapshots).length > 0) {
+    const serialized = Object.entries(priceSnapshots)
+      .filter(([id, price]) => Boolean(id) && typeof price === "number" && !isNaN(price))
+      .map(([id, price]) => `${id}=${price}`)
+      .join(";");
+    if (serialized) {
+      metaTags.push(`[PreciosRef: ${serialized}]`);
+    }
   }
 
   const clean = (cleanDescription || "").trim();
@@ -984,6 +1062,73 @@ function calculateOutdatedList(products: any[]): OutdatedProductAlert[] {
   return outdatedProducts;
 }
 
+export interface PriceDifferenceResult {
+  diff: number; // currentPrice - savedPrice
+  percent: number; // (diff / savedPrice) * 100
+  absDiff: number; // Math.abs(diff)
+  absPercent: number; // Math.abs(percent)
+  isIncrease: boolean; // diff > 0.001
+  isDecrease: boolean; // diff < -0.001
+  hasChange: boolean;
+  badgeLabel: string; // "Aumentó" | "Bajó"
+  arrow: string; // "↗" | "↘"
+  sign: "+" | "-";
+  formattedPercent: string; // "+X.X%" | "-X.X%"
+  formattedBadge: string; // "↗ Aumentó (+X.X%)" | "↘ Bajó (-X.X%)"
+  formattedImpact: string; // "+$ X,XX" | "-$ X,XX"
+}
+
+/**
+ * Calcula la variación matemática real y el formateo de etiquetas para diferencias de precio.
+ * Regla estricta:
+ * - diff = currentPrice - savedPrice
+ * - percent = savedPrice > 0 ? (diff / savedPrice) * 100 : 0
+ * - diff > 0.001: aumento ("↗ Aumentó (+X.X%)" e impacto "+$ X.XX")
+ * - diff < -0.001: baja ("↘ Bajó (-X.X%)" e impacto "-$ X.XX")
+ * - Math.abs(diff) <= 0.001: null (sin variación)
+ */
+export function getPriceDifference(
+  currentPrice: number,
+  savedPrice: number,
+  costImpact?: number
+): PriceDifferenceResult | null {
+  const diff = currentPrice - savedPrice;
+  if (Math.abs(diff) <= 0.001) {
+    return null;
+  }
+
+  const percent = savedPrice > 0 ? (diff / savedPrice) * 100 : 0;
+  const isIncrease = diff > 0.001;
+  const isDecrease = diff < -0.001;
+  const absDiff = Math.abs(diff);
+  const absPercent = Math.round(Math.abs(percent) * 10) / 10;
+  const sign = isIncrease ? "+" : "-";
+
+  const badgeLabel = isIncrease ? "Aumentó" : "Bajó";
+  const arrow = isIncrease ? "↗" : "↘";
+  const formattedPercent = `${sign}${absPercent}%`;
+  const formattedBadge = `${arrow} ${badgeLabel} (${sign}${absPercent}%)`;
+
+  const absImpact = costImpact !== undefined ? Math.abs(costImpact) : 0;
+  const formattedImpact = `${sign}${formatCurrency(absImpact)}`;
+
+  return {
+    diff,
+    percent,
+    absDiff,
+    absPercent,
+    isIncrease,
+    isDecrease,
+    hasChange: isIncrease || isDecrease,
+    badgeLabel,
+    arrow,
+    sign,
+    formattedPercent,
+    formattedBadge,
+    formattedImpact,
+  };
+}
+
 export interface ModifiedSupplyInfo {
   supplyId: string;
   name: string;
@@ -997,13 +1142,17 @@ export interface ModifiedSupplyInfo {
   prevUnitCost: number;
   newUnitCost: number;
   quantity: number;
-  costImpact: number; // Impacto en el costo directo del producto considerando el rendimiento
+  costImpact: number; // Impacto absoluto positivo en el costo directo del producto
   isIncrease: boolean;
+  isDecrease: boolean;
+  formattedPercent: string;
+  formattedBadge: string;
+  formattedImpact: string;
 }
 
 /**
  * Detecta los insumos de la receta de un producto que hayan cambiado de precio
- * respecto a la última vez que el producto fue guardado/actualizado.
+ * respecto a la última vez que el producto fue guardado/revisado.
  */
 export function detectModifiedSupplies(
   product: any,
@@ -1013,9 +1162,35 @@ export function detectModifiedSupplies(
     return [];
   }
 
-  const meta = parseProductMeta(product.description);
+  const meta = parseProductMeta(product.description, product.id);
   const productYield = meta.yield > 0 ? meta.yield : 1;
-  const productSavedAt = new Date(product.updated_at || product.created_at || 0).getTime();
+
+  // Fecha de referencia: última revisión explícita en meta, o en localStorage, o updated_at, o created_at
+  let reviewTime = meta.lastReviewedAt ? new Date(meta.lastReviewedAt).getTime() : 0;
+  let priceSnapshots: Record<string, number> = meta.priceSnapshots || {};
+
+  if (typeof window !== "undefined" && product.id) {
+    try {
+      const stored = localStorage.getItem(`haba_product_review_${product.id}`);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed.lastReviewedAt) {
+          const storedTime = new Date(parsed.lastReviewedAt).getTime();
+          if (storedTime > reviewTime) {
+            reviewTime = storedTime;
+          }
+        }
+        if (parsed.priceSnapshots && Object.keys(priceSnapshots).length === 0) {
+          priceSnapshots = parsed.priceSnapshots;
+        }
+      }
+    } catch {}
+  }
+
+  const productSavedAt = Math.max(
+    reviewTime,
+    new Date(product.updated_at || product.created_at || 0).getTime()
+  );
 
   const modified: ModifiedSupplyInfo[] = [];
 
@@ -1033,76 +1208,88 @@ export function detectModifiedSupplies(
       .filter((h) => h.supply_id === ps.supply_id)
       .sort((a, b) => new Date(b.changed_at).getTime() - new Date(a.changed_at).getTime());
 
-    // Cambios de precio que ocurrieron estrictamente después de que el producto fue guardado
-    // Agregamos margen de 1000ms para evitar falsos positivos por desfase de microsegundos de reloj
-    const changesAfterSave = hist.filter(
-      (h) => new Date(h.changed_at).getTime() > productSavedAt + 1000
-    );
+    // 1. ¿Tenemos un precio de referencia guardado explícitamente en el snapshot?
+    let savedPrice: number | null = null;
+    if (priceSnapshots && priceSnapshots[ps.supply_id] !== undefined) {
+      savedPrice = Number(priceSnapshots[ps.supply_id]);
+    }
 
-    const supplyUpdatedAt = supply.updated_at ? new Date(supply.updated_at).getTime() : 0;
-    const supplyUpdatedAfterSave = supplyUpdatedAt > productSavedAt + 1000;
+    // 2. Si no hay snapshot explícito, determinamos el precio de referencia histórico
+    if (savedPrice === null) {
+      const changesAfterSave = hist.filter(
+        (h) => new Date(h.changed_at).getTime() > productSavedAt + 1000
+      );
 
-    let prevPrice: number | null = null;
+      const supplyUpdatedAt = supply.updated_at ? new Date(supply.updated_at).getTime() : 0;
+      const supplyUpdatedAfterSave = supplyUpdatedAt > productSavedAt + 1000;
 
-    if (changesAfterSave.length > 0) {
-      // 1. Hubo cambios en el historial de precios posteriores a la fecha de guardado del producto.
-      // El precio anterior vigente al momento de guardar era el último registro con fecha <= productSavedAt + 1000
-      const atSave = hist.find((h) => new Date(h.changed_at).getTime() <= productSavedAt + 1000);
-      if (atSave) {
-        prevPrice = Number(atSave.price);
-      } else {
-        // Si no hay registros previos a productSavedAt (ej. historial reciente), tomamos el cambio más antiguo
-        prevPrice = Number(changesAfterSave[changesAfterSave.length - 1].price);
-      }
-    } else if (supplyUpdatedAfterSave) {
-      // 2. supply.updated_at es posterior a productSavedAt pero no hay registro nuevo en hist
-      const atSave = hist.find((h) => new Date(h.changed_at).getTime() <= productSavedAt + 1000);
-      if (atSave && Math.abs(Number(atSave.price) - currentPrice) > 0.01) {
-        prevPrice = Number(atSave.price);
-      } else if (hist.length > 0) {
-        const diffEntry = hist.find((h) => Math.abs(Number(h.price) - currentPrice) > 0.01);
-        if (diffEntry) {
-          prevPrice = Number(diffEntry.price);
+      if (changesAfterSave.length > 0) {
+        const atSave = hist.find((h) => new Date(h.changed_at).getTime() <= productSavedAt + 1000);
+        if (atSave) {
+          savedPrice = Number(atSave.price);
+        } else {
+          savedPrice = Number(changesAfterSave[changesAfterSave.length - 1].price);
         }
-      }
-    } else if (product.needs_price_review) {
-      // 3. El producto tiene la bandera explícita needs_price_review = true
-      const atSave = hist.find((h) => new Date(h.changed_at).getTime() <= productSavedAt + 1000);
-      if (atSave && Math.abs(Number(atSave.price) - currentPrice) > 0.01) {
-        prevPrice = Number(atSave.price);
-      } else if (hist.length > 0) {
-        const diffEntry = hist.find((h) => Math.abs(Number(h.price) - currentPrice) > 0.01);
-        if (diffEntry) {
-          prevPrice = Number(diffEntry.price);
+      } else if (supplyUpdatedAfterSave) {
+        const atSave = hist.find((h) => new Date(h.changed_at).getTime() <= productSavedAt + 1000);
+        if (atSave && Math.abs(Number(atSave.price) - currentPrice) > 0.001) {
+          savedPrice = Number(atSave.price);
+        } else if (hist.length > 0) {
+          const diffEntry = hist.find((h) => Math.abs(Number(h.price) - currentPrice) > 0.001);
+          if (diffEntry) {
+            savedPrice = Number(diffEntry.price);
+          }
+        }
+      } else if (product.needs_price_review) {
+        const atSave = hist.find((h) => new Date(h.changed_at).getTime() <= productSavedAt + 1000);
+        if (atSave && Math.abs(Number(atSave.price) - currentPrice) > 0.001) {
+          savedPrice = Number(atSave.price);
+        } else if (hist.length > 0) {
+          const diffEntry = hist.find((h) => Math.abs(Number(h.price) - currentPrice) > 0.001);
+          if (diffEntry) {
+            savedPrice = Number(diffEntry.price);
+          }
         }
       }
     }
 
-    // Solo si se detectó un precio previo que difiera en más de $0.01 del actual (evitar decimales flotantes)
-    if (prevPrice !== null && Math.abs(currentPrice - prevPrice) > 0.01) {
-      const prevUnitCost = calculateUnitCost(prevPrice, purchaseQty, convFactor);
-      const newUnitCost = calculateUnitCost(currentPrice, purchaseQty, convFactor);
-      const priceDiff = currentPrice - prevPrice;
-      const percentChange = prevPrice > 0 ? ((currentPrice - prevPrice) / prevPrice) * 100 : 0;
-      const costImpact = ((newUnitCost - prevUnitCost) * qty) / productYield;
-
-      modified.push({
-        supplyId: ps.supply_id,
-        name: supply.name || "Insumo",
-        category: supply.category,
-        useUnit: supply.use_unit || "u",
-        purchaseUnit: supply.purchase_unit || "u",
-        prevPrice,
-        newPrice: currentPrice,
-        priceDiff: Math.round(priceDiff * 100) / 100,
-        percentChange: Math.round(percentChange * 10) / 10,
-        prevUnitCost,
-        newUnitCost,
-        quantity: qty,
-        costImpact: Math.round(costImpact * 100) / 100,
-        isIncrease: currentPrice > prevPrice,
-      });
+    // Si no hubo cambios posteriores ni snapshot distinto, savedPrice === currentPrice
+    if (savedPrice === null) {
+      savedPrice = currentPrice;
     }
+
+    const diff = currentPrice - savedPrice;
+    if (Math.abs(diff) <= 0.001) {
+      continue;
+    }
+
+    const prevUnitCost = calculateUnitCost(savedPrice, purchaseQty, convFactor);
+    const newUnitCost = calculateUnitCost(currentPrice, purchaseQty, convFactor);
+    const costImpact = ((newUnitCost - prevUnitCost) * qty) / productYield;
+
+    const variation = getPriceDifference(currentPrice, savedPrice, costImpact);
+    if (!variation) continue;
+
+    modified.push({
+      supplyId: ps.supply_id,
+      name: supply.name || "Insumo",
+      category: supply.category,
+      useUnit: supply.use_unit || "u",
+      purchaseUnit: supply.purchase_unit || "u",
+      prevPrice: savedPrice,
+      newPrice: currentPrice,
+      priceDiff: variation.diff,
+      percentChange: variation.absPercent,
+      prevUnitCost,
+      newUnitCost,
+      quantity: qty,
+      costImpact: Math.round(Math.abs(costImpact) * 100) / 100,
+      isIncrease: variation.isIncrease,
+      isDecrease: variation.isDecrease,
+      formattedPercent: variation.formattedPercent,
+      formattedBadge: variation.formattedBadge,
+      formattedImpact: variation.formattedImpact,
+    });
   }
 
   return modified;

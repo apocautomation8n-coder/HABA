@@ -119,9 +119,13 @@ export const PriceReviewModal: React.FC<PriceReviewModalProps> = ({
                 {modifiedSupplies.map((item) => (
                   <div
                     key={item.supplyId}
-                    className="p-3 bg-amber-50/40 rounded-2xl border border-amber-200/80 space-y-2 hover:bg-amber-50/60 transition"
+                    className={`p-3 rounded-2xl border space-y-2 transition ${
+                      item.isIncrease
+                        ? "bg-amber-50/40 border-amber-200/80 hover:bg-amber-50/60"
+                        : "bg-sky-50/40 border-sky-200/80 hover:bg-sky-50/60"
+                    }`}
                   >
-                    {/* Nombre y Badge de aumento */}
+                    {/* Nombre y Badge de aumento/baja */}
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <div className="flex items-center gap-1.5 flex-wrap">
@@ -144,17 +148,17 @@ export const PriceReviewModal: React.FC<PriceReviewModalProps> = ({
                           className={`inline-flex items-center gap-1 text-[11px] font-extrabold px-2 py-0.5 rounded-lg border shadow-2xs ${
                             item.isIncrease
                               ? "bg-amber-100 text-amber-800 border-amber-300"
-                              : "bg-emerald-100 text-emerald-800 border-emerald-300"
+                              : "bg-sky-100 text-sky-800 border-sky-300"
                           }`}
                         >
                           {item.isIncrease ? (
-                            <TrendingUp className="w-3 h-3" />
+                            <TrendingUp className="w-3 h-3 text-amber-700" />
                           ) : (
-                            <TrendingDown className="w-3 h-3" />
+                            <TrendingDown className="w-3 h-3 text-sky-700" />
                           )}
-                          {item.isIncrease ? "+" : ""}
-                          {formatCurrency(item.priceDiff)} ({item.isIncrease ? "+" : ""}
-                          {item.percentChange}%)
+                          {item.isIncrease
+                            ? `+${formatCurrency(item.priceDiff)} (+${item.percentChange}%)`
+                            : `-${formatCurrency(Math.abs(item.priceDiff))} (-${item.percentChange}%)`}
                         </span>
                       </div>
                     </div>
@@ -172,10 +176,10 @@ export const PriceReviewModal: React.FC<PriceReviewModalProps> = ({
                       </div>
                       <div className="border-l border-neutral-100 pl-2">
                         <span className="text-neutral-400 block text-[10px]">Precio actual:</span>
-                        <span className="font-bold text-amber-900">
+                        <span className={`font-bold ${item.isIncrease ? "text-amber-900" : "text-sky-900"}`}>
                           {formatCurrency(item.newPrice)} / {item.purchaseUnit}
                         </span>
-                        <span className="text-[10px] text-amber-700 block">
+                        <span className={`text-[10px] block ${item.isIncrease ? "text-amber-700" : "text-sky-700"}`}>
                           ({formatCurrency(item.newUnitCost)} / {item.useUnit})
                         </span>
                       </div>
@@ -184,8 +188,8 @@ export const PriceReviewModal: React.FC<PriceReviewModalProps> = ({
                     {/* Impacto estimado en el costo del producto */}
                     <div className="flex items-center justify-between text-[11px] pt-0.5 text-neutral-600">
                       <span>Impacto en costo de este producto:</span>
-                      <strong className={`font-bold ${item.isIncrease ? "text-amber-800" : "text-emerald-700"}`}>
-                        {item.isIncrease ? "+" : ""}
+                      <strong className={`font-bold ${item.isIncrease ? "text-amber-800" : "text-sky-700"}`}>
+                        {item.isIncrease ? "+" : "-"}
                         {formatCurrency(item.costImpact)}
                       </strong>
                     </div>
