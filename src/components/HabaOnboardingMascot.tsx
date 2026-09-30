@@ -108,22 +108,12 @@ export const HabaOnboardingMascot: React.FC<HabaOnboardingMascotProps> = ({
             : "transform 850ms cubic-bezier(0.34, 1.3, 0.64, 1)",
         }}
       >
-        {/* Mascota con ojos abiertos */}
+        {/* Mascota HABA oficial */}
         <img
-          src="/haba-mascot-open.png"
+          src="/LogoHaba.png"
           alt="Haba Mascota"
-          className={`w-full h-full object-contain absolute inset-0 drop-shadow-md transition-opacity duration-100 ${
-            isWinking ? "opacity-0" : "opacity-100"
-          }`}
-          draggable={false}
-        />
-
-        {/* Mascota con guiño (loop de vida intermitente) */}
-        <img
-          src="/haba-mascot-wink.png"
-          alt="Haba Mascota Guiño"
-          className={`w-full h-full object-contain absolute inset-0 drop-shadow-md transition-opacity duration-100 ${
-            isWinking ? "opacity-100" : "opacity-0"
+          className={`w-full h-full object-contain absolute inset-0 drop-shadow-md transition-transform duration-200 ${
+            isWinking ? "scale-110 -rotate-6" : "scale-100 rotate-0"
           }`}
           draggable={false}
         />

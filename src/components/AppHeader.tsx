@@ -117,15 +117,21 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   return (
     <>
       <header className="w-full flex items-center justify-between pb-3 pt-1 border-b border-[#EAF0E8] mb-4 gap-4">
-        <Link href="/dashboard" className="flex items-center gap-2.5 flex-shrink-0">
+        <Link href="/dashboard" className="flex items-center gap-2.5 flex-shrink-0 group">
           {avatarUrl ? (
             <img
               src={avatarUrl}
               alt="Logo"
-              className="w-9 h-9 rounded-xl object-cover border border-[#C3EBC0] flex-shrink-0"
+              className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl object-cover border border-[#C3EBC0] flex-shrink-0"
             />
           ) : (
-            <HabaMascot size={36} />
+            <div className="h-9 w-9 sm:h-10 sm:w-10 flex items-center justify-center flex-shrink-0">
+              <img
+                src="/LogoHaba.png"
+                alt="Logo HABA"
+                className="h-full w-auto max-h-10 object-contain drop-shadow-sm transition-transform group-hover:scale-105"
+              />
+            </div>
           )}
           <div>
             <h1 className="text-base font-extrabold text-[#2B2B2B] leading-tight flex items-center gap-1.5 font-display">

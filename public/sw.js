@@ -1,15 +1,18 @@
 // HABA Service Worker (Cache-First for static assets, Network-First for Supabase)
-const CACHE_NAME = 'haba-cache-v3';
+const CACHE_NAME = 'haba-cache-v4';
 const STATIC_ASSETS = [
   '/',
   '/manifest.webmanifest',
+  '/LogoHaba.png',
+  '/logo.png',
   '/icon-192.png',
   '/icon-512.png',
   '/icon-maskable-192.png',
   '/icon-maskable-512.png',
   '/apple-touch-icon.png',
-  '/icon.svg',
-  '/haba-avatar.png'
+  '/favicon.ico',
+  '/favicon-32x32.png',
+  '/favicon-16x16.png'
 ];
 
 // Install: pre-cache core assets

@@ -165,7 +165,7 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
       if (permission === "granted") {
         new Notification("HABA 🌱", {
           body: "¡Notificaciones activadas! Te avisaremos cuando tus costos o insumos se actualicen.",
-          icon: "/icon.svg",
+          icon: "/icon-192.png",
         });
       }
     }
