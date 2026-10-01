@@ -1,5 +1,5 @@
 // HABA Service Worker (Cache-First for static assets, Network-First for Supabase)
-const CACHE_NAME = 'haba-cache-v5';
+const CACHE_NAME = 'haba-cache-v6';
 const STATIC_ASSETS = [
   '/',
   '/manifest.webmanifest',
