@@ -429,9 +429,9 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
         left: 0,
         right: 0,
         bottom: 0,
-        width: "100vw",
-        height: "100dvh",
-        minHeight: "100vh",
+        width: "100%",
+        height: "100%",
+        maxHeight: "100dvh",
       }}
       onClick={(e) => {
         if (e.target === e.currentTarget) {
@@ -440,14 +440,14 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
       }}
     >
       <div
-        className="bg-white w-full max-w-md sm:max-w-lg rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col border border-[#EAF0E8] animate-in slide-in-from-bottom-6 duration-200 overflow-hidden"
+        className="bg-white w-full max-w-md sm:max-w-lg rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col border border-[#EAF0E8] animate-in slide-in-from-bottom-6 sm:slide-in-from-bottom-0 duration-200 overflow-hidden max-h-[90vh] max-h-[calc(100dvh-2rem)] sm:max-h-[88vh]"
         style={{
-          maxHeight: "calc(100dvh - env(safe-area-inset-top, 20px) - 20px)",
+          maxHeight: "min(90vh, calc(100dvh - 1.5rem))",
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Cabecera del modal */}
-        <div className="p-3.5 sm:p-4 border-b border-[#EAF0E8] flex items-center justify-between bg-white flex-shrink-0">
+        {/* Cabecera fija del modal */}
+        <div className="p-3.5 sm:p-4 border-b border-[#EAF0E8] flex items-center justify-between bg-white shrink-0 flex-shrink-0">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-2xl bg-[#DCF4D7] text-[#1F7A4C] flex items-center justify-center">
               <Sparkles className="w-4 h-4" />
@@ -457,8 +457,10 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
             </h3>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-1 text-neutral-400 hover:text-neutral-600 rounded-full hover:bg-neutral-100 transition"
+            className="p-1.5 text-neutral-400 hover:text-neutral-600 rounded-full hover:bg-neutral-100 transition cursor-pointer"
+            aria-label="Cerrar modal"
           >
             <X className="w-5 h-5" />
           </button>
@@ -738,24 +740,24 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
             </div>
           </div>
 
-          {/* Footer Fijo con botones */}
+          {/* Footer Fijo con botones (shrink-0, anclado a la base) */}
           <div
-            className="p-3.5 border-t border-neutral-100 bg-white flex gap-2 flex-shrink-0 rounded-b-3xl shadow-[0_-4px_16px_rgba(0,0,0,0.05)]"
+            className="shrink-0 flex-shrink-0 p-3.5 sm:p-4 border-t border-neutral-100 bg-white flex gap-2 rounded-b-3xl shadow-[0_-4px_16px_rgba(0,0,0,0.05)]"
             style={{
-              paddingBottom: "max(env(safe-area-inset-bottom, 16px), 20px)",
+              paddingBottom: "max(env(safe-area-inset-bottom, 12px), 16px)",
             }}
           >
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 py-2.5 px-3 bg-neutral-100 hover:bg-neutral-200 text-[#7A7A7A] rounded-2xl text-xs font-semibold transition cursor-pointer"
+              className="flex-1 py-2.5 px-3 bg-neutral-100 hover:bg-neutral-200 text-[#7A7A7A] rounded-2xl text-xs font-semibold transition cursor-pointer active:scale-98"
             >
               Cancelar
             </button>
             <button
               type="submit"
               disabled={loading}
-              className="flex-1 py-2.5 px-3 bg-[#3BB578] hover:bg-[#2E9E65] text-white rounded-2xl text-xs font-bold transition shadow-sm disabled:opacity-60 cursor-pointer"
+              className="flex-1 py-2.5 px-3 bg-[#3BB578] hover:bg-[#2E9E65] text-white rounded-2xl text-xs font-bold transition shadow-sm disabled:opacity-60 cursor-pointer active:scale-98"
             >
               {loading ? "Guardando..." : initialSupply ? "Actualizar Insumo" : "Guardar Insumo"}
             </button>

@@ -39,21 +39,21 @@ export const SupplyDetailModal: React.FC<SupplyDetailModalProps> = ({
         left: 0,
         right: 0,
         bottom: 0,
-        width: "100vw",
-        height: "100dvh",
-        minHeight: "100vh",
+        width: "100%",
+        height: "100%",
+        maxHeight: "100dvh",
       }}
       onClick={onClose}
     >
       <div
-        className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col border border-[#EAF0E8] animate-in slide-in-from-bottom-6 duration-200 overflow-hidden"
+        className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col border border-[#EAF0E8] animate-in slide-in-from-bottom-6 sm:slide-in-from-bottom-0 duration-200 overflow-hidden max-h-[90vh] max-h-[calc(100dvh-2rem)] sm:max-h-[85vh]"
         style={{
-          maxHeight: "calc(100dvh - env(safe-area-inset-top, 20px) - 10px)",
+          maxHeight: "min(90vh, calc(100dvh - 1.5rem))",
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="p-4 border-b border-neutral-100 flex items-center justify-between flex-shrink-0">
+        {/* Header fijo */}
+        <div className="p-4 border-b border-neutral-100 flex items-center justify-between shrink-0 flex-shrink-0">
           <div className="flex items-center gap-2.5 min-w-0">
             <div
               className={`w-9 h-9 rounded-2xl flex items-center justify-center flex-shrink-0 ${
@@ -91,8 +91,8 @@ export const SupplyDetailModal: React.FC<SupplyDetailModalProps> = ({
           </button>
         </div>
 
-        {/* Contenido */}
-        <div className="p-4 space-y-4 overflow-y-auto">
+        {/* Contenido scrolleable */}
+        <div className="p-4 space-y-4 overflow-y-auto flex-1 min-h-0 overscroll-contain">
           {/* Tarjetas de costo y reposición */}
           <div className="grid grid-cols-2 gap-2.5">
             <div className="bg-[#DCF4D7]/70 p-3 rounded-2xl border border-[#C3EBC0]">
@@ -164,8 +164,13 @@ export const SupplyDetailModal: React.FC<SupplyDetailModalProps> = ({
           </div>
         </div>
 
-        {/* Acciones inferiores */}
-        <div className="p-4 border-t border-neutral-100 bg-neutral-50/50 flex flex-col sm:flex-row gap-2 flex-shrink-0">
+        {/* Acciones inferiores fijas con soporte safe-area */}
+        <div
+          className="p-3.5 sm:p-4 border-t border-neutral-100 bg-white flex flex-col sm:flex-row gap-2 shrink-0 flex-shrink-0 rounded-b-3xl shadow-[0_-4px_16px_rgba(0,0,0,0.05)]"
+          style={{
+            paddingBottom: "max(env(safe-area-inset-bottom, 12px), 16px)",
+          }}
+        >
           <button
             onClick={() => {
               onClose();

@@ -151,54 +151,70 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[99999] bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4">
-      {/* Cobertura total para status bar y notch en iOS Safari */}
-      <div 
-        className="fixed bg-black/60 pointer-events-none"
+    <div
+      className="fixed inset-0 z-[99999] bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200"
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        width: "100%",
+        height: "100%",
+        maxHeight: "100dvh",
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <div
+        className="bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full shadow-2xl border border-[#EAF0E8] flex flex-col relative animate-in slide-in-from-bottom-6 sm:slide-in-from-bottom-0 duration-200 overflow-hidden max-h-[90vh] max-h-[calc(100dvh-2rem)] sm:max-h-[85vh]"
         style={{
-          top: '-120px',
-          bottom: '-120px',
-          left: '-50px',
-          right: '-50px',
+          maxHeight: "min(90vh, calc(100dvh - 1.5rem))",
         }}
-      />
-      <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full shadow-2xl border border-[#EAF0E8] p-5 sm:p-6 relative animate-in slide-in-from-bottom-6 duration-200">
-        {/* Botón cerrar */}
-        <button
-          onClick={onClose}
-          disabled={loading}
-          className="absolute top-4 right-4 p-1.5 text-neutral-400 hover:text-neutral-600 rounded-full hover:bg-neutral-100 transition disabled:opacity-40"
-          aria-label="Cerrar modal"
-        >
-          <X className="w-4 h-4" />
-        </button>
-
-        {/* Encabezado */}
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-[#DCF4D7] text-[#3BB578] flex items-center justify-center font-bold text-lg shadow-2xs">
-            <DollarSign className="w-5 h-5" />
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Cabecera fija */}
+        <div className="p-4 sm:p-5 border-b border-[#EAF0E8] flex items-center justify-between shrink-0 flex-shrink-0 bg-white">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-[#DCF4D7] text-[#3BB578] flex items-center justify-center font-bold text-lg shadow-2xs">
+              <DollarSign className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-neutral-800 font-display">
+                {isEditing ? "Editar Gasto Fijo" : "Nuevo Gasto Fijo"}
+              </h3>
+              <p className="text-xs text-neutral-500 font-body">
+                {isEditing
+                  ? "Modificá los valores del costo mensual"
+                  : "Agregá un costo operativo de tu negocio"}
+              </p>
+            </div>
           </div>
-          <div>
-            <h3 className="text-base font-bold text-neutral-800 font-display">
-              {isEditing ? "Editar Gasto Fijo" : "Nuevo Gasto Fijo"}
-            </h3>
-            <p className="text-xs text-neutral-500 font-body">
-              {isEditing
-                ? "Modificá los valores del costo mensual"
-                : "Agregá un costo operativo de tu negocio"}
-            </p>
-          </div>
+          {/* Botón cerrar */}
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={loading}
+            className="p-1.5 text-neutral-400 hover:text-neutral-600 rounded-full hover:bg-neutral-100 transition disabled:opacity-40 cursor-pointer"
+            aria-label="Cerrar modal"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
 
         {/* Error Alert */}
         {error && (
-          <div className="mt-3 p-2.5 bg-rose-50 border border-rose-200 rounded-2xl text-rose-700 text-xs flex items-center gap-2 animate-in fade-in">
+          <div className="mx-4 mt-3 p-2.5 bg-rose-50 border border-rose-200 rounded-2xl text-rose-700 text-xs flex items-center gap-2 animate-in fade-in shrink-0">
             <AlertCircle className="w-4 h-4 flex-shrink-0" />
             <span>{error}</span>
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="mt-4 space-y-4 font-body">
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden font-body">
+          <div className="overflow-y-auto p-4 sm:p-5 space-y-4 flex-1 min-h-0 overscroll-contain">
           {/* Nombre */}
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-neutral-700 block">
@@ -300,21 +316,27 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
               <span className="text-[9px] text-neutral-500 block">/ mes</span>
             </div>
           </div>
+        </div>
 
-          {/* Botones de acción */}
-          <div className="pt-2 flex gap-2">
+          {/* Botones de acción fijos en la base */}
+          <div
+            className="p-3.5 sm:p-4 border-t border-neutral-100 bg-white flex gap-2 shrink-0 flex-shrink-0 rounded-b-3xl shadow-[0_-4px_16px_rgba(0,0,0,0.05)]"
+            style={{
+              paddingBottom: "max(env(safe-area-inset-bottom, 12px), 16px)",
+            }}
+          >
             <button
               type="button"
               onClick={onClose}
               disabled={loading}
-              className="flex-1 py-2.5 text-xs font-bold text-neutral-600 bg-neutral-100 hover:bg-neutral-200 active:scale-[0.99] rounded-2xl transition disabled:opacity-50"
+              className="flex-1 py-2.5 text-xs font-bold text-neutral-600 bg-neutral-100 hover:bg-neutral-200 active:scale-[0.99] rounded-2xl transition disabled:opacity-50 cursor-pointer"
             >
               Cancelar
             </button>
             <button
               type="submit"
               disabled={loading}
-              className="flex-1 py-2.5 text-xs font-bold text-white bg-[#3BB578] hover:bg-[#2E9E65] active:scale-[0.99] rounded-2xl transition shadow-sm flex items-center justify-center gap-1.5 disabled:opacity-50"
+              className="flex-1 py-2.5 text-xs font-bold text-white bg-[#3BB578] hover:bg-[#2E9E65] active:scale-[0.99] rounded-2xl transition shadow-sm flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer"
             >
               {loading ? (
                 <>
