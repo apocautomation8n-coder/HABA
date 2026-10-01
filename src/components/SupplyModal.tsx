@@ -8,11 +8,8 @@ import {
   AlertCircle,
   Calculator,
   ChevronDown,
-  CheckCircle2,
-  Package,
   Search,
   Check,
-  Boxes,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -47,19 +44,50 @@ interface SupplyModalProps {
   zIndex?: string;
 }
 
-const QUICK_CHIPS = [
-  { label: "kg", id: "kg-g" },
-  { label: "g", id: "g-g" },
-  { label: "resma", id: "resma-hoja" },
-  { label: "caja", id: "caja-u" },
-  { label: "bulto", id: "bulto-u" },
-  { label: "paquete", id: "pack-u" },
-  { label: "docena", id: "docena-u" },
-  { label: "litro", id: "l-ml" },
-  { label: "metro", id: "m-cm" },
-  { label: "m²", id: "m2-cm2" },
-  { label: "u", id: "u-u" },
-];
+const getCleanUnitLabel = (preset: UnitPreset): string => {
+  switch (preset.id) {
+    case "kg-g":
+      return "Kilogramo (kg)";
+    case "g-g":
+      return "Gramo (g)";
+    case "g-mg":
+      return "Gramo (g) → Miligramo (mg)";
+    case "l-ml":
+      return "Litro (l)";
+    case "ml-ml":
+      return "Mililitro (ml)";
+    case "m-cm":
+      return "Metro (m)";
+    case "m-mm":
+      return "Metro (m) → Milímetro (mm)";
+    case "cm-cm":
+      return "Centímetro (cm)";
+    case "m2-cm2":
+      return "Metro cuadrado (m²)";
+    case "m2-m2":
+      return "Metro cuadrado (m² directos)";
+    case "cm2-cm2":
+      return "Centímetro cuadrado (cm²)";
+    case "docena-u":
+      return "Docena (12 unidades)";
+    case "u-u":
+      return "Unidad (u)";
+    case "resma-hoja":
+      return "Resma";
+    case "caja-u":
+      return "Caja";
+    case "bulto-u":
+      return "Bulto";
+    case "pack-u":
+      return "Paquete / Pack";
+    case "pliego-hoja":
+      return "Pliego";
+    case "custom":
+      return "Personalizado (manual)";
+    default:
+      return preset.shortLabel || preset.name;
+  }
+};
 
 export const SupplyModal: React.FC<SupplyModalProps> = ({
   isOpen,
@@ -412,10 +440,9 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
       }}
     >
       <div
-        className="bg-white w-full max-w-md md:max-w-3xl rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col border border-[#EAF0E8] animate-in slide-in-from-bottom-6 duration-200 overflow-hidden"
+        className="bg-white w-full max-w-md sm:max-w-lg rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col border border-[#EAF0E8] animate-in slide-in-from-bottom-6 duration-200 overflow-hidden"
         style={{
-          height: "min(92vh, 740px)",
-          maxHeight: "calc(100dvh - env(safe-area-inset-top, 20px) - 10px)",
+          maxHeight: "calc(100dvh - env(safe-area-inset-top, 20px) - 20px)",
         }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -447,385 +474,265 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
               </div>
             )}
 
-            {/* Cuadrícula de 2 columnas en Desktop */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Columna Izquierda: Datos del Insumo y Compra */}
-              <div className="space-y-3.5">
-                {/* Categoría */}
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <label className="text-[11px] font-semibold text-[#2B2B2B] flex items-center gap-1">
-                      <span>Tipo de Insumo</span>
-                    </label>
-                    <span className="text-[10px] text-[#7A7A7A]">
-                      {category === "materia_prima" ? "Materia que compone el producto" : "Cajas, bolsas o empaques"}
-                    </span>
-                  </div>
-                  <div className="flex bg-[#F6F7F2] p-1 rounded-2xl gap-1 border border-[#EAF0E8]">
-                    <button
-                      type="button"
-                      onClick={() => setCategory("materia_prima")}
-                      className={`flex-1 py-1.5 text-xs font-semibold rounded-xl transition ${
-                        category === "materia_prima"
-                          ? "bg-white text-[#1F7A4C] shadow-xs"
-                          : "text-[#7A7A7A] hover:text-[#2B2B2B]"
-                      }`}
-                    >
-                      🧵 Materia Prima
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setCategory("packaging")}
-                      className={`flex-1 py-1.5 text-xs font-semibold rounded-xl transition ${
-                        category === "packaging"
-                          ? "bg-white text-[#1F7A4C] shadow-xs"
-                          : "text-[#7A7A7A] hover:text-[#2B2B2B]"
-                      }`}
-                    >
-                      📦 Packaging
-                    </button>
-                  </div>
-                </div>
+            {/* Tipo de Insumo */}
+            <div className="space-y-1">
+              <label className="text-[11px] font-semibold text-[#2B2B2B] block">
+                Tipo de Insumo
+              </label>
+              <div className="flex bg-[#F6F7F2] p-1 rounded-2xl gap-1 border border-[#EAF0E8]">
+                <button
+                  type="button"
+                  onClick={() => setCategory("materia_prima")}
+                  className={`flex-1 py-1.5 text-xs font-semibold rounded-xl transition ${
+                    category === "materia_prima"
+                      ? "bg-white text-[#1F7A4C] shadow-xs"
+                      : "text-[#7A7A7A] hover:text-[#2B2B2B]"
+                  }`}
+                >
+                  🧵 Materia Prima
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCategory("packaging")}
+                  className={`flex-1 py-1.5 text-xs font-semibold rounded-xl transition ${
+                    category === "packaging"
+                      ? "bg-white text-[#1F7A4C] shadow-xs"
+                      : "text-[#7A7A7A] hover:text-[#2B2B2B]"
+                  }`}
+                >
+                  📦 Packaging
+                </button>
+              </div>
+            </div>
 
-                {/* Nombre */}
-                <div className="space-y-1">
-                  <label className="text-[11px] font-semibold text-[#2B2B2B]">Nombre del Insumo *</label>
+            {/* Nombre del Insumo */}
+            <div className="space-y-1">
+              <label className="text-[11px] font-semibold text-[#2B2B2B] block">
+                Nombre del Insumo *
+              </label>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder={
+                  category === "packaging"
+                    ? "Ej: Caja 15x15, Sobre Kraft, Bolsa..."
+                    : "Ej: Cera de Soja, Harina, Resina, Tela..."
+                }
+                required
+                className="w-full h-9 px-3 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none transition text-[#2B2B2B]"
+              />
+            </div>
+
+            {/* Fila Horizontal: Cantidad * y Unidad de Compra * */}
+            <div className="grid grid-cols-2 gap-3 items-start">
+              <div className="space-y-1">
+                <label className="text-[11px] font-semibold text-[#2B2B2B] block">
+                  Cantidad *
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  min="0.001"
+                  value={purchaseQuantity}
+                  onChange={(e) => setPurchaseQuantity(e.target.value)}
+                  placeholder="1"
+                  required
+                  className="w-full h-9 px-3 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B] transition"
+                />
+              </div>
+
+              <div className="space-y-1 relative" ref={unitDropdownRef}>
+                <label className="text-[11px] font-semibold text-[#2B2B2B] block">
+                  Unidad de Compra *
+                </label>
+                <div className="relative">
                   <input
                     type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder={
-                      category === "packaging"
-                        ? "Ej: Caja 15x15, Sobre Kraft, Bolsa..."
-                        : "Ej: Cera de Soja, Harina, Resina, Tela..."
-                    }
+                    value={purchaseUnit}
+                    onChange={(e) => handlePurchaseUnitInput(e.target.value)}
+                    onFocus={() => {
+                      setUnitSearch(purchaseUnit);
+                      setIsUnitDropdownOpen(true);
+                    }}
+                    placeholder="kg, resma, caja, metro..."
                     required
-                    className="w-full px-3 py-2 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none transition text-[#2B2B2B]"
+                    autoComplete="off"
+                    className="w-full h-9 pl-3 pr-8 text-xs font-semibold bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B] transition"
                   />
-                </div>
-
-                {/* Cantidad y Unidad de Compra (Desplegable con búsqueda y autocompletado) */}
-                <div className="grid grid-cols-2 gap-2.5">
-                  <div className="space-y-1">
-                    <label className="text-[11px] font-semibold text-[#2B2B2B]">Cantidad *</label>
-                    <input
-                      type="number"
-                      step="any"
-                      min="0.001"
-                      value={purchaseQuantity}
-                      onChange={(e) => setPurchaseQuantity(e.target.value)}
-                      placeholder="1"
-                      required
-                      className="w-full px-3 py-2 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B]"
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUnitSearch("");
+                      setIsUnitDropdownOpen((prev) => !prev);
+                    }}
+                    className="absolute inset-y-0 right-0 pr-2.5 flex items-center text-neutral-400 hover:text-neutral-600 cursor-pointer"
+                    tabIndex={-1}
+                  >
+                    <ChevronDown
+                      className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                        isUnitDropdownOpen ? "rotate-180" : ""
+                      }`}
                     />
-                  </div>
+                  </button>
 
-                  <div className="space-y-1" ref={unitDropdownRef}>
-                    <label className="text-[11px] font-semibold text-[#2B2B2B] flex items-center justify-between">
-                      <span>Unidad de Compra *</span>
-                      <span className="text-[9.5px] text-[#3BB578] font-bold">Buscar</span>
-                    </label>
-
-                    <div className="relative">
-                      <input
-                        type="text"
-                        value={purchaseUnit}
-                        onChange={(e) => handlePurchaseUnitInput(e.target.value)}
-                        onFocus={() => {
-                          setUnitSearch(purchaseUnit);
-                          setIsUnitDropdownOpen(true);
-                        }}
-                        placeholder="kg, resma, caja, metro..."
-                        required
-                        autoComplete="off"
-                        className="w-full pl-3 pr-7 py-2 text-xs font-semibold bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B] transition"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setUnitSearch("");
-                          setIsUnitDropdownOpen((prev) => !prev);
-                        }}
-                        className="absolute inset-y-0 right-0 pr-2 flex items-center text-neutral-400 hover:text-neutral-600 cursor-pointer"
-                        tabIndex={-1}
-                      >
-                        <ChevronDown
-                          className={`w-3.5 h-3.5 transition-transform duration-200 ${
-                            isUnitDropdownOpen ? "rotate-180" : ""
-                          }`}
+                  {/* Dropdown de Unidades Limpio */}
+                  {isUnitDropdownOpen && (
+                    <div className="absolute z-[120] left-0 right-0 mt-1 max-h-56 overflow-y-auto bg-white border border-[#C3EBC0] rounded-2xl shadow-xl p-1.5 space-y-0.5 animate-in fade-in zoom-in-95 duration-100 overscroll-contain">
+                      <div className="px-2 py-1 border-b border-neutral-100 mb-1 flex items-center gap-1.5 text-neutral-400">
+                        <Search className="w-3 h-3 text-[#3BB578]" />
+                        <input
+                          type="text"
+                          value={unitSearch}
+                          onChange={(e) => setUnitSearch(e.target.value)}
+                          placeholder="Buscar unidad..."
+                          className="w-full text-[11px] bg-transparent outline-none text-[#2B2B2B] placeholder:text-neutral-400"
+                          autoFocus
                         />
-                      </button>
+                        {unitSearch && (
+                          <button
+                            type="button"
+                            onClick={() => setUnitSearch("")}
+                            className="text-neutral-400 hover:text-neutral-600"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
 
-                      {/* Dropdown con Autocompletado Predictivo */}
-                      {isUnitDropdownOpen && (
-                        <div className="absolute z-[120] left-0 right-0 mt-1 max-h-64 overflow-y-auto bg-white border border-[#C3EBC0] rounded-2xl shadow-xl p-1.5 space-y-1 animate-in fade-in zoom-in-95 duration-100 overscroll-contain">
-                          {/* Barra de filtro rápido dentro del dropdown */}
-                          <div className="px-2 py-1 border-b border-neutral-100 mb-1 flex items-center gap-1.5 text-neutral-400">
-                            <Search className="w-3 h-3 text-[#3BB578]" />
-                            <input
-                              type="text"
-                              value={unitSearch}
-                              onChange={(e) => setUnitSearch(e.target.value)}
-                              placeholder="Escribí o filtrá unidad..."
-                              className="w-full text-[11px] bg-transparent outline-none text-[#2B2B2B] placeholder:text-neutral-400"
-                              autoFocus
-                            />
-                            {unitSearch && (
-                              <button
-                                type="button"
-                                onClick={() => setUnitSearch("")}
-                                className="text-neutral-400 hover:text-neutral-600"
-                              >
-                                <X className="w-3 h-3" />
-                              </button>
-                            )}
-                          </div>
-
-                          {filteredPresets.length === 0 ? (
-                            <div className="p-2 text-center text-xs text-neutral-500">
-                              <p className="font-semibold">Sin coincidencias exactas</p>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setSelectedPresetId("custom");
-                                  setPurchaseUnit(unitSearch || purchaseUnit);
-                                  setUseUnit("unidad");
-                                  setConversionFactor(1);
-                                  setIsUnitDropdownOpen(false);
-                                }}
-                                className="mt-1.5 text-[11px] text-[#1F7A4C] font-bold underline hover:text-[#165837] block w-full"
-                              >
-                                Usar &quot;{unitSearch || purchaseUnit}&quot; como unidad manual
-                              </button>
-                            </div>
-                          ) : (
-                            filteredPresets.map((preset) => {
-                              const isSelected = selectedPresetId === preset.id;
-                              return (
-                                <button
-                                  key={preset.id}
-                                  type="button"
-                                  onClick={() => handleSelectPreset(preset)}
-                                  className={`w-full text-left px-2.5 py-1.5 rounded-xl transition flex items-center justify-between text-xs ${
-                                    isSelected
-                                      ? "bg-[#DCF4D7] text-[#1F7A4C] font-bold"
-                                      : "hover:bg-[#F6F7F2] text-[#2B2B2B]"
-                                  }`}
-                                >
-                                  <div className="min-w-0 pr-2">
-                                    <div className="flex items-center gap-1.5">
-                                      <span className="truncate">{preset.name}</span>
-                                    </div>
-                                    <span className="text-[10px] text-neutral-400 block truncate">
-                                      {preset.example}
-                                    </span>
-                                  </div>
-                                  <span
-                                    className={`text-[9.5px] px-1.5 py-0.5 rounded-md flex-shrink-0 font-semibold ${
-                                      preset.isStandard
-                                        ? "bg-emerald-100 text-emerald-800"
-                                        : "bg-amber-100 text-amber-800"
-                                    }`}
-                                  >
-                                    {preset.isStandard ? "Estándar" : "Pregunta cantidad"}
-                                  </span>
-                                </button>
-                              );
-                            })
-                          )}
+                      {filteredPresets.length === 0 ? (
+                        <div className="p-2 text-center text-xs text-neutral-500">
+                          <p className="font-semibold">Sin coincidencias exactas</p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedPresetId("custom");
+                              setPurchaseUnit(unitSearch || purchaseUnit);
+                              setUseUnit("unidad");
+                              setConversionFactor(1);
+                              setIsUnitDropdownOpen(false);
+                            }}
+                            className="mt-1.5 text-[11px] text-[#1F7A4C] font-bold underline hover:text-[#165837] block w-full"
+                          >
+                            Usar &quot;{unitSearch || purchaseUnit}&quot; como unidad manual
+                          </button>
                         </div>
+                      ) : (
+                        filteredPresets.map((preset) => {
+                          const isSelected = selectedPresetId === preset.id;
+                          return (
+                            <button
+                              key={preset.id}
+                              type="button"
+                              onClick={() => handleSelectPreset(preset)}
+                              className={`w-full text-left px-2.5 py-1.5 rounded-xl transition flex items-center justify-between text-xs ${
+                                isSelected
+                                  ? "bg-[#DCF4D7] text-[#1F7A4C] font-bold"
+                                  : "hover:bg-[#F6F7F2] text-[#2B2B2B]"
+                              }`}
+                            >
+                              <span className="truncate">{getCleanUnitLabel(preset)}</span>
+                              {isSelected && <Check className="w-3.5 h-3.5 text-[#1F7A4C] flex-shrink-0" />}
+                            </button>
+                          );
+                        })
                       )}
                     </div>
-                  </div>
+                  )}
                 </div>
+              </div>
+            </div>
 
-                {/* Atajos Rápidos de Unidades Frecuentes */}
-                <div className="space-y-1">
-                  <span className="text-[10px] text-[#7A7A7A] font-medium block">Atajos frecuentes:</span>
-                  <div className="flex flex-wrap items-center gap-1">
-                    {QUICK_CHIPS.map((chip) => {
-                      const isSelected = selectedPresetId === chip.id;
-                      return (
-                        <button
-                          key={chip.id}
-                          type="button"
-                          onClick={() => {
-                            const p = UNIT_PRESETS.find((item) => item.id === chip.id);
-                            if (p) handleSelectPreset(p);
-                          }}
-                          className={`px-2 py-0.5 rounded-lg text-[10.5px] font-semibold border transition-all ${
-                            isSelected
-                              ? "bg-[#3BB578] text-white border-[#3BB578] shadow-xs"
-                              : "bg-white text-[#555] border-[#EAF0E8] hover:bg-[#F0FAF4] hover:text-[#1F7A4C]"
-                          }`}
-                        >
-                          {chip.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Precio de Reposición Actual */}
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <label className="text-[11px] font-semibold text-[#2B2B2B] flex items-center gap-1">
-                      <span>Precio de Reposición ($ ARS) *</span>
-                    </label>
-                    <span className="text-[9.5px] text-[#1F7A4C] bg-[#DCF4D7] px-1.5 py-0.5 rounded-md font-medium">
-                      Al día de hoy
-                    </span>
-                  </div>
-                  <div className="relative">
-                    <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-[#7A7A7A] font-bold text-xs">
-                      $
-                    </span>
-                    <input
-                      type="number"
-                      step="any"
-                      min="0.01"
-                      value={currentPrice}
-                      onChange={(e) => setCurrentPrice(e.target.value)}
-                      placeholder="0.00"
-                      required
-                      className="w-full pl-7 pr-3 py-2 text-xs font-semibold text-[#2B2B2B] bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none transition"
-                    />
-                  </div>
-                  <p className="text-[10px] text-[#7A7A7A] px-1">
-                    ¿Cuánto pagarías hoy por volver a comprarlo? Mantener este precio al día protege tus ganancias.
-                  </p>
+            {/* Precio de Reposición y Pregunta Dinámica (para Unidades Variables) */}
+            <div
+              className={`grid ${
+                !activePreset?.isStandard ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1"
+              } gap-3 items-start`}
+            >
+              <div className="space-y-1">
+                <label className="text-[11px] font-semibold text-[#2B2B2B] block">
+                  Precio de Reposición ($ ARS) *
+                </label>
+                <div className="relative">
+                  <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-[#7A7A7A] font-bold text-xs">
+                    $
+                  </span>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0.01"
+                    value={currentPrice}
+                    onChange={(e) => setCurrentPrice(e.target.value)}
+                    placeholder="0.00"
+                    required
+                    className="w-full h-9 pl-7 pr-3 text-xs font-semibold text-[#2B2B2B] bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none transition"
+                  />
                 </div>
               </div>
 
-              {/* Columna Derecha: Sistema Inteligente de Rendimiento y Tarjeta en Vivo */}
-              <div className="space-y-3.5">
-                {/* 1. SECCIÓN CONDICIONAL: UNIDAD ESTÁNDAR vs PREGUNTA DINÁMICA */}
-                {activePreset?.isStandard ? (
-                  /* UNIDADES ESTÁNDAR: Peso (kg, g), Volumen (l, ml), Longitud (m, cm), Superficie (m², cm²), Docena (12) */
-                  <div className="bg-[#F0FAF4] border border-[#DCF4D7] p-3.5 rounded-2xl space-y-2 animate-in fade-in duration-150">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5 text-xs font-bold text-[#1F7A4C]">
-                        <CheckCircle2 className="w-4 h-4 text-[#3BB578]" />
-                        <span>Cálculo automático de costo</span>
-                      </div>
-                      <span className="text-[10px] bg-white text-[#1F7A4C] font-semibold px-2 py-0.5 rounded-full border border-[#C3EBC0]">
-                        Estándar
-                      </span>
-                    </div>
-
-                    <div className="bg-white p-2.5 rounded-xl border border-[#DCF4D7] flex items-center justify-between text-xs text-[#2B2B2B]">
-                      <span>Conversión fija:</span>
-                      <strong className="text-[#1F7A4C]">
-                        1 {purchaseUnit} = {parsedConversion.toLocaleString("es-AR")} {useUnit}
-                      </strong>
-                    </div>
-
-                    <p className="text-[10.5px] text-[#555] leading-relaxed">
-                      {activePreset.category === "peso"
-                        ? "Para unidades de peso (kg, g), HABA calcula automáticamente el precio por gramo. No necesitás ingresar datos de rendimiento."
-                        : activePreset.category === "volumen"
-                        ? "Para unidades de volumen (l, ml), HABA calcula automáticamente el precio por mililitro."
-                        : activePreset.category === "longitud"
-                        ? "Para unidades de longitud (m, cm), HABA calcula automáticamente el precio por centímetro o milímetro."
-                        : activePreset.category === "superficie"
-                        ? "Para unidades de superficie (m², cm²), HABA calcula automáticamente el precio por cm²."
-                        : "Esta unidad tiene un valor fijo por definición (ej. 1 docena = 12 unidades). No requiere ingresar rendimiento."}
-                    </p>
+              {/* Pregunta Dinámica: se muestra SOLO si la unidad elegida requiere definir el contenido */}
+              {!activePreset?.isStandard && (
+                <div className="space-y-1 animate-in fade-in duration-150">
+                  <label
+                    className="text-[11px] font-semibold text-[#2B2B2B] block truncate"
+                    title={activePreset?.promptQuestion || `Contenido por ${purchaseUnit}`}
+                  >
+                    {activePreset?.promptQuestion || `Contenido por ${purchaseUnit}`} *
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step="any"
+                      min="0.0001"
+                      value={conversionFactor}
+                      onChange={(e) => setConversionFactor(e.target.value)}
+                      placeholder={activePreset?.promptPlaceholder || "1"}
+                      required
+                      className="w-full h-9 pl-3 pr-14 text-xs font-semibold text-[#2B2B2B] bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none transition"
+                    />
+                    <span className="absolute inset-y-0 right-0 pr-3 flex items-center text-[10.5px] text-[#7A7A7A] font-medium pointer-events-none">
+                      {useUnit}
+                    </span>
                   </div>
-                ) : (
-                  /* UNIDADES CON PREGUNTA DINÁMICA CONDICIONAL: Resma, Caja, Bulto, Paquete/Pack, Pliego, Manual */
-                  <div className="bg-[#FFFDF5] border border-[#FDE68A] p-3.5 rounded-2xl space-y-2.5 animate-in fade-in duration-200 shadow-2xs">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold text-[#92400E] flex items-center gap-1.5">
-                        <Package className="w-4 h-4 text-[#D97706]" />
-                        <span>
-                          {activePreset?.promptQuestion || `¿Cuántas unidades contiene 1 ${purchaseUnit}?`} *
-                        </span>
-                      </label>
-                      <span className="text-[10px] bg-amber-100 text-[#92400E] font-bold px-2 py-0.5 rounded-full border border-amber-200">
-                        Rendimiento
-                      </span>
-                    </div>
+                </div>
+              )}
+            </div>
 
-                    <div className="relative">
-                      <input
-                        type="number"
-                        step="any"
-                        min="0.0001"
-                        value={conversionFactor}
-                        onChange={(e) => setConversionFactor(e.target.value)}
-                        placeholder={activePreset?.promptPlaceholder || "1"}
-                        required
-                        className="w-full pl-3 pr-24 py-2 text-sm font-bold bg-white border border-[#FDE68A] rounded-xl focus:border-[#D97706] outline-none text-[#2B2B2B]"
-                      />
-                      <span className="absolute inset-y-0 right-3 flex items-center text-xs text-[#92400E] font-medium pointer-events-none">
-                        {useUnit} por {purchaseUnit}
-                      </span>
-                    </div>
+            {/* Unidad de uso manual si preset es custom */}
+            {activePreset?.id === "custom" && (
+              <div className="space-y-1 animate-in fade-in duration-150">
+                <label className="text-[11px] font-semibold text-[#2B2B2B] block">
+                  Unidad de uso en tus productos *
+                </label>
+                <input
+                  type="text"
+                  value={useUnit}
+                  onChange={(e) => setUseUnit(e.target.value)}
+                  placeholder="ej: unidad, gramo, parte..."
+                  required
+                  className="w-full h-9 px-3 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B] transition"
+                />
+              </div>
+            )}
 
-                    <p className="text-[10.5px] text-[#78350F] leading-tight">
-                      {purchaseUnit.toLowerCase() === "resma"
-                        ? "💡 Ingresá cuántas hojas contiene la resma para costear cada hoja de papel que usás en tus productos."
-                        : purchaseUnit.toLowerCase() === "caja"
-                        ? "💡 Ingresá cuántas unidades vienen en la caja para costear el valor exacto por unidad."
-                        : purchaseUnit.toLowerCase() === "bulto"
-                        ? "💡 Ingresá cuántas unidades vienen en el bulto mayorista."
-                        : purchaseUnit.toLowerCase() === "paquete" || purchaseUnit.toLowerCase() === "pack"
-                        ? "💡 Ingresá cuántas unidades contiene el paquete para calcular el costo por unidad."
-                        : purchaseUnit.toLowerCase() === "pliego"
-                        ? "💡 Ingresá cuántas hojas o partes rinde el pliego."
-                        : `Total disponible en esta compra: ${totalRecipeUnits.toLocaleString("es-AR")} ${useUnit}.`}
-                    </p>
-
-                    {activePreset?.id === "custom" && (
-                      <div className="pt-2 border-t border-amber-200/60 space-y-1">
-                        <label className="text-[10.5px] font-semibold text-[#7A7A7A]">
-                          Unidad de uso en tus productos *
-                        </label>
-                        <input
-                          type="text"
-                          value={useUnit}
-                          onChange={(e) => setUseUnit(e.target.value)}
-                          placeholder="ej: unidad, parte, tiro..."
-                          required
-                          className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#EAF0E8] rounded-xl outline-none text-[#2B2B2B]"
-                        />
-                      </div>
-                    )}
+            {/* Tarjeta de Costo Unitario de Uso Limpia */}
+            <div className="bg-[#DCF4D7]/80 border border-[#C3EBC0] p-3 rounded-2xl">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-xl bg-[#3BB578] text-white flex items-center justify-center flex-shrink-0">
+                    <Calculator className="w-3.5 h-3.5" />
                   </div>
-                )}
-
-                {/* 2. TARJETA DE CÁLCULO EN VIVO */}
-                <div className="bg-[#DCF4D7]/80 border border-[#C3EBC0] p-3 rounded-2xl space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-lg bg-[#3BB578] text-white flex items-center justify-center">
-                        <Calculator className="w-3.5 h-3.5" />
-                      </div>
-                      <div>
-                        <p className="text-[11px] font-bold text-[#1F7A4C]">Costo unitario de uso:</p>
-                        <p className="text-[10px] text-[#2E9E65] font-medium">
-                          1 {useUnit} = {formatCurrency(unitCost)}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-sm sm:text-base font-black text-[#1F7A4C] font-display">
-                        {formatCurrency(unitCost)}
-                      </span>
-                      <span className="text-[9.5px] block text-[#1F7A4C] font-medium">por cada {useUnit}</span>
-                    </div>
-                  </div>
-
-                  {parsedPrice > 0 && totalRecipeUnits > 0 && (
-                    <div className="pt-2 border-t border-[#C3EBC0]/70 text-[10px] text-[#1F7A4C] flex items-center justify-between bg-white/70 px-2.5 py-1.5 rounded-xl font-medium">
-                      <span>Fórmula:</span>
-                      <span>
-                        {formatCurrency(parsedPrice)} ÷ {totalRecipeUnits.toLocaleString("es-AR")} {useUnit} ={" "}
-                        <strong>{formatCurrency(unitCost)}/{useUnit}</strong>
-                      </span>
-                    </div>
-                  )}
+                  <span className="text-xs font-bold text-[#1F7A4C]">
+                    Costo unitario de uso:
+                  </span>
+                </div>
+                <div className="text-right">
+                  <span className="text-base sm:text-lg font-black text-[#1F7A4C] font-display">
+                    {formatCurrency(unitCost)}
+                  </span>
+                  <span className="text-[10px] block text-[#2E9E65] font-semibold">
+                    por cada {useUnit}
+                  </span>
                 </div>
               </div>
             </div>
