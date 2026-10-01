@@ -450,6 +450,21 @@ export default function NuevoProductoPage() {
       }
       return;
     }
+    if (targetStep === 4 && totalCost > 0) {
+      setChannelPrices((prev) =>
+        prev.map((ch) => {
+          const p = typeof ch.selling_price === "number" ? ch.selling_price : parseFloat(String(ch.selling_price));
+          const m = typeof ch.profit_margin_percent === "number" ? ch.profit_margin_percent : parseFloat(String(ch.profit_margin_percent));
+          if ((!p || p <= 0) && !isNaN(m)) {
+            return {
+              ...ch,
+              selling_price: Math.round(totalCost * (1 + m / 100)),
+            };
+          }
+          return ch;
+        })
+      );
+    }
     setErrorMsg(null);
     setCurrentStep(targetStep);
   };
@@ -1252,7 +1267,24 @@ export default function NuevoProductoPage() {
               Atrás
             </button>
             <button
-              onClick={() => setCurrentStep(4)}
+              onClick={() => {
+                if (totalCost > 0) {
+                  setChannelPrices((prev) =>
+                    prev.map((ch) => {
+                      const p = typeof ch.selling_price === "number" ? ch.selling_price : parseFloat(String(ch.selling_price));
+                      const m = typeof ch.profit_margin_percent === "number" ? ch.profit_margin_percent : parseFloat(String(ch.profit_margin_percent));
+                      if ((!p || p <= 0) && !isNaN(m)) {
+                        return {
+                          ...ch,
+                          selling_price: Math.round(totalCost * (1 + m / 100)),
+                        };
+                      }
+                      return ch;
+                    })
+                  );
+                }
+                setCurrentStep(4);
+              }}
               className="py-2.5 px-5 bg-[#3BB578] hover:bg-[#2E9E65] text-white rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer"
             >
               <span>Siguiente: Precios</span>

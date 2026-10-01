@@ -39,6 +39,24 @@ export const DEFAULT_CHANNELS: ChannelPriceItem[] = [
   { id: "pormayor", channel_name: "Por Mayor", profit_margin_percent: 50, selling_price: 0 },
 ];
 
+export const calculateDefaultChannels = (unitCost: number = 0): ChannelPriceItem[] => {
+  const safeCost = Math.max(0, unitCost || 0);
+  return [
+    {
+      id: "pormenor",
+      channel_name: "Por Menor",
+      profit_margin_percent: 100,
+      selling_price: safeCost > 0 ? Math.round(safeCost * 2) : 0,
+    },
+    {
+      id: "pormayor",
+      channel_name: "Por Mayor",
+      profit_margin_percent: 50,
+      selling_price: safeCost > 0 ? Math.round(safeCost * 1.5) : 0,
+    },
+  ];
+};
+
 export const getChannelIcon = (id?: string, name?: string) => {
   const key = `${id || ""} ${name || ""}`.toLowerCase();
   if (key.includes("menor") || key.includes("local") || key.includes("minorista") || key.includes("directo")) {
@@ -67,30 +85,62 @@ export function ProductPricingChannels({
   const [newChannelName, setNewChannelName] = useState("");
   const [newChannelMargin, setNewChannelMargin] = useState<number | string>(100);
 
-  // Sincronizar precios de venta cuando el costo unitario cambia
-  const prevUnitCostRef = useRef<number>(unitCost);
+  // Sincronizar precios de venta cuando el costo unitario cambia o al montar si están sin inicializar (<= 0)
+  const prevUnitCostRef = useRef<number | null>(null);
+  const isFirstMountRef = useRef<boolean>(true);
   const channelsRef = useRef<ChannelPriceItem[]>(channels);
   channelsRef.current = channels;
 
   useEffect(() => {
-    if (prevUnitCostRef.current !== unitCost) {
-      prevUnitCostRef.current = unitCost;
-      const safeCost = Math.max(0, unitCost || 0);
-      onChange(
-        channelsRef.current.map((ch) => {
-          const marginNum =
-            typeof ch.profit_margin_percent === "number"
-              ? ch.profit_margin_percent
-              : parseFloat(String(ch.profit_margin_percent));
+    const safeCost = Math.max(0, unitCost || 0);
+    const prevCost = prevUnitCostRef.current;
+    const isFirstMount = isFirstMountRef.current;
+    const costChanged = prevCost !== null && prevCost !== unitCost;
+    prevUnitCostRef.current = unitCost;
 
-          if (isNaN(marginNum)) return ch;
+    // Detectar si algún canal tiene precio en 0, no definido o nulo y debe ser calculado inicialmente
+    const hasUninitializedPrices = channelsRef.current.some((ch) => {
+      const p = typeof ch.selling_price === "number" ? ch.selling_price : parseFloat(String(ch.selling_price));
+      const m = typeof ch.profit_margin_percent === "number" ? ch.profit_margin_percent : parseFloat(String(ch.profit_margin_percent));
+      const isUnset = ch.selling_price === 0 || ch.selling_price === "0" || ch.selling_price === undefined || ch.selling_price === null;
+      return isUnset && !isNaN(m) && safeCost > 0;
+    });
 
-          return {
-            ...ch,
-            selling_price: safeCost > 0 ? Math.round(safeCost * (1 + marginNum / 100)) : ch.selling_price,
-          };
-        })
-      );
+    if ((costChanged && safeCost > 0) || (isFirstMount && hasUninitializedPrices)) {
+      isFirstMountRef.current = false;
+      let hasChanges = false;
+      const updated = channelsRef.current.map((ch) => {
+        const marginNum =
+          typeof ch.profit_margin_percent === "number"
+            ? ch.profit_margin_percent
+            : parseFloat(String(ch.profit_margin_percent));
+
+        if (isNaN(marginNum)) return ch;
+
+        const currentPrice =
+          typeof ch.selling_price === "number" ? ch.selling_price : parseFloat(String(ch.selling_price));
+        const isUnset = ch.selling_price === 0 || ch.selling_price === "0" || ch.selling_price === undefined || ch.selling_price === null;
+
+        // Si el costo unitario cambió, recalculamos manteniendo el margen configurado.
+        // Si es la carga inicial y el precio aún no fue calculado (> 0), calculamos el precio de lista a partir del costo y margen.
+        if (costChanged || isUnset || !currentPrice || currentPrice <= 0) {
+          const calculatedPrice = safeCost > 0 ? Math.round(safeCost * (1 + marginNum / 100)) : ch.selling_price;
+          if (calculatedPrice !== ch.selling_price) {
+            hasChanges = true;
+            return {
+              ...ch,
+              selling_price: calculatedPrice,
+            };
+          }
+        }
+        return ch;
+      });
+
+      if (hasChanges) {
+        onChange(updated);
+      }
+    } else {
+      isFirstMountRef.current = false;
     }
   }, [unitCost, onChange]);
 
@@ -118,8 +168,9 @@ export function ProductPricingChannels({
       return;
     }
 
+    const safeMargin = Math.max(0, marginNum);
     const safeCost = Math.max(0, unitCost || 0);
-    const calculatedPrice = safeCost > 0 ? Math.round(safeCost * (1 + marginNum / 100)) : 0;
+    const calculatedPrice = safeCost > 0 ? Math.round(safeCost * (1 + safeMargin / 100)) : 0;
 
     updated[index] = {
       ...updated[index],
@@ -155,9 +206,12 @@ export function ProductPricingChannels({
 
     const safeCost = Math.max(0, unitCost || 0);
     let newMargin = 0;
-    if (safeCost > 0) {
+    if (priceNum <= 0) {
+      newMargin = 0;
+    } else if (safeCost > 0) {
       const rawMargin = ((priceNum - safeCost) / safeCost) * 100;
-      newMargin = isFinite(rawMargin) ? Math.round(rawMargin) : 0;
+      // Prevenir números negativos erróneos y NaN durante la edición
+      newMargin = isFinite(rawMargin) ? Math.max(0, Math.round(rawMargin)) : 0;
     } else if (priceNum > 0) {
       newMargin = 100;
     }
@@ -270,11 +324,46 @@ export function ProductPricingChannels({
       ) : (
         <div className="space-y-3">
           {channels.map((channel, idx) => {
-            const channelSellingPrice =
+            const marginNum =
+              typeof channel.profit_margin_percent === "number"
+                ? channel.profit_margin_percent
+                : parseFloat(String(channel.profit_margin_percent));
+
+            const isExplicitEmpty = channel.selling_price === "";
+            const rawPrice =
               typeof channel.selling_price === "number"
                 ? channel.selling_price
-                : parseFloat(String(channel.selling_price)) || 0;
-            const profitAmount = channelSellingPrice - (unitCost || 0);
+                : parseFloat(String(channel.selling_price));
+
+            const isPriceUnset =
+              channel.selling_price === 0 ||
+              channel.selling_price === "0" ||
+              channel.selling_price === undefined ||
+              channel.selling_price === null;
+            const safeCost = Math.max(0, unitCost || 0);
+
+            // Si el precio viene en 0 o no inicializado, pero tenemos costo base y margen, calculamos el valor inicial resultante
+            const initialCalculatedPrice =
+              isPriceUnset && !isNaN(marginNum) && safeCost > 0
+                ? Math.round(safeCost * (1 + marginNum / 100))
+                : 0;
+
+            const effectivePrice =
+              initialCalculatedPrice > 0
+                ? initialCalculatedPrice
+                : isExplicitEmpty
+                ? ""
+                : rawPrice || 0;
+
+            const channelSellingPrice =
+              typeof effectivePrice === "number"
+                ? effectivePrice
+                : parseFloat(String(effectivePrice)) || 0;
+
+            const profitAmount =
+              isExplicitEmpty || channelSellingPrice <= 0
+                ? 0
+                : channelSellingPrice - safeCost;
 
             return (
               <div
@@ -344,22 +433,29 @@ export function ProductPricingChannels({
                     </div>
                   </div>
 
-                  {/* Precio de Lista ($) */}
+                  {/* Precio de Lista ($) con Indicador Visual de Edición (Lápiz) */}
                   <div className="space-y-1">
-                    <label className="text-[11px] font-bold text-neutral-700 block">
-                      Precio de Lista
+                    <label
+                      htmlFor={`selling-price-${channel.id || idx}`}
+                      className="text-[11px] font-bold text-neutral-700 flex items-center gap-1.5 cursor-pointer group/price-label select-none"
+                      title="Campo editable: haz clic para escribir directamente el precio de lista"
+                    >
+                      <span>Precio de Lista</span>
+                      <Pencil className="w-3.5 h-3.5 text-neutral-400 group-hover/price-label:text-[#3BB578] transition-colors flex-shrink-0" />
                     </label>
-                    <div className="relative flex items-center bg-neutral-50 hover:bg-white focus-within:bg-white rounded-xl border border-neutral-200 focus-within:border-[#3BB578] focus-within:ring-2 focus-within:ring-[#3BB578]/10 transition shadow-2xs">
+                    <div className="relative flex items-center bg-neutral-50 hover:bg-white focus-within:bg-white rounded-xl border border-neutral-200 hover:border-[#3BB578]/50 focus-within:border-[#3BB578] focus-within:ring-2 focus-within:ring-[#3BB578]/10 transition shadow-2xs">
                       <span className="absolute left-2.5 text-xs font-bold text-neutral-400 pointer-events-none select-none">
                         $
                       </span>
                       <input
+                        id={`selling-price-${channel.id || idx}`}
                         type="number"
                         step="any"
                         min="0"
-                        value={channel.selling_price === "" ? "" : channel.selling_price}
+                        value={effectivePrice === "" ? "" : effectivePrice}
                         onChange={(e) => handlePriceChange(idx, e.target.value)}
                         placeholder="0"
+                        title="Haz clic para escribir o sobreescribir el precio de lista"
                         className="w-full h-10 pl-7 pr-3 text-xs sm:text-sm font-black text-neutral-800 bg-transparent outline-none"
                       />
                     </div>
@@ -374,13 +470,13 @@ export function ProductPricingChannels({
                   <span>+</span>
                   <span>
                     Ganancia:{" "}
-                    <strong className={profitAmount >= 0 ? "text-[#1F7A4C]" : "text-rose-600"}>
-                      {formatCurrency(profitAmount)}
+                    <strong className={profitAmount > 0 ? "text-[#1F7A4C]" : profitAmount < 0 ? "text-rose-600" : "text-neutral-500"}>
+                      {isExplicitEmpty || channelSellingPrice <= 0 ? "$ 0,00" : formatCurrency(profitAmount)}
                     </strong>
                   </span>
                   <span>=</span>
                   <span>
-                    Total: <strong className="text-neutral-900 font-bold">{formatCurrency(channelSellingPrice)}</strong>
+                    Total: <strong className="text-neutral-900 font-bold">{isExplicitEmpty || channelSellingPrice <= 0 ? "$ 0,00" : formatCurrency(channelSellingPrice)}</strong>
                   </span>
                 </div>
               </div>
