@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Fredoka, Nunito } from "next/font/google";
 import "./globals.css";
 import { PWAProvider } from "@/components/PWAProvider";
+import { SplashScreen } from "@/components/SplashScreen";
 
 const fredoka = Fredoka({
   subsets: ["latin"],
@@ -30,7 +31,7 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   title: "HABA — Tu aliado en cada producto y presupuesto",
   description: "App de costeo, precios multicanal y presupuestos para emprendedoras.",
-  manifest: "/manifest.webmanifest",
+  manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
@@ -65,6 +66,7 @@ export default function RootLayout({
         suppressHydrationWarning
       >
         <PWAProvider>
+          <SplashScreen />
           <main className="w-full max-w-[1400px] min-h-screen flex flex-col px-4 pt-[env(safe-area-inset-top,4px)] pb-4 sm:px-6 lg:px-8">
             {children}
           </main>

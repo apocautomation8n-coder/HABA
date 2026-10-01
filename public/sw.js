@@ -3,6 +3,7 @@ const CACHE_NAME = 'haba-cache-v5';
 const STATIC_ASSETS = [
   '/',
   '/manifest.webmanifest',
+  '/manifest.json',
   '/LogoHaba.png',
   '/LogoHaba.png?v=2',
   '/logo.png',
