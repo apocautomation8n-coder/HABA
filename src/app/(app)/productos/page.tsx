@@ -2655,7 +2655,7 @@ export default function ProductosPage() {
           }}
         >
           <div
-            className="bg-white w-full max-w-lg md:max-w-4xl lg:max-w-5xl rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl border border-[#EAF0E8] flex flex-col animate-in slide-in-from-bottom-6 sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-200 overflow-hidden"
+            className="bg-white w-full max-w-lg md:max-w-4xl lg:max-w-5xl rounded-t-3xl sm:rounded-3xl p-4 sm:p-5 shadow-2xl border border-[#EAF0E8] flex flex-col animate-in slide-in-from-bottom-6 sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-200 overflow-hidden overflow-x-hidden"
             style={{
               height: "min(92vh, 760px)",
               maxHeight: "calc(100dvh - env(safe-area-inset-top, 20px) - 10px)",
@@ -2677,10 +2677,10 @@ export default function ProductosPage() {
             </div>
 
             {/* Contenido con Scroll */}
-            <div className="overflow-y-auto pr-1 py-3 flex-1">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="overflow-y-auto overflow-x-hidden min-w-0 pr-1 py-3 flex-1">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 min-w-0">
                 {/* Columna Izquierda: Información básica y Receta */}
-                <div className="space-y-4">
+                <div className="space-y-4 min-w-0">
                   {/* Nombre del Producto */}
               <div>
                 <label className="text-[11px] font-semibold text-neutral-700 block mb-1">
@@ -2797,41 +2797,45 @@ export default function ProductosPage() {
 
                 {/* CONTENIDO PESTAÑA INSUMOS EN EDICIÓN */}
                 {editRecipeTab === "supplies" && (
-                  <div className="space-y-2.5">
+                  <div className="space-y-2.5 min-w-0">
                     {/* Selector para agregar insumo del catálogo */}
-                    <div className="flex items-center gap-2 pt-1 border-t border-neutral-200/60">
-                      <select
-                        value={selectedSupplyToAdd}
-                        onChange={(e) => setSelectedSupplyToAdd(e.target.value)}
-                        className="flex-1 px-3 py-1.5 text-xs bg-white border border-neutral-200 rounded-xl outline-none focus:border-[#3BB578]"
-                      >
-                        <option value="">+ Seleccionar insumo para agregar...</option>
-                        {allSupplies
-                          .filter((s) => !editSupplies.some((es) => es.supply_id === s.id))
-                          .map((s) => (
-                            <option key={s.id} value={s.id}>
-                              {s.name} ({s.category === "packaging" ? "📦 Packaging" : "🧵 Materia"}) - {formatCurrency(s.current_price)}/{s.purchase_unit || "u"}
-                            </option>
-                          ))}
-                      </select>
-                      <button
-                        type="button"
-                        onClick={() => handleAddSupplyToRecipe(selectedSupplyToAdd)}
-                        disabled={!selectedSupplyToAdd}
-                        className="px-3 py-1.5 bg-[#3BB578] hover:bg-[#2E9E65] disabled:opacity-50 text-white text-xs font-bold rounded-xl transition flex items-center gap-1 shadow-xs flex-shrink-0"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>Agregar</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setIsCreateSupplyOpen(true)}
-                        className="px-2.5 py-1.5 bg-[#DCF4D7] hover:bg-[#cbf0c4] text-[#1F7A4C] border border-[#C3EBC0] text-xs font-bold rounded-xl transition flex items-center gap-1 shadow-2xs flex-shrink-0"
-                        title="Crear nuevo insumo al vuelo"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>Crear</span>
-                      </button>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 pt-1 border-t border-neutral-200/60 w-full min-w-0">
+                      <div className="flex-1 min-w-0 w-full">
+                        <select
+                          value={selectedSupplyToAdd}
+                          onChange={(e) => setSelectedSupplyToAdd(e.target.value)}
+                          className="w-full min-w-0 px-3 py-2 sm:py-1.5 text-xs bg-white border border-neutral-200 rounded-xl outline-none focus:border-[#3BB578] truncate"
+                        >
+                          <option value="">+ Seleccionar insumo para agregar...</option>
+                          {allSupplies
+                            .filter((s) => !editSupplies.some((es) => es.supply_id === s.id))
+                            .map((s) => (
+                              <option key={s.id} value={s.id}>
+                                {s.name} ({s.category === "packaging" ? "📦 Packaging" : "🧵 Materia"}) - {formatCurrency(s.current_price)}/{s.purchase_unit || "u"}
+                              </option>
+                            ))}
+                        </select>
+                      </div>
+                      <div className="flex items-center gap-2 w-full sm:w-auto flex-shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleAddSupplyToRecipe(selectedSupplyToAdd)}
+                          disabled={!selectedSupplyToAdd}
+                          className="flex-1 sm:flex-none px-3.5 py-2 sm:py-1.5 bg-[#3BB578] hover:bg-[#2E9E65] disabled:opacity-50 text-white text-xs font-bold rounded-xl transition flex items-center justify-center gap-1 shadow-xs flex-shrink-0 cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Agregar</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setIsCreateSupplyOpen(true)}
+                          className="flex-1 sm:flex-none px-3 py-2 sm:py-1.5 bg-[#DCF4D7] hover:bg-[#cbf0c4] text-[#1F7A4C] border border-[#C3EBC0] text-xs font-bold rounded-xl transition flex items-center justify-center gap-1 shadow-2xs flex-shrink-0 cursor-pointer"
+                          title="Crear nuevo insumo al vuelo"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Crear</span>
+                        </button>
+                      </div>
                     </div>
 
                     {/* Banner de aviso en edición si hay insumos con aumento */}
@@ -2944,40 +2948,44 @@ export default function ProductosPage() {
 
                 {/* CONTENIDO PESTAÑA SUBPRODUCTOS EN EDICIÓN */}
                 {editRecipeTab === "components" && (
-                  <div className="space-y-2.5">
+                  <div className="space-y-2.5 min-w-0">
                     {/* Selector para agregar subproducto del catálogo */}
-                    <div className="flex items-center gap-2 pt-1 border-t border-neutral-200/60">
-                      <select
-                        value={selectedComponentToAdd}
-                        onChange={(e) => setSelectedComponentToAdd(e.target.value)}
-                        className="flex-1 px-3 py-1.5 text-xs bg-white border border-neutral-200 rounded-xl outline-none focus:border-[#3BB578]"
-                      >
-                        <option value="">+ Seleccionar subproducto registrado...</option>
-                        {products
-                          .filter((p) => {
-                            if (p.id === editModalProduct?.id) return false;
-                            if (editComponents.some((ec) => ec.component_product_id === p.id)) return false;
-                            if (wouldCreateCircularDependency(editModalProduct?.id || "", p.id, allRelations)) return false;
-                            return true;
-                          })
-                          .map((p) => {
-                            const baseCost = Number(p.total_cost) || Number(p.direct_cost) || 0;
-                            return (
-                              <option key={p.id} value={p.id}>
-                                {p.name} - Costo base: {formatCurrency(baseCost)}/u
-                              </option>
-                            );
-                          })}
-                      </select>
-                      <button
-                        type="button"
-                        onClick={() => handleAddComponentToRecipe(selectedComponentToAdd)}
-                        disabled={!selectedComponentToAdd}
-                        className="px-3 py-1.5 bg-[#3BB578] hover:bg-[#2E9E65] disabled:opacity-50 text-white text-xs font-bold rounded-xl transition flex items-center gap-1 shadow-xs"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>Agregar</span>
-                      </button>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 pt-1 border-t border-neutral-200/60 w-full min-w-0">
+                      <div className="flex-1 min-w-0 w-full">
+                        <select
+                          value={selectedComponentToAdd}
+                          onChange={(e) => setSelectedComponentToAdd(e.target.value)}
+                          className="w-full min-w-0 px-3 py-2 sm:py-1.5 text-xs bg-white border border-neutral-200 rounded-xl outline-none focus:border-[#3BB578] truncate"
+                        >
+                          <option value="">+ Seleccionar subproducto registrado...</option>
+                          {products
+                            .filter((p) => {
+                              if (p.id === editModalProduct?.id) return false;
+                              if (editComponents.some((ec) => ec.component_product_id === p.id)) return false;
+                              if (wouldCreateCircularDependency(editModalProduct?.id || "", p.id, allRelations)) return false;
+                              return true;
+                            })
+                            .map((p) => {
+                              const baseCost = Number(p.total_cost) || Number(p.direct_cost) || 0;
+                              return (
+                                <option key={p.id} value={p.id}>
+                                  {p.name} - Costo base: {formatCurrency(baseCost)}/u
+                                </option>
+                              );
+                            })}
+                        </select>
+                      </div>
+                      <div className="flex items-center gap-2 w-full sm:w-auto flex-shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleAddComponentToRecipe(selectedComponentToAdd)}
+                          disabled={!selectedComponentToAdd}
+                          className="w-full sm:w-auto px-3.5 py-2 sm:py-1.5 bg-[#3BB578] hover:bg-[#2E9E65] disabled:opacity-50 text-white text-xs font-bold rounded-xl transition flex items-center justify-center gap-1 shadow-xs flex-shrink-0 cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Agregar</span>
+                        </button>
+                      </div>
                     </div>
 
                     {/* Lista de subproductos cargados */}
@@ -3044,7 +3052,7 @@ export default function ProductosPage() {
             </div>
 
             {/* Columna Derecha: Rendimiento, Resumen de Costos y Canales de Venta */}
-            <div className="space-y-4">
+            <div className="space-y-4 min-w-0">
               {/* Tarjeta Unificada de Rendimiento del Lote y Resumen de Costos */}
               <ProductYieldCard
                 yieldValue={editYield}
