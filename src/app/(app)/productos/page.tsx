@@ -62,6 +62,7 @@ import { PriceReviewModal } from "@/components/products/PriceReviewModal";
 import {
   ProductPricingChannels,
   ChannelPriceItem,
+  sortProductPrices,
 } from "@/components/products/ProductPricingChannels";
 import { ProductYieldCard } from "@/components/products/ProductYieldCard";
 
@@ -335,7 +336,11 @@ export default function ProductosPage() {
       }
 
       if (!productsRes.error && productsRes.data) {
-        setProducts(productsRes.data as Product[]);
+        const sortedProducts = (productsRes.data as Product[]).map((p) => ({
+          ...p,
+          product_prices: sortProductPrices(p.product_prices || []),
+        }));
+        setProducts(sortedProducts);
       } else if (productsRes.error) {
         // Fallback en caso de que product_components aún no esté creada en Supabase
         const fallbackRes = await supabase
@@ -362,7 +367,11 @@ export default function ProductosPage() {
           `)
           .order("created_at", { ascending: false });
         if (fallbackRes.data) {
-          setProducts(fallbackRes.data as Product[]);
+          const sortedFallback = (fallbackRes.data as Product[]).map((p) => ({
+            ...p,
+            product_prices: sortProductPrices(p.product_prices || []),
+          }));
+          setProducts(sortedFallback);
         }
       }
 
@@ -671,8 +680,9 @@ export default function ProductosPage() {
     setSelectedComponentToAdd("");
     setEditRecipeTab("supplies");
 
-    // Cargar precios por canal actuales para edición
-    const loadedPrices = (product.product_prices || []).map((p) => ({
+    // Cargar precios por canal actuales para edición ordenados
+    const sortedPrices = sortProductPrices(product.product_prices || []);
+    const loadedPrices = sortedPrices.map((p) => ({
       id: p.id,
       channel_name: p.channel_name,
       profit_margin_percent: p.profit_margin_percent ?? 0,
@@ -1074,6 +1084,17 @@ export default function ProductosPage() {
         };
       });
 
+      // Preparar el estado actualizado de product_prices ordenados para la UI inmediata
+      const updatedProductPricesForState: ProductPrice[] = sortProductPrices(
+        editPrices.map((ep, idx) => ({
+          id: ep.id || `pp-temp-${idx}`,
+          product_id: editModalProduct.id,
+          channel_name: ep.channel_name,
+          profit_margin_percent: typeof ep.profit_margin_percent === "number" ? ep.profit_margin_percent : parseFloat(String(ep.profit_margin_percent)) || 0,
+          selling_price: typeof ep.selling_price === "number" ? ep.selling_price : parseFloat(String(ep.selling_price)) || 0,
+        }))
+      );
+
       // Actualizar estado local inmediatamente para reactividad instantánea sin desfase de caché
       setProducts((prev) =>
         prev.map((p) => {
@@ -1090,6 +1111,7 @@ export default function ProductosPage() {
             needs_price_review: false,
             updated_at: nowIso,
             product_supplies: updatedProductSuppliesForState as any,
+            product_prices: updatedProductPricesForState,
           };
         })
       );
@@ -1126,9 +1148,21 @@ export default function ProductosPage() {
       setRecalculatingId(product.id);
 
       const nowIso = new Date().toISOString();
+      const meta = parseProductMeta(product.description, product.id);
+      const productYield = meta.yield > 0 ? meta.yield : 1;
+
+      // 1. Costo base estrictamente a nivel UNITARIO (unificado con la simulación)
       const newDirectCost = Math.round(product.currentMaterialsCost * 100) / 100;
-      const newLaborCost = Math.round((product.work_time_minutes || 0) * currentMinuteRate * 100) / 100;
-      const newTotalCost = Math.round((newDirectCost + newLaborCost) * 100) / 100;
+      const newLaborCost = product.currentLaborCost !== undefined
+        ? Number(product.currentLaborCost)
+        : product.include_labor
+        ? currentMinuteRate > 0 && product.work_time_minutes
+          ? Math.round(((product.work_time_minutes * currentMinuteRate) / productYield) * 100) / 100
+          : Math.round(Number(product.labor_cost || 0) * 100) / 100
+        : 0;
+      const newTotalCost = product.currentTotalCost !== undefined
+        ? Number(product.currentTotalCost)
+        : Math.round((newDirectCost + newLaborCost) * 100) / 100;
 
       // Construir snapshots de precios actuales de reposición para que la alerta se limpie
       const priceSnapshots: Record<string, number> = {};
@@ -1149,7 +1183,6 @@ export default function ProductosPage() {
         } catch {}
       }
 
-      const meta = parseProductMeta(product.description, product.id);
       const newDescription = serializeProductDescription({
         cleanDescription: meta.cleanDescription,
         category: meta.category,
@@ -1159,7 +1192,7 @@ export default function ProductosPage() {
         priceSnapshots,
       });
 
-      // 1. Actualizar producto en Supabase
+      // 1. Actualizar producto en Supabase con los costos unitarios normalizados
       const { error: prodErr } = await supabase
         .from("products")
         .update({
@@ -1175,10 +1208,11 @@ export default function ProductosPage() {
 
       if (prodErr) throw prodErr;
 
-      // 2. Actualizar precios de canales manteniendo el margen %
+      // 2. Actualizar precios de canales manteniendo el orden canónico y el margen %
+      const sortedCurrentPrices = sortProductPrices(product.product_prices || []);
       const updatedPrices: ProductPrice[] = [];
-      if (product.product_prices && product.product_prices.length > 0) {
-        for (const price of product.product_prices) {
+      if (sortedCurrentPrices.length > 0) {
+        for (const price of sortedCurrentPrices) {
           const newSellingPrice = Math.round(newTotalCost * (1 + (price.profit_margin_percent || 0) / 100));
           await supabase
             .from("product_prices")
@@ -1203,6 +1237,8 @@ export default function ProductosPage() {
         return next;
       });
 
+      const finalSortedPrices = sortProductPrices(updatedPrices);
+
       setProducts((prev) =>
         prev.map((p) => {
           if (p.id !== product.id) return p;
@@ -1215,7 +1251,7 @@ export default function ProductosPage() {
             total_cost: newTotalCost,
             needs_price_review: false,
             updated_at: nowIso,
-            product_prices: updatedPrices.length > 0 ? updatedPrices : p.product_prices,
+            product_prices: finalSortedPrices.length > 0 ? finalSortedPrices : sortProductPrices(p.product_prices || []),
           };
         })
       );
@@ -1334,6 +1370,15 @@ export default function ProductosPage() {
       const roundedUnitMaterialsCost = Math.round(unitMaterialsCost * 100) / 100;
       const savedDirectCost = Math.round(Number(product.direct_cost || 0) * 100) / 100;
 
+      // Costo laboral estrictamente UNITARIO (dividido por productYield)
+      const unitLaborCost = product.include_labor
+        ? currentMinuteRate > 0 && product.work_time_minutes
+          ? Math.round(((product.work_time_minutes * currentMinuteRate) / productYield) * 100) / 100
+          : Math.round(Number(product.labor_cost || 0) * 100) / 100
+        : 0;
+
+      const currentTotalCost = Math.round((roundedUnitMaterialsCost + unitLaborCost) * 100) / 100;
+
       const costDifference = hasRecipe ? Math.abs(roundedUnitMaterialsCost - savedDirectCost) : 0;
       const isDismissed = dismissedAlerts.has(product.id);
       const modifiedSupplies = detectModifiedSupplies(product, priceHistory);
@@ -1349,12 +1394,15 @@ export default function ProductosPage() {
         ...product,
         meta,
         badge,
+        product_prices: sortProductPrices(product.product_prices || []),
         currentMaterialsCost: hasRecipe ? roundedUnitMaterialsCost : savedDirectCost,
+        currentLaborCost: unitLaborCost,
+        currentTotalCost,
         isCostOutdated,
         modifiedSupplies,
       };
     });
-  }, [products, priceHistory, dismissedAlerts]);
+  }, [products, priceHistory, dismissedAlerts, currentMinuteRate]);
 
   // Insumos modificados para el producto actualmente en edición
   const editModalModifiedSupplies = useMemo(() => {
@@ -1423,14 +1471,15 @@ export default function ProductosPage() {
   // Helper para obtener el precio de referencia para ordenamiento (Por Menor / Minorista, o primer precio o costo)
   const getProductPriceValue = useCallback((p: any): number => {
     if (p.product_prices && p.product_prices.length > 0) {
-      const retail = p.product_prices.find((pr: any) => {
+      const sorted: any[] = sortProductPrices(p.product_prices);
+      const retail = sorted.find((pr: any) => {
         const name = (pr.channel_name || "").toLowerCase();
-        return name.includes("menor") || name.includes("minorista");
+        return name.includes("menor") || name.includes("minorista") || name.includes("directo") || name.includes("local");
       });
       if (retail && typeof retail.selling_price === "number") {
         return retail.selling_price;
       }
-      const firstPrice = p.product_prices.find((pr: any) => typeof pr.selling_price === "number");
+      const firstPrice = sorted.find((pr: any) => typeof pr.selling_price === "number");
       if (firstPrice) return firstPrice.selling_price;
     }
     return Number(p.total_cost) || Number(p.direct_cost) || 0;
@@ -1812,10 +1861,12 @@ export default function ProductosPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredProducts.map((product) => {
             const isExpanded = expandedProductId === product.id;
+            const sortedPrices = sortProductPrices(product.product_prices || []);
             const retailPrice =
-              product.product_prices?.find((p) =>
-                p.channel_name.toLowerCase().includes("minorista")
-              ) || product.product_prices?.[0];
+              sortedPrices.find((p) => {
+                const n = (p.channel_name || "").toLowerCase();
+                return n.includes("menor") || n.includes("minorista") || n.includes("directo") || n.includes("local");
+              }) || sortedPrices[0];
 
             const isActive = product.meta.isActive;
 
@@ -2416,7 +2467,7 @@ export default function ProductosPage() {
                       </span>
                       <div className="grid grid-cols-1 gap-1.5">
                         {product.product_prices && product.product_prices.length > 0 ? (
-                          product.product_prices.map((price) => {
+                          sortProductPrices(product.product_prices).map((price) => {
                             const profit = price.selling_price - product.total_cost;
                             return (
                               <div

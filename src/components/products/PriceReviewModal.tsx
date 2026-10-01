@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { formatCurrency } from "@/lib/units";
 import { ModifiedSupplyInfo } from "@/lib/products";
+import { sortProductPrices } from "@/components/products/ProductPricingChannels";
 
 interface PriceReviewModalProps {
   isOpen: boolean;
@@ -38,9 +39,13 @@ export const PriceReviewModal: React.FC<PriceReviewModalProps> = ({
   const currentMaterialsCost = Number(product.currentMaterialsCost) || 0;
   const savedDirectCost = Number(product.direct_cost) || 0;
   const costDiff = currentMaterialsCost - savedDirectCost;
-  const totalLaborCost = product.include_labor ? Number(product.labor_cost || 0) : 0;
+  const totalLaborCost = product.currentLaborCost !== undefined
+    ? Number(product.currentLaborCost)
+    : product.include_labor ? Number(product.labor_cost || 0) : 0;
   const savedTotalCost = Number(product.total_cost) || (savedDirectCost + totalLaborCost);
-  const newTotalCost = currentMaterialsCost + totalLaborCost;
+  const newTotalCost = product.currentTotalCost !== undefined
+    ? Number(product.currentTotalCost)
+    : Math.round((currentMaterialsCost + totalLaborCost) * 100) / 100;
 
   const handleConfirmRecalculate = async () => {
     await onRecalculate(product);
@@ -241,7 +246,7 @@ export const PriceReviewModal: React.FC<PriceReviewModalProps> = ({
                 Simulación de Precios por Canal (manteniendo márgenes):
               </span>
               <div className="space-y-1.5">
-                {product.product_prices.map((price: any) => {
+                {sortProductPrices(product.product_prices).map((price: any) => {
                   const margin = Number(price.profit_margin_percent) || 0;
                   const currentSelling = Number(price.selling_price) || 0;
                   const suggestedSelling = Math.round(newTotalCost * (1 + margin / 100));

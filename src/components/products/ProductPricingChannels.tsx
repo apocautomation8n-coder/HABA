@@ -57,6 +57,33 @@ export const calculateDefaultChannels = (unitCost: number = 0): ChannelPriceItem
   ];
 };
 
+export function getChannelPriority(name: string = ""): number {
+  const n = (name || "").trim().toLowerCase();
+  if (n === "por menor" || n === "menor" || n === "minorista") return 1;
+  if (n.includes("menor") || n.includes("minorista")) return 2;
+  if (n === "por mayor" || n === "mayor" || n === "mayorista") return 3;
+  if (n.includes("mayor") || n.includes("distribuidor") || n.includes("revendedora") || n.includes("b2b")) return 4;
+  if (n.includes("local") || n.includes("mostrador")) return 5;
+  return 10;
+}
+
+export function sortProductPrices<T = any>(
+  prices: T[]
+): T[] {
+  if (!Array.isArray(prices) || prices.length <= 1) return prices || [];
+
+  return [...prices].sort((a: any, b: any) => {
+    const prioA = getChannelPriority(a?.channel_name);
+    const prioB = getChannelPriority(b?.channel_name);
+    if (prioA !== prioB) return prioA - prioB;
+
+    if (a?.created_at && b?.created_at) {
+      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+    }
+    return 0;
+  });
+}
+
 export const getChannelIcon = (id?: string, name?: string) => {
   const key = `${id || ""} ${name || ""}`.toLowerCase();
   if (key.includes("menor") || key.includes("local") || key.includes("minorista") || key.includes("directo")) {
