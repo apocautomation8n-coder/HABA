@@ -1142,137 +1142,107 @@ export default function NuevoProductoPage() {
             </div>
           )}
 
-          <div className="p-5 sm:p-6 bg-neutral-50/80 rounded-3xl border border-neutral-200/80 space-y-5">
-            {/* Input principal centrado y ergonómico */}
-            <div className="flex flex-col items-center text-center space-y-3 py-1">
-              <label className="text-sm sm:text-base font-bold text-neutral-800">
-                ¿Cuánto tiempo lleva realizar este producto?
-              </label>
-              <p className="text-[11.5px] text-neutral-500 max-w-sm">
-                Ingresá los minutos de trabajo dedicados a cada unidad (opcional)
-              </p>
+          {/* Input principal centrado y ergonómico sin contenedor envolvente */}
+          <div className="flex flex-col items-center text-center space-y-2 py-2">
+            <label className="text-sm sm:text-base font-bold text-neutral-800">
+              ¿Cuánto tiempo lleva realizar este producto?
+            </label>
+            <p className="text-[11.5px] text-neutral-500 max-w-sm">
+              Ingresá los minutos de trabajo dedicados a cada unidad (opcional)
+            </p>
 
-              {/* Control de minutos centrado */}
-              <div className="flex items-center justify-center gap-2 pt-1">
-                <input
-                  type="number"
-                  min="0"
-                  value={workTimeMinutes === 0 || workTimeMinutes === "" ? "" : workTimeMinutes}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setWorkTimeMinutes(val === "" ? "" : Math.max(0, parseFloat(val) || 0));
-                  }}
-                  placeholder="0"
-                  className="w-32 sm:w-36 h-12 px-3 text-lg sm:text-xl font-black text-center text-neutral-800 bg-white border border-neutral-200 rounded-2xl outline-none focus:border-[#3BB578] focus:ring-4 focus:ring-[#DCF4D7] transition shadow-xs"
-                />
-                <span className="text-sm font-bold text-neutral-600">minutos</span>
-                {Number(workTimeMinutes) >= 60 && (
-                  <span className="text-xs text-[#1F7A4C] bg-[#DCF4D7] px-2.5 py-1 rounded-xl font-bold whitespace-nowrap ml-1">
-                    ~{(Number(workTimeMinutes) / 60).toFixed(1)} hs
-                  </span>
-                )}
-              </div>
-
-              {/* Atajos de minutos para carga rápida en móvil y escritorio */}
-              <div className="flex items-center gap-1.5 flex-wrap justify-center pt-1.5">
-                {[10, 15, 30, 45, 60, 90, 120].map((mins) => (
-                  <button
-                    key={mins}
-                    type="button"
-                    onClick={() => setWorkTimeMinutes(mins)}
-                    className={`px-2.5 py-1 text-xs rounded-xl font-semibold transition cursor-pointer active:scale-95 ${
-                      Number(workTimeMinutes) === mins
-                        ? "bg-[#1F7A4C] text-white shadow-2xs"
-                        : "bg-white border border-neutral-200 text-neutral-600 hover:border-[#3BB578] hover:text-[#1F7A4C]"
-                    }`}
-                  >
-                    {mins < 60 ? `${mins}m` : `${mins / 60}h`}
-                  </button>
-                ))}
-                {(Number(workTimeMinutes) || 0) > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setWorkTimeMinutes("")}
-                    className="px-2 py-1 text-[11px] rounded-xl text-neutral-400 hover:text-rose-500 transition cursor-pointer"
-                    title="Borrar minutos asignados"
-                  >
-                    Borrar
-                  </button>
-                )}
-              </div>
+            {/* Control de minutos centrado y compacto */}
+            <div className="flex items-center justify-center gap-2 pt-1">
+              <input
+                type="number"
+                min="0"
+                value={workTimeMinutes === 0 || workTimeMinutes === "" ? "" : workTimeMinutes}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setWorkTimeMinutes(val === "" ? "" : Math.max(0, parseFloat(val) || 0));
+                }}
+                placeholder="0"
+                className="w-28 sm:w-32 h-11 px-3 text-base sm:text-lg font-black text-center text-neutral-800 bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl outline-none focus:bg-white focus:border-[#3BB578] focus:ring-2 focus:ring-[#DCF4D7] transition shadow-xs"
+              />
+              <span className="text-sm font-bold text-neutral-600">minutos</span>
+              {Number(workTimeMinutes) >= 60 && (
+                <span className="text-xs text-[#1F7A4C] bg-[#DCF4D7] px-2.5 py-1 rounded-xl font-bold whitespace-nowrap ml-1">
+                  ~{(Number(workTimeMinutes) / 60).toFixed(1)} hs
+                </span>
+              )}
             </div>
-
-            {/* Tarjeta compacta del costo productivo resultante */}
-            <div className="pt-3 border-t border-neutral-200/60">
-              <div className="bg-[#DCF4D7]/70 border border-[#C3EBC0] p-3.5 rounded-2xl flex items-center justify-between gap-3 shadow-2xs">
-                <div className="space-y-0.5 min-w-0">
-                  <span className="text-xs font-bold text-[#1F7A4C] block">
-                    Costo productivo del tiempo:
-                  </span>
-                  <span className="text-[11px] font-mono text-[#1F7A4C]/90 block truncate">
-                    {(Number(workTimeMinutes) || 0) > 0
-                      ? `${workTimeMinutes} min × ${formatCurrency(laborMinuteRate)}/min`
-                      : "0 min (sin tiempo productivo asignado)"}
-                  </span>
-                </div>
-                <div className="text-right flex-shrink-0">
-                  <span className="text-base sm:text-lg font-black text-[#1F7A4C]">
-                    {formatCurrency(laborCost)}
-                  </span>
-                </div>
-              </div>
-              <p className="text-[10px] text-neutral-500 mt-2 text-center leading-relaxed">
-                Este costo incluye proporcionalmente tus gastos operativos y tu sueldo pretendido según tu Objetivo Mensual.
-              </p>
-            </div>
-
-            {/* Enlace educativo para desplegar explicación */}
-            <div className="pt-1 flex justify-center">
-              <button
-                type="button"
-                onClick={() => setShowTimeInfo(!showTimeInfo)}
-                className="text-[11px] font-bold text-[#1F7A4C] hover:text-[#165837] underline inline-flex items-center gap-1 cursor-pointer"
-              >
-                <Info className="w-3.5 h-3.5" />
-                <span>{showTimeInfo ? "Ocultar cómo se calcula" : "¿Cómo se calcula esto?"}</span>
-              </button>
-            </div>
-
-            {showTimeInfo && (
-              <div className="p-3.5 bg-[#F0FAF4] border border-[#C3EBC0] rounded-2xl space-y-2 text-xs text-[#2B2B2B] animate-in fade-in duration-200 shadow-xs">
-                <div className="flex items-center justify-between font-bold text-[#1F7A4C] border-b border-[#DCF4D7] pb-1.5">
-                  <span className="flex items-center gap-1.5 font-display text-[11.5px]">
-                    <Calculator className="w-3.5 h-3.5 text-[#3BB578]" />
-                    ¿Cómo calcula HABA el costo de tu tiempo?
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setShowTimeInfo(false)}
-                    className="text-[#7A7A7A] hover:text-[#2B2B2B] text-xs font-semibold cursor-pointer p-0.5"
-                  >
-                    ✕
-                  </button>
-                </div>
-                <div className="space-y-1.5 text-[11px] leading-relaxed">
-                  <p>
-                    1️⃣ <strong>Tu costo por minuto:</strong> Se calcula dividiendo tu <strong>Objetivo Mensual</strong> (Sueldo Pretendido + Gastos Operativos) entre las <strong>horas de taller</strong> que trabajás por mes:
-                  </p>
-                  <div className="bg-white p-2 rounded-xl border border-[#DCF4D7] font-mono text-[10.5px] text-[#1F7A4C]">
-                    Objetivo Mensual ÷ (Días × Horas diarias × 60) = <strong>{formatCurrency(laborMinuteRate)}/minuto</strong>
-                  </div>
-                  <p>
-                    2️⃣ <strong>Para este producto:</strong> Multiplicamos los minutos de elaboración por tu valor por minuto:
-                  </p>
-                  <div className="bg-white p-2 rounded-xl border border-[#DCF4D7] font-mono text-[10.5px] text-[#1F7A4C]">
-                    {(Number(workTimeMinutes) || 0) > 0
-                      ? `${workTimeMinutes} min × ${formatCurrency(laborMinuteRate)}/min = `
-                      : "0 min × tarifa = "}
-                    <strong>{formatCurrency(laborCost)}</strong>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
+
+          {/* Tarjeta compacta del costo productivo resultante */}
+          <div className="space-y-2">
+            <div className="bg-[#DCF4D7]/70 border border-[#C3EBC0] p-3.5 rounded-2xl flex items-center justify-between gap-3 shadow-2xs">
+              <div className="space-y-0.5 min-w-0">
+                <span className="text-xs font-bold text-[#1F7A4C] block">
+                  Costo productivo del tiempo:
+                </span>
+                <span className="text-[11px] font-mono text-[#1F7A4C]/90 block truncate">
+                  {(Number(workTimeMinutes) || 0) > 0
+                    ? `${workTimeMinutes} min × ${formatCurrency(laborMinuteRate)}/min`
+                    : "0 min (sin tiempo productivo asignado)"}
+                </span>
+              </div>
+              <div className="text-right flex-shrink-0">
+                <span className="text-base sm:text-lg font-black text-[#1F7A4C]">
+                  {formatCurrency(laborCost)}
+                </span>
+              </div>
+            </div>
+            <p className="text-[10px] text-neutral-500 text-center leading-relaxed">
+              Este costo incluye proporcionalmente tus gastos operativos y tu sueldo pretendido según tu Objetivo Mensual.
+            </p>
+          </div>
+
+          {/* Enlace educativo para desplegar explicación */}
+          <div className="flex justify-center">
+            <button
+              type="button"
+              onClick={() => setShowTimeInfo(!showTimeInfo)}
+              className="text-[11px] font-bold text-[#1F7A4C] hover:text-[#165837] underline inline-flex items-center gap-1 cursor-pointer"
+            >
+              <Info className="w-3.5 h-3.5" />
+              <span>{showTimeInfo ? "Ocultar cómo se calcula" : "¿Cómo se calcula esto?"}</span>
+            </button>
+          </div>
+
+          {showTimeInfo && (
+            <div className="p-3.5 bg-[#F0FAF4] border border-[#C3EBC0] rounded-2xl space-y-2 text-xs text-[#2B2B2B] animate-in fade-in duration-200 shadow-xs">
+              <div className="flex items-center justify-between font-bold text-[#1F7A4C] border-b border-[#DCF4D7] pb-1.5">
+                <span className="flex items-center gap-1.5 font-display text-[11.5px]">
+                  <Calculator className="w-3.5 h-3.5 text-[#3BB578]" />
+                  ¿Cómo calcula HABA el costo de tu tiempo?
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowTimeInfo(false)}
+                  className="text-[#7A7A7A] hover:text-[#2B2B2B] text-xs font-semibold cursor-pointer p-0.5"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="space-y-1.5 text-[11px] leading-relaxed">
+                <p>
+                  1️⃣ <strong>Tu costo por minuto:</strong> Se calcula dividiendo tu <strong>Objetivo Mensual</strong> (Sueldo Pretendido + Gastos Operativos) entre las <strong>horas de taller</strong> que trabajás por mes:
+                </p>
+                <div className="bg-white p-2 rounded-xl border border-[#DCF4D7] font-mono text-[10.5px] text-[#1F7A4C]">
+                  Objetivo Mensual ÷ (Días × Horas diarias × 60) = <strong>{formatCurrency(laborMinuteRate)}/minuto</strong>
+                </div>
+                <p>
+                  2️⃣ <strong>Para este producto:</strong> Multiplicamos los minutos de elaboración por tu valor por minuto:
+                </p>
+                <div className="bg-white p-2 rounded-xl border border-[#DCF4D7] font-mono text-[10.5px] text-[#1F7A4C]">
+                  {(Number(workTimeMinutes) || 0) > 0
+                    ? `${workTimeMinutes} min × ${formatCurrency(laborMinuteRate)}/min = `
+                    : "0 min × tarifa = "}
+                  <strong>{formatCurrency(laborCost)}</strong>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="pt-3 border-t border-neutral-100 flex items-center justify-between">
             <button
