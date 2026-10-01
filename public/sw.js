@@ -1,10 +1,12 @@
 // HABA Service Worker (Cache-First for static assets, Network-First for Supabase)
-const CACHE_NAME = 'haba-cache-v4';
+const CACHE_NAME = 'haba-cache-v5';
 const STATIC_ASSETS = [
   '/',
   '/manifest.webmanifest',
   '/LogoHaba.png',
+  '/LogoHaba.png?v=2',
   '/logo.png',
+  '/splash.png',
   '/icon-192.png',
   '/icon-512.png',
   '/icon-maskable-192.png',

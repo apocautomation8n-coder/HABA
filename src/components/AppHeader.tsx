@@ -125,11 +125,11 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
               className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl object-cover border border-[#C3EBC0] flex-shrink-0"
             />
           ) : (
-            <div className="h-9 w-9 sm:h-10 sm:w-10 flex items-center justify-center flex-shrink-0">
+            <div className="h-9 w-9 sm:h-10 sm:w-10 flex items-center justify-center flex-shrink-0 bg-transparent">
               <img
-                src="/LogoHaba.png"
+                src="/LogoHaba.png?v=2"
                 alt="Logo HABA"
-                className="h-full w-auto max-h-10 object-contain drop-shadow-sm transition-transform group-hover:scale-105"
+                className="h-full w-auto max-h-10 object-contain bg-transparent transition-transform group-hover:scale-105"
               />
             </div>
           )}

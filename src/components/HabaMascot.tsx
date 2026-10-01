@@ -16,13 +16,13 @@ export const HabaMascot: React.FC<HabaMascotProps> = ({
   if (useImage) {
     return (
       <div
-        className={`relative flex items-center justify-center flex-shrink-0 ${className}`}
+        className={`relative flex items-center justify-center flex-shrink-0 bg-transparent ${className}`}
         style={{ width: size, height: size }}
       >
         <img
-          src="/LogoHaba.png"
+          src="/LogoHaba.png?v=2"
           alt="Logo HABA"
-          className="w-full h-full object-contain drop-shadow-sm transition-transform hover:scale-105"
+          className="w-full h-full object-contain bg-transparent transition-transform hover:scale-105"
         />
       </div>
     );

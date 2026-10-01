@@ -110,9 +110,9 @@ export const HabaOnboardingMascot: React.FC<HabaOnboardingMascotProps> = ({
       >
         {/* Mascota HABA oficial */}
         <img
-          src="/LogoHaba.png"
+          src="/LogoHaba.png?v=2"
           alt="Haba Mascota"
-          className={`w-full h-full object-contain absolute inset-0 drop-shadow-md transition-transform duration-200 ${
+          className={`w-full h-full object-contain absolute inset-0 bg-transparent transition-transform duration-200 ${
             isWinking ? "scale-110 -rotate-6" : "scale-100 rotate-0"
           }`}
           draggable={false}
