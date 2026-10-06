@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -338,6 +338,44 @@ export default function NuevoProductoPage() {
   const suppliesCost = batchSuppliesCost;
   const componentsCost = batchComponentsCost;
 
+  // Sincronizar reactivamente los canales de precios ante cambios del costo unitario base
+  const prevTotalCostRef = useRef<number | null>(null);
+  useEffect(() => {
+    const safeCost = Math.max(0, totalCost || 0);
+    const prevCost = prevTotalCostRef.current;
+    prevTotalCostRef.current = totalCost;
+
+    if (prevCost !== null && prevCost !== totalCost && safeCost > 0) {
+      setChannelPrices((prev) =>
+        prev.map((ch) => {
+          const marginNum =
+            typeof ch.profit_margin_percent === "number"
+              ? ch.profit_margin_percent
+              : parseFloat(String(ch.profit_margin_percent));
+
+          const priceNum =
+            typeof ch.selling_price === "number"
+              ? ch.selling_price
+              : parseFloat(String(ch.selling_price));
+
+          if (ch.isPriceManuallyOverridden && !isNaN(priceNum) && priceNum > 0) {
+            const rawMargin = ((priceNum - safeCost) / safeCost) * 100;
+            return {
+              ...ch,
+              profit_margin_percent: isFinite(rawMargin) ? Math.max(0, Math.round(rawMargin)) : 0,
+            };
+          } else if (!isNaN(marginNum)) {
+            return {
+              ...ch,
+              selling_price: Math.round(safeCost * (1 + Math.max(0, marginNum) / 100)),
+            };
+          }
+          return ch;
+        })
+      );
+    }
+  }, [totalCost]);
+
 
   // Agregar insumo a la receta
   const handleAddSupply = (supply: SupplyItem) => {
@@ -455,10 +493,16 @@ export default function NuevoProductoPage() {
         prev.map((ch) => {
           const p = typeof ch.selling_price === "number" ? ch.selling_price : parseFloat(String(ch.selling_price));
           const m = typeof ch.profit_margin_percent === "number" ? ch.profit_margin_percent : parseFloat(String(ch.profit_margin_percent));
-          if ((!p || p <= 0) && !isNaN(m)) {
+          if (ch.isPriceManuallyOverridden && !isNaN(p) && p > 0) {
+            const rawMargin = ((p - totalCost) / totalCost) * 100;
             return {
               ...ch,
-              selling_price: Math.round(totalCost * (1 + m / 100)),
+              profit_margin_percent: isFinite(rawMargin) ? Math.max(0, Math.round(rawMargin)) : 0,
+            };
+          } else if (!isNaN(m)) {
+            return {
+              ...ch,
+              selling_price: Math.round(totalCost * (1 + Math.max(0, m) / 100)),
             };
           }
           return ch;
@@ -1273,10 +1317,16 @@ export default function NuevoProductoPage() {
                     prev.map((ch) => {
                       const p = typeof ch.selling_price === "number" ? ch.selling_price : parseFloat(String(ch.selling_price));
                       const m = typeof ch.profit_margin_percent === "number" ? ch.profit_margin_percent : parseFloat(String(ch.profit_margin_percent));
-                      if ((!p || p <= 0) && !isNaN(m)) {
+                      if (ch.isPriceManuallyOverridden && !isNaN(p) && p > 0) {
+                        const rawMargin = ((p - totalCost) / totalCost) * 100;
                         return {
                           ...ch,
-                          selling_price: Math.round(totalCost * (1 + m / 100)),
+                          profit_margin_percent: isFinite(rawMargin) ? Math.max(0, Math.round(rawMargin)) : 0,
+                        };
+                      } else if (!isNaN(m)) {
+                        return {
+                          ...ch,
+                          selling_price: Math.round(totalCost * (1 + Math.max(0, m) / 100)),
                         };
                       }
                       return ch;

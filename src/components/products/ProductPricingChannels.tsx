@@ -20,6 +20,7 @@ export interface ChannelPriceItem {
   channel_name: string;
   profit_margin_percent: number | string;
   selling_price: number | string;
+  isPriceManuallyOverridden?: boolean;
 }
 
 export interface ProductPricingChannelsProps {
@@ -35,8 +36,8 @@ export interface ProductPricingChannelsProps {
 }
 
 export const DEFAULT_CHANNELS: ChannelPriceItem[] = [
-  { id: "pormenor", channel_name: "Por Menor", profit_margin_percent: 100, selling_price: 0 },
-  { id: "pormayor", channel_name: "Por Mayor", profit_margin_percent: 50, selling_price: 0 },
+  { id: "pormenor", channel_name: "Por Menor", profit_margin_percent: 100, selling_price: 0, isPriceManuallyOverridden: false },
+  { id: "pormayor", channel_name: "Por Mayor", profit_margin_percent: 50, selling_price: 0, isPriceManuallyOverridden: false },
 ];
 
 export const calculateDefaultChannels = (unitCost: number = 0): ChannelPriceItem[] => {
@@ -47,12 +48,14 @@ export const calculateDefaultChannels = (unitCost: number = 0): ChannelPriceItem
       channel_name: "Por Menor",
       profit_margin_percent: 100,
       selling_price: safeCost > 0 ? Math.round(safeCost * 2) : 0,
+      isPriceManuallyOverridden: false,
     },
     {
       id: "pormayor",
       channel_name: "Por Mayor",
       profit_margin_percent: 50,
       selling_price: safeCost > 0 ? Math.round(safeCost * 1.5) : 0,
+      isPriceManuallyOverridden: false,
     },
   ];
 };
@@ -112,64 +115,54 @@ export function ProductPricingChannels({
   const [newChannelName, setNewChannelName] = useState("");
   const [newChannelMargin, setNewChannelMargin] = useState<number | string>(100);
 
-  // Sincronizar precios de venta cuando el costo unitario cambia o al montar si están sin inicializar (<= 0)
-  const prevUnitCostRef = useRef<number | null>(null);
-  const isFirstMountRef = useRef<boolean>(true);
-  const channelsRef = useRef<ChannelPriceItem[]>(channels);
-  channelsRef.current = channels;
-
+  // Sincronizar reactivamente los canales de precios cuando el costo unitario cambia o al montar
   useEffect(() => {
     const safeCost = Math.max(0, unitCost || 0);
-    const prevCost = prevUnitCostRef.current;
-    const isFirstMount = isFirstMountRef.current;
-    const costChanged = prevCost !== null && prevCost !== unitCost;
-    prevUnitCostRef.current = unitCost;
+    if (safeCost <= 0) return;
 
-    // Detectar si algún canal tiene precio en 0, no definido o nulo y debe ser calculado inicialmente
-    const hasUninitializedPrices = channelsRef.current.some((ch) => {
-      const p = typeof ch.selling_price === "number" ? ch.selling_price : parseFloat(String(ch.selling_price));
-      const m = typeof ch.profit_margin_percent === "number" ? ch.profit_margin_percent : parseFloat(String(ch.profit_margin_percent));
-      const isUnset = ch.selling_price === 0 || ch.selling_price === "0" || ch.selling_price === undefined || ch.selling_price === null;
-      return isUnset && !isNaN(m) && safeCost > 0;
+    let hasChanges = false;
+    const updated = channels.map((ch) => {
+      const marginNum =
+        typeof ch.profit_margin_percent === "number"
+          ? ch.profit_margin_percent
+          : parseFloat(String(ch.profit_margin_percent));
+
+      const priceNum =
+        typeof ch.selling_price === "number"
+          ? ch.selling_price
+          : parseFloat(String(ch.selling_price));
+
+      const isManual = Boolean(ch.isPriceManuallyOverridden);
+
+      if (isManual && !isNaN(priceNum) && priceNum > 0) {
+        // Precio fijado manualmente por el usuario: recalculamos el margen para reflejar el nuevo costo
+        const rawMargin = ((priceNum - safeCost) / safeCost) * 100;
+        const expectedMargin = isFinite(rawMargin) ? Math.max(0, Math.round(rawMargin)) : 0;
+        if (marginNum !== expectedMargin) {
+          hasChanges = true;
+          return {
+            ...ch,
+            profit_margin_percent: expectedMargin,
+          };
+        }
+      } else if (!isManual && !isNaN(marginNum)) {
+        // Cálculo automático por margen: recalculamos el precio según el nuevo costo
+        const expectedPrice = Math.round(safeCost * (1 + Math.max(0, marginNum) / 100));
+        if (priceNum !== expectedPrice) {
+          hasChanges = true;
+          return {
+            ...ch,
+            selling_price: expectedPrice,
+          };
+        }
+      }
+      return ch;
     });
 
-    if ((costChanged && safeCost > 0) || (isFirstMount && hasUninitializedPrices)) {
-      isFirstMountRef.current = false;
-      let hasChanges = false;
-      const updated = channelsRef.current.map((ch) => {
-        const marginNum =
-          typeof ch.profit_margin_percent === "number"
-            ? ch.profit_margin_percent
-            : parseFloat(String(ch.profit_margin_percent));
-
-        if (isNaN(marginNum)) return ch;
-
-        const currentPrice =
-          typeof ch.selling_price === "number" ? ch.selling_price : parseFloat(String(ch.selling_price));
-        const isUnset = ch.selling_price === 0 || ch.selling_price === "0" || ch.selling_price === undefined || ch.selling_price === null;
-
-        // Si el costo unitario cambió, recalculamos manteniendo el margen configurado.
-        // Si es la carga inicial y el precio aún no fue calculado (> 0), calculamos el precio de lista a partir del costo y margen.
-        if (costChanged || isUnset || !currentPrice || currentPrice <= 0) {
-          const calculatedPrice = safeCost > 0 ? Math.round(safeCost * (1 + marginNum / 100)) : ch.selling_price;
-          if (calculatedPrice !== ch.selling_price) {
-            hasChanges = true;
-            return {
-              ...ch,
-              selling_price: calculatedPrice,
-            };
-          }
-        }
-        return ch;
-      });
-
-      if (hasChanges) {
-        onChange(updated);
-      }
-    } else {
-      isFirstMountRef.current = false;
+    if (hasChanges) {
+      onChange(updated);
     }
-  }, [unitCost, onChange]);
+  }, [unitCost, channels, onChange]);
 
   // Modificar margen % de un canal -> recalcula precio de venta
   const handleMarginChange = (index: number, marginVal: number | string) => {
@@ -179,6 +172,7 @@ export function ProductPricingChannels({
         ...updated[index],
         profit_margin_percent: marginVal,
         selling_price: "",
+        isPriceManuallyOverridden: false,
       };
       onChange(updated);
       return;
@@ -190,6 +184,7 @@ export function ProductPricingChannels({
         ...updated[index],
         profit_margin_percent: marginVal,
         selling_price: "",
+        isPriceManuallyOverridden: false,
       };
       onChange(updated);
       return;
@@ -203,6 +198,7 @@ export function ProductPricingChannels({
       ...updated[index],
       profit_margin_percent: marginVal,
       selling_price: calculatedPrice >= 0 ? calculatedPrice : 0,
+      isPriceManuallyOverridden: false,
     };
     onChange(updated);
   };
@@ -215,6 +211,7 @@ export function ProductPricingChannels({
         ...updated[index],
         profit_margin_percent: "",
         selling_price: priceVal,
+        isPriceManuallyOverridden: true,
       };
       onChange(updated);
       return;
@@ -226,6 +223,7 @@ export function ProductPricingChannels({
         ...updated[index],
         profit_margin_percent: "",
         selling_price: priceVal,
+        isPriceManuallyOverridden: true,
       };
       onChange(updated);
       return;
@@ -247,6 +245,7 @@ export function ProductPricingChannels({
       ...updated[index],
       profit_margin_percent: newMargin,
       selling_price: priceVal,
+      isPriceManuallyOverridden: true,
     };
     onChange(updated);
   };
@@ -296,6 +295,7 @@ export function ProductPricingChannels({
         channel_name: trimmed,
         profit_margin_percent: marginNum,
         selling_price: calculatedPrice,
+        isPriceManuallyOverridden: false,
       },
     ]);
 
@@ -313,12 +313,14 @@ export function ProductPricingChannels({
         channel_name: "Por Menor",
         profit_margin_percent: 100,
         selling_price: Math.round(safeCost * 2),
+        isPriceManuallyOverridden: false,
       },
       {
         id: `custom-${Date.now()}-2`,
         channel_name: "Por Mayor",
         profit_margin_percent: 50,
         selling_price: Math.round(safeCost * 1.5),
+        isPriceManuallyOverridden: false,
       },
     ]);
   };
