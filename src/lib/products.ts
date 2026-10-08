@@ -2,7 +2,7 @@
  * Módulo de utilidades y constantes de Productos para HABA
  */
 
-import { calculateUnitCost, formatCurrency } from "./units";
+import { calculateUnitCost, formatCurrency, normalizeUnit } from "./units";
 import { createClient } from "./supabase/client";
 
 export interface ProductCategory {
@@ -152,6 +152,15 @@ export function isCategoryDeleted(labelOrId?: string | null): boolean {
   return deletedSet.has(normalizeCategoryString(id));
 }
 
+export interface SupplyDimensionMeta {
+  pieces: number;
+  width: number;
+  widthUnit: "m" | "cm" | "mm";
+  length: number;
+  lengthUnit: "m" | "cm" | "mm";
+  totalAreaQuantity?: number;
+}
+
 export interface ParsedProductMeta {
   category: string;
   categoryIcon: string;
@@ -160,6 +169,7 @@ export interface ParsedProductMeta {
   cleanDescription: string;
   lastReviewedAt?: string | null;
   priceSnapshots?: Record<string, number>;
+  supplyDimensions?: Record<string, SupplyDimensionMeta>;
 }
 
 /**
@@ -278,7 +288,38 @@ export function parseProductMeta(rawDescription?: string | null, productId?: str
     text = text.replace(snapMatch[0], "");
   }
 
-  // 6. Si no estaban en texto pero están en localStorage, leer de ahí como respaldo
+  // 6. Extraer [InsumosDim: ...] (Dimensiones de piezas de insumos de superficie)
+  let supplyDimensions: Record<string, SupplyDimensionMeta> = {};
+  const dimMatch = text.match(/\[InsumosDim:\s*([^\]]+)\]/i);
+  if (dimMatch) {
+    const rawDims = dimMatch[1].trim();
+    const items = rawDims.split(";");
+    for (const item of items) {
+      const [sId, rest] = item.split("=");
+      if (sId && rest) {
+        const parts = rest.split(",");
+        if (parts.length >= 5) {
+          const pieces = parseFloat(parts[0]) || 1;
+          const width = parseFloat(parts[1]) || 0;
+          const widthUnit = (parts[2]?.trim() || "cm") as "m" | "cm" | "mm";
+          const length = parseFloat(parts[3]) || 0;
+          const lengthUnit = (parts[4]?.trim() || "cm") as "m" | "cm" | "mm";
+          const totalAreaQuantity = parts[5] && parts[5].trim() ? parseFloat(parts[5].trim()) : undefined;
+          supplyDimensions[sId.trim()] = {
+            pieces,
+            width,
+            widthUnit,
+            length,
+            lengthUnit,
+            totalAreaQuantity: isNaN(totalAreaQuantity!) ? undefined : totalAreaQuantity,
+          };
+        }
+      }
+    }
+    text = text.replace(dimMatch[0], "");
+  }
+
+  // 7. Si no estaban en texto pero están en localStorage, leer de ahí como respaldo
   if (typeof window !== "undefined" && productId) {
     try {
       const stored = localStorage.getItem(`haba_product_review_${productId}`);
@@ -294,7 +335,7 @@ export function parseProductMeta(rawDescription?: string | null, productId?: str
     } catch {}
   }
 
-  // 7. Limpiar cualquier tag residual de foto si existiese
+  // 8. Limpiar cualquier tag residual de foto si existiese
   text = text.replace(/\[Foto:\s*[^\]]+\]/gi, "");
 
   return {
@@ -305,6 +346,7 @@ export function parseProductMeta(rawDescription?: string | null, productId?: str
     cleanDescription: text.trim(),
     lastReviewedAt,
     priceSnapshots,
+    supplyDimensions,
   };
 }
 
@@ -318,6 +360,7 @@ export function serializeProductDescription({
   yieldValue = 1,
   lastReviewedAt,
   priceSnapshots,
+  supplyDimensions,
 }: {
   cleanDescription?: string;
   category?: string;
@@ -325,6 +368,7 @@ export function serializeProductDescription({
   yieldValue?: number;
   lastReviewedAt?: string | null;
   priceSnapshots?: Record<string, number>;
+  supplyDimensions?: Record<string, SupplyDimensionMeta>;
 }): string {
   const metaTags: string[] = [];
 
@@ -357,12 +401,84 @@ export function serializeProductDescription({
     }
   }
 
+  if (supplyDimensions && Object.keys(supplyDimensions).length > 0) {
+    const serialized = Object.entries(supplyDimensions)
+      .filter(([id, d]) => Boolean(id) && d && d.pieces > 0 && d.width > 0 && d.length > 0)
+      .map(([id, d]) => `${id}=${d.pieces},${d.width},${d.widthUnit},${d.length},${d.lengthUnit},${d.totalAreaQuantity ?? ""}`)
+      .join(";");
+    if (serialized) {
+      metaTags.push(`[InsumosDim: ${serialized}]`);
+    }
+  }
+
   const clean = (cleanDescription || "").trim();
   if (metaTags.length > 0) {
     return clean ? `${metaTags.join(" ")}\n\n${clean}` : metaTags.join(" ");
   }
 
   return clean;
+}
+
+/**
+ * Helpers para insumos con unidades de superficie (m2, cm2) en recetas
+ */
+export function isSurfaceSupplyUnit(unit?: string | null): boolean {
+  if (!unit) return false;
+  const norm = normalizeUnit(unit);
+  return norm === "m2" || norm === "cm2";
+}
+
+export function isSurfaceSupply(supply: { use_unit?: string | null; purchase_unit?: string | null }): boolean {
+  return isSurfaceSupplyUnit(supply.use_unit) || isSurfaceSupplyUnit(supply.purchase_unit);
+}
+
+export function getSurfaceTargetUnit(supply: { use_unit?: string | null; purchase_unit?: string | null }): "m2" | "cm2" {
+  const normUse = normalizeUnit(supply.use_unit);
+  if (normUse === "m2") return "m2";
+  if (normUse === "cm2") return "cm2";
+  const normPurchase = normalizeUnit(supply.purchase_unit);
+  if (normPurchase === "m2") return "m2";
+  return "cm2";
+}
+
+export function toDimensionMeters(val: number, unit: "m" | "cm" | "mm"): number {
+  if (unit === "m") return val;
+  if (unit === "cm") return val / 100;
+  if (unit === "mm") return val / 1000;
+  return val;
+}
+
+export function toDimensionCentimeters(val: number, unit: "m" | "cm" | "mm"): number {
+  if (unit === "m") return val * 100;
+  if (unit === "cm") return val;
+  if (unit === "mm") return val / 10;
+  return val;
+}
+
+export function calculateSurfaceRecipeQuantity(
+  pieces: number,
+  width: number,
+  widthUnit: "m" | "cm" | "mm",
+  length: number,
+  lengthUnit: "m" | "cm" | "mm",
+  targetUnit: "m2" | "cm2"
+): number {
+  const safePieces = pieces > 0 ? pieces : 1;
+  if (width <= 0 || length <= 0) return 0;
+
+  let areaPerPiece = 0;
+  if (targetUnit === "m2") {
+    const wM = toDimensionMeters(width, widthUnit);
+    const lM = toDimensionMeters(length, lengthUnit);
+    areaPerPiece = wM * lM;
+  } else {
+    const wCm = toDimensionCentimeters(width, widthUnit);
+    const lCm = toDimensionCentimeters(length, lengthUnit);
+    areaPerPiece = wCm * lCm;
+  }
+
+  const total = safePieces * areaPerPiece;
+  return parseFloat(total.toFixed(6));
 }
 
 /**

@@ -46,6 +46,10 @@ import {
   validateProductYield,
   isDuplicateProductName,
   checkProductNameExists,
+  SupplyDimensionMeta,
+  isSurfaceSupply,
+  getSurfaceTargetUnit,
+  calculateSurfaceRecipeQuantity,
 } from "@/lib/products";
 import { matchesSearch } from "@/lib/search";
 import { formDraftStorage } from "@/lib/formStorage";
@@ -53,6 +57,11 @@ import { formDraftStorage } from "@/lib/formStorage";
 interface SelectedSupply {
   supply: SupplyItem;
   quantity: number | string; // en use_unit
+  pieces?: number | string;
+  width?: number | string;
+  widthUnit?: "m" | "cm" | "mm";
+  length?: number | string;
+  lengthUnit?: "m" | "cm" | "mm";
 }
 
 import {
@@ -380,7 +389,23 @@ export default function NuevoProductoPage() {
   // Agregar insumo a la receta
   const handleAddSupply = (supply: SupplyItem) => {
     if (selectedSupplies.some((s) => s.supply.id === supply.id)) return;
-    setSelectedSupplies((prev) => [...prev, { supply, quantity: 1 }]);
+    const isSurface = isSurfaceSupply(supply);
+    if (isSurface) {
+      setSelectedSupplies((prev) => [
+        ...prev,
+        {
+          supply,
+          quantity: 0,
+          pieces: 1,
+          width: "",
+          widthUnit: "cm",
+          length: "",
+          lengthUnit: "cm",
+        },
+      ]);
+    } else {
+      setSelectedSupplies((prev) => [...prev, { supply, quantity: 1 }]);
+    }
     setSupplyPickerOpen(false);
   };
 
@@ -398,11 +423,45 @@ export default function NuevoProductoPage() {
     }
   };
 
-  // Cambiar cantidad de insumo
+  // Cambiar cantidad de insumo tradicional
   const handleUpdateSupplyQty = (index: number, qty: number | string) => {
     setSelectedSupplies((prev) => {
       const updated = [...prev];
       updated[index].quantity = qty;
+      return updated;
+    });
+  };
+
+  // Cambiar dimensiones de insumo de superficie
+  const handleUpdateSupplyDimensions = (
+    index: number,
+    patch: Partial<{
+      pieces: number | string;
+      width: number | string;
+      widthUnit: "m" | "cm" | "mm";
+      length: number | string;
+      lengthUnit: "m" | "cm" | "mm";
+    }>
+  ) => {
+    setSelectedSupplies((prev) => {
+      const updated = [...prev];
+      const current = updated[index];
+      const merged = { ...current, ...patch };
+
+      const p = typeof merged.pieces === "number" ? merged.pieces : parseFloat(String(merged.pieces)) || 1;
+      const w = typeof merged.width === "number" ? merged.width : parseFloat(String(merged.width)) || 0;
+      const l = typeof merged.length === "number" ? merged.length : parseFloat(String(merged.length)) || 0;
+      const wU = merged.widthUnit || "cm";
+      const lU = merged.lengthUnit || "cm";
+      const targetUnit = getSurfaceTargetUnit(merged.supply);
+
+      if (w > 0 && l > 0) {
+        merged.quantity = calculateSurfaceRecipeQuantity(p, w, wU, l, lU, targetUnit);
+      } else {
+        merged.quantity = 0;
+      }
+
+      updated[index] = merged;
       return updated;
     });
   };
@@ -531,6 +590,15 @@ export default function NuevoProductoPage() {
       return;
     }
 
+    if (selectedSupplies.some((s) => {
+      const q = typeof s.quantity === "number" ? s.quantity : parseFloat(String(s.quantity));
+      return isNaN(q) || q <= 0;
+    })) {
+      setErrorMsg("Completa las medidas o cantidades de todos los insumos agregados.");
+      setCurrentStep(2);
+      return;
+    }
+
     try {
       setLoading(true);
       const {
@@ -547,7 +615,27 @@ export default function NuevoProductoPage() {
         return;
       }
 
-      // Categoría, rendimiento y estado activo serializados
+      // Serializar dimensiones estructuradas de insumos de superficie
+      const supplyDimensions: Record<string, SupplyDimensionMeta> = {};
+      for (const s of selectedSupplies) {
+        if (s.supply?.id && isSurfaceSupply(s.supply)) {
+          const p = typeof s.pieces === "number" ? s.pieces : parseFloat(String(s.pieces)) || 1;
+          const w = typeof s.width === "number" ? s.width : parseFloat(String(s.width)) || 0;
+          const l = typeof s.length === "number" ? s.length : parseFloat(String(s.length)) || 0;
+          if (w > 0 && l > 0) {
+            supplyDimensions[s.supply.id] = {
+              pieces: p,
+              width: w,
+              widthUnit: s.widthUnit || "cm",
+              length: l,
+              lengthUnit: s.lengthUnit || "cm",
+              totalAreaQuantity: typeof s.quantity === "number" ? s.quantity : parseFloat(String(s.quantity)) || 0,
+            };
+          }
+        }
+      }
+
+      // Categoría, rendimiento, dimensiones y estado activo serializados
       const categoryLabel = category.trim();
 
       const finalDescription = serializeProductDescription({
@@ -555,6 +643,7 @@ export default function NuevoProductoPage() {
         category: categoryLabel,
         isActive: true,
         yieldValue: yieldValidation.value,
+        supplyDimensions,
       });
 
       // Doble verificación en base de datos de nombre duplicado
@@ -958,6 +1047,7 @@ export default function NuevoProductoPage() {
               ) : (
                 <div className="space-y-2.5">
                   {selectedSupplies.map((item, idx) => {
+                    const isSurface = isSurfaceSupply(item.supply);
                     const unitCost = calculateUnitCost(
                       item.supply.current_price,
                       item.supply.purchase_quantity,
@@ -990,34 +1080,131 @@ export default function NuevoProductoPage() {
                           </button>
                         </div>
 
-                        <div className="flex items-center justify-between pt-2 border-t border-neutral-200/50 gap-3">
-                          <div className="flex items-center gap-2">
-                            <label className="text-[11px] font-semibold text-neutral-600 flex-shrink-0">
-                              Cantidad:
-                            </label>
-                            <div className="flex items-center gap-1">
-                              <input
-                                type="number"
-                                step="any"
-                                min="0.0001"
-                                value={item.quantity === 0 ? "" : item.quantity}
-                                onChange={(e) => handleUpdateSupplyQty(idx, e.target.value)}
-                                placeholder="1"
-                                className="w-24 px-2 py-1 text-xs bg-white border border-neutral-200 rounded-xl text-center font-bold outline-none focus:border-[#3BB578]"
-                              />
-                              <span className="text-[11px] font-semibold text-neutral-500 flex-shrink-0">
-                                {item.supply.use_unit}
+                        {isSurface ? (
+                          <div className="pt-2 border-t border-neutral-200/50 space-y-2">
+                            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                              {/* Piezas */}
+                              <div className="flex items-center gap-1.5">
+                                <label className="text-[11px] font-semibold text-neutral-600 flex-shrink-0">
+                                  Piezas:
+                                </label>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  step="1"
+                                  value={item.pieces ?? 1}
+                                  onChange={(e) => handleUpdateSupplyDimensions(idx, { pieces: e.target.value })}
+                                  placeholder="1"
+                                  className="w-14 px-2 py-1 text-xs bg-white border border-neutral-200 rounded-xl text-center font-bold outline-none focus:border-[#3BB578]"
+                                />
+                              </div>
+
+                              {/* Ancho */}
+                              <div className="flex items-center gap-1">
+                                <label className="text-[11px] font-semibold text-neutral-600 flex-shrink-0">
+                                  Ancho:
+                                </label>
+                                <div className="inline-flex items-center bg-white border border-neutral-200 rounded-xl overflow-hidden focus-within:border-[#3BB578]">
+                                  <input
+                                    type="number"
+                                    step="any"
+                                    min="0.01"
+                                    value={item.width ?? ""}
+                                    onChange={(e) => handleUpdateSupplyDimensions(idx, { width: e.target.value })}
+                                    placeholder="0"
+                                    className="w-16 px-2 py-1 text-xs text-center font-bold outline-none"
+                                  />
+                                  <select
+                                    value={item.widthUnit || "cm"}
+                                    onChange={(e) => handleUpdateSupplyDimensions(idx, { widthUnit: e.target.value as "m" | "cm" | "mm" })}
+                                    className="text-[11px] font-bold text-neutral-600 bg-neutral-100 px-1.5 py-1 border-l border-neutral-200 outline-none cursor-pointer"
+                                  >
+                                    <option value="cm">cm</option>
+                                    <option value="m">m</option>
+                                    <option value="mm">mm</option>
+                                  </select>
+                                </div>
+                              </div>
+
+                              <span className="text-neutral-300 font-bold text-xs">×</span>
+
+                              {/* Largo */}
+                              <div className="flex items-center gap-1">
+                                <label className="text-[11px] font-semibold text-neutral-600 flex-shrink-0">
+                                  Largo:
+                                </label>
+                                <div className="inline-flex items-center bg-white border border-neutral-200 rounded-xl overflow-hidden focus-within:border-[#3BB578]">
+                                  <input
+                                    type="number"
+                                    step="any"
+                                    min="0.01"
+                                    value={item.length ?? ""}
+                                    onChange={(e) => handleUpdateSupplyDimensions(idx, { length: e.target.value })}
+                                    placeholder="0"
+                                    className="w-16 px-2 py-1 text-xs text-center font-bold outline-none"
+                                  />
+                                  <select
+                                    value={item.lengthUnit || "cm"}
+                                    onChange={(e) => handleUpdateSupplyDimensions(idx, { lengthUnit: e.target.value as "m" | "cm" | "mm" })}
+                                    className="text-[11px] font-bold text-neutral-600 bg-neutral-100 px-1.5 py-1 border-l border-neutral-200 outline-none cursor-pointer"
+                                  >
+                                    <option value="cm">cm</option>
+                                    <option value="m">m</option>
+                                    <option value="mm">mm</option>
+                                  </select>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Resumen de consumo calculado & Subtotal */}
+                            <div className="flex items-center justify-between pt-1 border-t border-neutral-100 text-xs">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] text-neutral-400 font-medium">Consumo total:</span>
+                                <span className="text-[11px] font-bold text-neutral-700 bg-neutral-200/60 px-2 py-0.5 rounded-lg">
+                                  {itemQty > 0
+                                    ? `${itemQty.toLocaleString("es-AR", { maximumFractionDigits: 4 })} ${item.supply.use_unit}`
+                                    : `0 ${item.supply.use_unit}`}
+                                </span>
+                              </div>
+
+                              <div className="text-right">
+                                <span className="text-[10px] text-neutral-400 block">Subtotal</span>
+                                <span className="font-bold text-[#1F7A4C] text-xs">
+                                  {formatCurrency(subtotal)}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between pt-2 border-t border-neutral-200/50 gap-3">
+                            <div className="flex items-center gap-2">
+                              <label className="text-[11px] font-semibold text-neutral-600 flex-shrink-0">
+                                Cantidad:
+                              </label>
+                              <div className="flex items-center gap-1">
+                                <input
+                                  type="number"
+                                  step="any"
+                                  min="0.0001"
+                                  value={item.quantity === 0 ? "" : item.quantity}
+                                  onChange={(e) => handleUpdateSupplyQty(idx, e.target.value)}
+                                  placeholder="1"
+                                  className="w-24 px-2 py-1 text-xs bg-white border border-neutral-200 rounded-xl text-center font-bold outline-none focus:border-[#3BB578]"
+                                />
+                                <span className="text-[11px] font-semibold text-neutral-500 flex-shrink-0">
+                                  {item.supply.use_unit}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="text-right">
+                              <span className="text-[10px] text-neutral-400 block">Subtotal</span>
+                              <span className="font-bold text-[#1F7A4C] text-xs">
+                                {formatCurrency(subtotal)}
                               </span>
                             </div>
                           </div>
-
-                          <div className="text-right">
-                            <span className="text-[10px] text-neutral-400 block">Subtotal</span>
-                            <span className="font-bold text-[#1F7A4C] text-xs">
-                              {formatCurrency(subtotal)}
-                            </span>
-                          </div>
-                        </div>
+                        )}
                       </div>
                     );
                   })}

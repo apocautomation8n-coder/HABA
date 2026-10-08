@@ -54,6 +54,10 @@ import {
   isCategoryMatch,
   getCategoryId,
   normalizeCategoryString,
+  SupplyDimensionMeta,
+  isSurfaceSupply,
+  getSurfaceTargetUnit,
+  calculateSurfaceRecipeQuantity,
 } from "@/lib/products";
 import { matchesSearch } from "@/lib/search";
 import { SupplyModal, SupplyItem } from "@/components/SupplyModal";
@@ -158,6 +162,11 @@ export interface EditSupplyLine {
   purchase_unit?: string;
   purchase_quantity?: number;
   conversion_factor?: number;
+  pieces?: number | string;
+  width?: number | string;
+  widthUnit?: "m" | "cm" | "mm";
+  length?: number | string;
+  lengthUnit?: "m" | "cm" | "mm";
 }
 
 export interface EditComponentLine {
@@ -634,7 +643,7 @@ export default function ProductosPage() {
 
   // Abrir modal de edición de producto con receta e insumos (Punto 5)
   const handleOpenEdit = (product: Product) => {
-    const meta = parseProductMeta(product.description);
+    const meta = parseProductMeta(product.description, product.id);
     setEditModalProduct(product);
     setEditName(product.name);
     setEditDescription(meta.cleanDescription || "");
@@ -642,15 +651,19 @@ export default function ProductosPage() {
     setEditWorkMinutes(product.work_time_minutes || 0);
     setEditYield(meta.yield || 1);
 
-    // Cargar insumos actuales de la receta
+    // Cargar insumos actuales de la receta con dimensiones de superficie si existen
     const initialSupplies: EditSupplyLine[] = (product.product_supplies || []).map((ps) => {
       const s = ps.supplies;
       const unitCost = s
         ? calculateUnitCost(s.current_price, s.purchase_quantity || 1, s.conversion_factor || 1)
         : 0;
+      const supplyId = ps.supply_id || s?.id || "";
+      const isSurface = isSurfaceSupply({ use_unit: s?.use_unit, purchase_unit: s?.purchase_unit });
+      const dim = meta.supplyDimensions?.[supplyId];
+
       return {
         id: ps.id,
-        supply_id: ps.supply_id || s?.id || "",
+        supply_id: supplyId,
         name: s?.name || "Insumo",
         use_unit: s?.use_unit || "u",
         unit_cost: unitCost,
@@ -659,6 +672,11 @@ export default function ProductosPage() {
         purchase_unit: s?.purchase_unit,
         purchase_quantity: s?.purchase_quantity,
         conversion_factor: s?.conversion_factor,
+        pieces: dim ? dim.pieces : isSurface ? 1 : undefined,
+        width: dim ? dim.width : isSurface ? "" : undefined,
+        widthUnit: dim ? dim.widthUnit : isSurface ? "cm" : undefined,
+        length: dim ? dim.length : isSurface ? "" : undefined,
+        lengthUnit: dim ? dim.lengthUnit : isSurface ? "cm" : undefined,
       };
     });
     setEditSupplies(initialSupplies);
@@ -718,6 +736,7 @@ export default function ProductosPage() {
       supply.purchase_quantity || 1,
       supply.conversion_factor || 1
     );
+    const isSurface = isSurfaceSupply(supply);
     setEditSupplies((prev) => [
       ...prev,
       {
@@ -725,11 +744,16 @@ export default function ProductosPage() {
         name: supply.name,
         use_unit: supply.use_unit || "u",
         unit_cost: unitCost,
-        quantity: 1,
+        quantity: isSurface ? 0 : 1,
         current_price: supply.current_price,
         purchase_unit: supply.purchase_unit,
         purchase_quantity: supply.purchase_quantity,
         conversion_factor: supply.conversion_factor,
+        pieces: isSurface ? 1 : undefined,
+        width: isSurface ? "" : undefined,
+        widthUnit: isSurface ? "cm" : undefined,
+        length: isSurface ? "" : undefined,
+        lengthUnit: isSurface ? "cm" : undefined,
       },
     ]);
     setSelectedSupplyToAdd("");
@@ -759,6 +783,7 @@ export default function ProductosPage() {
         createdSupply.purchase_quantity || 1,
         createdSupply.conversion_factor || 1
       );
+      const isSurface = isSurfaceSupply(createdSupply);
       setEditSupplies((prev) => [
         ...prev,
         {
@@ -766,11 +791,16 @@ export default function ProductosPage() {
           name: createdSupply.name,
           use_unit: createdSupply.use_unit || "u",
           unit_cost: unitCost,
-          quantity: 1,
+          quantity: isSurface ? 0 : 1,
           current_price: createdSupply.current_price,
           purchase_unit: createdSupply.purchase_unit,
           purchase_quantity: createdSupply.purchase_quantity,
           conversion_factor: createdSupply.conversion_factor,
+          pieces: isSurface ? 1 : undefined,
+          width: isSurface ? "" : undefined,
+          widthUnit: isSurface ? "cm" : undefined,
+          length: isSurface ? "" : undefined,
+          lengthUnit: isSurface ? "cm" : undefined,
         },
       ]);
       setSuccessToast(`¡Insumo "${createdSupply.name}" creado y agregado al producto!`);
@@ -783,11 +813,45 @@ export default function ProductosPage() {
     setEditSupplies((prev) => prev.filter((_, i) => i !== index));
   };
 
-  // Actualizar cantidad de insumo en edición
+  // Actualizar cantidad de insumo tradicional en edición
   const handleUpdateEditSupplyQty = (index: number, qty: number | string) => {
     setEditSupplies((prev) => {
       const updated = [...prev];
       updated[index].quantity = qty;
+      return updated;
+    });
+  };
+
+  // Actualizar dimensiones de insumo de superficie en edición
+  const handleUpdateEditSupplyDimensions = (
+    index: number,
+    patch: Partial<{
+      pieces: number | string;
+      width: number | string;
+      widthUnit: "m" | "cm" | "mm";
+      length: number | string;
+      lengthUnit: "m" | "cm" | "mm";
+    }>
+  ) => {
+    setEditSupplies((prev) => {
+      const updated = [...prev];
+      const current = updated[index];
+      const merged = { ...current, ...patch };
+
+      const p = typeof merged.pieces === "number" ? merged.pieces : parseFloat(String(merged.pieces)) || 1;
+      const w = typeof merged.width === "number" ? merged.width : parseFloat(String(merged.width)) || 0;
+      const l = typeof merged.length === "number" ? merged.length : parseFloat(String(merged.length)) || 0;
+      const wU = merged.widthUnit || "cm";
+      const lU = merged.lengthUnit || "cm";
+      const targetUnit = getSurfaceTargetUnit(merged);
+
+      if (w > 0 && l > 0) {
+        merged.quantity = calculateSurfaceRecipeQuantity(p, w, wU, l, lU, targetUnit);
+      } else {
+        merged.quantity = 0;
+      }
+
+      updated[index] = merged;
       return updated;
     });
   };
@@ -881,6 +945,14 @@ export default function ProductosPage() {
       return;
     }
 
+    if (editSupplies.some((s) => {
+      const q = typeof s.quantity === "number" ? s.quantity : parseFloat(String(s.quantity));
+      return isNaN(q) || q <= 0;
+    })) {
+      alert("Completa las medidas o cantidades de todos los insumos agregados.");
+      return;
+    }
+
     try {
       setSavingEdit(true);
 
@@ -904,6 +976,26 @@ export default function ProductosPage() {
         }
       }
 
+      // Serializar dimensiones estructuradas de insumos de superficie
+      const supplyDimensions: Record<string, SupplyDimensionMeta> = {};
+      for (const s of editSupplies) {
+        if (s.supply_id && isSurfaceSupply(s)) {
+          const p = typeof s.pieces === "number" ? s.pieces : parseFloat(String(s.pieces)) || 1;
+          const w = typeof s.width === "number" ? s.width : parseFloat(String(s.width)) || 0;
+          const l = typeof s.length === "number" ? s.length : parseFloat(String(s.length)) || 0;
+          if (w > 0 && l > 0) {
+            supplyDimensions[s.supply_id] = {
+              pieces: p,
+              width: w,
+              widthUnit: s.widthUnit || "cm",
+              length: l,
+              lengthUnit: s.lengthUnit || "cm",
+              totalAreaQuantity: typeof s.quantity === "number" ? s.quantity : parseFloat(String(s.quantity)) || 0,
+            };
+          }
+        }
+      }
+
       if (typeof window !== "undefined") {
         try {
           localStorage.setItem(
@@ -921,6 +1013,7 @@ export default function ProductosPage() {
         yieldValue: yieldValidation.value,
         lastReviewedAt: nowIso,
         priceSnapshots,
+        supplyDimensions,
       });
 
       // 1. Actualizar tabla products
@@ -2855,8 +2948,9 @@ export default function ProductosPage() {
                         No hay insumos asignados a este producto. Elegí uno arriba para sumarlo.
                       </p>
                     ) : (
-                      <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                      <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
                         {editSupplies.map((item, idx) => {
+                          const isSurface = isSurfaceSupply(item);
                           const qty = typeof item.quantity === "number" ? item.quantity : parseFloat(String(item.quantity)) || 0;
                           const lineSubtotal = item.unit_cost * qty;
                           const modInfo = editModalModifiedSupplies.find(
@@ -2867,7 +2961,7 @@ export default function ProductosPage() {
                           return (
                             <div
                               key={item.supply_id || idx}
-                              className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 text-xs transition ${
+                              className={`p-2.5 rounded-xl border flex flex-col space-y-2 text-xs transition ${
                                 isModified
                                   ? modInfo?.isIncrease
                                     ? "bg-amber-50/60 border-amber-300 ring-1 ring-amber-300/40"
@@ -2875,69 +2969,166 @@ export default function ProductosPage() {
                                   : "bg-white border-neutral-200"
                               }`}
                             >
-                              <div className="flex-1 min-w-0 pr-1">
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <span className="font-bold text-neutral-800 break-words whitespace-normal block">
-                                    {item.name}
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex-1 min-w-0 pr-1">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="font-bold text-neutral-800 break-words whitespace-normal block">
+                                      {item.name}
+                                    </span>
+                                    {isModified && modInfo && (
+                                      <span
+                                        className={`inline-flex items-center gap-0.5 text-[9px] font-extrabold px-1.5 py-0.2 rounded border ${
+                                          modInfo.isIncrease
+                                            ? "bg-amber-200 text-amber-900 border-amber-300"
+                                            : "bg-sky-100 text-sky-900 border-sky-300"
+                                        }`}
+                                      >
+                                        {modInfo.isIncrease ? (
+                                          <TrendingUp className="w-2.5 h-2.5 text-amber-800" />
+                                        ) : (
+                                          <TrendingDown className="w-2.5 h-2.5 text-sky-800" />
+                                        )}
+                                        {modInfo.isIncrease
+                                          ? `Aumentó (+${modInfo.percentChange}%)`
+                                          : `Bajó (-${modInfo.percentChange}%)`}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="text-[10px] text-neutral-400 block mt-0.5">
+                                    {formatCurrency(item.unit_cost)} / {item.use_unit}
+                                    {isModified && modInfo && (
+                                      <span
+                                        className={`font-semibold ml-1 ${
+                                          modInfo.isIncrease ? "text-amber-800" : "text-sky-800"
+                                        }`}
+                                      >
+                                        (antes {formatCurrency(modInfo.prevUnitCost)}/{modInfo.useUnit})
+                                      </span>
+                                    )}
                                   </span>
-                                  {isModified && modInfo && (
-                                    <span
-                                      className={`inline-flex items-center gap-0.5 text-[9px] font-extrabold px-1.5 py-0.2 rounded border ${
-                                        modInfo.isIncrease
-                                          ? "bg-amber-200 text-amber-900 border-amber-300"
-                                          : "bg-sky-100 text-sky-900 border-sky-300"
-                                      }`}
-                                    >
-                                      {modInfo.isIncrease ? (
-                                        <TrendingUp className="w-2.5 h-2.5 text-amber-800" />
-                                      ) : (
-                                        <TrendingDown className="w-2.5 h-2.5 text-sky-800" />
-                                      )}
-                                      {modInfo.isIncrease
-                                        ? `Aumentó (+${modInfo.percentChange}%)`
-                                        : `Bajó (-${modInfo.percentChange}%)`}
-                                    </span>
-                                  )}
                                 </div>
-                                <span className="text-[10px] text-neutral-400 block mt-0.5">
-                                  {formatCurrency(item.unit_cost)} / {item.use_unit}
-                                  {isModified && modInfo && (
-                                    <span
-                                      className={`font-semibold ml-1 ${
-                                        modInfo.isIncrease ? "text-amber-800" : "text-sky-800"
-                                      }`}
-                                    >
-                                      (antes {formatCurrency(modInfo.prevUnitCost)}/{modInfo.useUnit})
-                                    </span>
-                                  )}
-                                </span>
+
+                                <div className="flex items-center gap-2 flex-shrink-0">
+                                  <span className="text-xs font-bold text-[#1F7A4C] min-w-[65px] text-right">
+                                    {formatCurrency(lineSubtotal)}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveSupplyFromRecipe(idx)}
+                                    className="p-1 text-neutral-400 hover:text-rose-500 transition ml-1 cursor-pointer"
+                                    title="Quitar insumo"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
                               </div>
 
-                              <div className="flex items-center gap-1.5 flex-shrink-0">
-                                <input
-                                  type="number"
-                                  step="any"
-                                  min="0.0001"
-                                  value={item.quantity === 0 ? "" : item.quantity}
-                                  onChange={(e) => handleUpdateEditSupplyQty(idx, e.target.value)}
-                                  placeholder="1"
-                                  className="w-16 px-2 py-1 text-xs bg-neutral-50 border border-neutral-200 rounded-lg text-center font-bold outline-none focus:border-[#3BB578]"
-                                />
-                                <span className="text-[10.5px] text-neutral-500 font-semibold w-8">
-                                  {item.use_unit}
-                                </span>
-                                <span className="text-xs font-bold text-[#1F7A4C] min-w-[65px] text-right">
-                                  {formatCurrency(lineSubtotal)}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemoveSupplyFromRecipe(idx)}
-                                  className="p-1 text-neutral-400 hover:text-rose-500 transition ml-1 cursor-pointer"
-                                  title="Quitar insumo"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
+                              {isSurface ? (
+                                <div className="pt-2 border-t border-neutral-100 flex flex-wrap items-center justify-between gap-2">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    {/* Piezas */}
+                                    <div className="flex items-center gap-1">
+                                      <label className="text-[11px] font-semibold text-neutral-600 flex-shrink-0">
+                                        Piezas:
+                                      </label>
+                                      <input
+                                        type="number"
+                                        min="1"
+                                        step="1"
+                                        value={item.pieces ?? 1}
+                                        onChange={(e) => handleUpdateEditSupplyDimensions(idx, { pieces: e.target.value })}
+                                        placeholder="1"
+                                        className="w-12 px-1.5 py-0.5 text-xs bg-neutral-50 border border-neutral-200 rounded-lg text-center font-bold outline-none focus:border-[#3BB578]"
+                                      />
+                                    </div>
+
+                                    {/* Ancho */}
+                                    <div className="flex items-center gap-1">
+                                      <label className="text-[11px] font-semibold text-neutral-600 flex-shrink-0">
+                                        Ancho:
+                                      </label>
+                                      <div className="inline-flex items-center bg-neutral-50 border border-neutral-200 rounded-lg overflow-hidden focus-within:border-[#3BB578]">
+                                        <input
+                                          type="number"
+                                          step="any"
+                                          min="0.01"
+                                          value={item.width ?? ""}
+                                          onChange={(e) => handleUpdateEditSupplyDimensions(idx, { width: e.target.value })}
+                                          placeholder="0"
+                                          className="w-14 px-1.5 py-0.5 text-xs text-center font-bold outline-none bg-transparent"
+                                        />
+                                        <select
+                                          value={item.widthUnit || "cm"}
+                                          onChange={(e) => handleUpdateEditSupplyDimensions(idx, { widthUnit: e.target.value as "m" | "cm" | "mm" })}
+                                          className="text-[10px] font-bold text-neutral-600 bg-neutral-100 px-1 py-0.5 border-l border-neutral-200 outline-none cursor-pointer"
+                                        >
+                                          <option value="cm">cm</option>
+                                          <option value="m">m</option>
+                                          <option value="mm">mm</option>
+                                        </select>
+                                      </div>
+                                    </div>
+
+                                    <span className="text-neutral-300 font-bold text-xs">×</span>
+
+                                    {/* Largo */}
+                                    <div className="flex items-center gap-1">
+                                      <label className="text-[11px] font-semibold text-neutral-600 flex-shrink-0">
+                                        Largo:
+                                      </label>
+                                      <div className="inline-flex items-center bg-neutral-50 border border-neutral-200 rounded-lg overflow-hidden focus-within:border-[#3BB578]">
+                                        <input
+                                          type="number"
+                                          step="any"
+                                          min="0.01"
+                                          value={item.length ?? ""}
+                                          onChange={(e) => handleUpdateEditSupplyDimensions(idx, { length: e.target.value })}
+                                          placeholder="0"
+                                          className="w-14 px-1.5 py-0.5 text-xs text-center font-bold outline-none bg-transparent"
+                                        />
+                                        <select
+                                          value={item.lengthUnit || "cm"}
+                                          onChange={(e) => handleUpdateEditSupplyDimensions(idx, { lengthUnit: e.target.value as "m" | "cm" | "mm" })}
+                                          className="text-[10px] font-bold text-neutral-600 bg-neutral-100 px-1 py-0.5 border-l border-neutral-200 outline-none cursor-pointer"
+                                        >
+                                          <option value="cm">cm</option>
+                                          <option value="m">m</option>
+                                          <option value="mm">mm</option>
+                                        </select>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Consumo total calculado */}
+                                  <div className="text-right">
+                                    <span className="text-[10.5px] font-semibold text-neutral-600 bg-neutral-100 px-2 py-0.5 rounded-md whitespace-nowrap">
+                                      {qty > 0
+                                        ? `${qty.toLocaleString("es-AR", { maximumFractionDigits: 4 })} ${item.use_unit}`
+                                        : `0 ${item.use_unit}`}
+                                    </span>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="pt-2 border-t border-neutral-100 flex items-center justify-between gap-2">
+                                  <div className="flex items-center gap-1.5">
+                                    <label className="text-[11px] font-semibold text-neutral-600 flex-shrink-0">
+                                      Cantidad:
+                                    </label>
+                                    <input
+                                      type="number"
+                                      step="any"
+                                      min="0.0001"
+                                      value={item.quantity === 0 ? "" : item.quantity}
+                                      onChange={(e) => handleUpdateEditSupplyQty(idx, e.target.value)}
+                                      placeholder="1"
+                                      className="w-16 px-2 py-1 text-xs bg-neutral-50 border border-neutral-200 rounded-lg text-center font-bold outline-none focus:border-[#3BB578]"
+                                    />
+                                    <span className="text-[10.5px] text-neutral-500 font-semibold">
+                                      {item.use_unit}
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           );
                         })}
