@@ -2785,31 +2785,21 @@ export default function ProductosPage() {
 
       {/* Modal para Edición Rápida y Receta de Producto (Punto 5) */}
       {editModalProduct && typeof document !== "undefined" && createPortal(
-        <div
-          className="fixed inset-0 z-[99999] bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200"
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            width: "100vw",
-            height: "100dvh",
-            minHeight: "100vh",
-          }}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              setEditModalProduct(null);
-            }
-          }}
-        >
+        <>
+          {/* Backdrop con desenfoque suave */}
           <div
-            className="bg-white w-full max-w-lg md:max-w-4xl lg:max-w-5xl rounded-t-3xl sm:rounded-3xl shadow-2xl border border-[#EAF0E8] flex flex-col max-h-[92dvh] sm:max-h-[85vh] h-[92dvh] sm:h-auto overflow-hidden animate-in slide-in-from-bottom-6 sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-200"
+            className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200"
+            onClick={() => setEditModalProduct(null)}
+          />
+
+          {/* Contenedor principal del Modal / Dialog / Sheet Mobile-First */}
+          <div
+            className="fixed inset-x-0 bottom-0 z-50 flex max-h-[88dvh] w-full flex-col rounded-t-3xl bg-white shadow-2xl sm:inset-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:max-h-[85vh] sm:w-[calc(100vw-2rem)] sm:max-w-4xl lg:max-w-5xl sm:rounded-2xl overflow-hidden animate-in slide-in-from-bottom-6 sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Header del Modal Fijo */}
-            <div className="flex items-center justify-between border-b border-neutral-100 px-4 sm:px-6 py-3.5 shrink-0 bg-white z-10">
-              <h3 className="text-sm font-bold text-neutral-800 flex items-center gap-2 font-display">
+            {/* Cabecera (Fija - shrink-0) */}
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between shrink-0 bg-white z-10">
+              <h3 className="text-sm sm:text-base font-bold text-neutral-800 flex items-center gap-2 font-display">
                 <Pencil className="w-4 h-4 text-[#3BB578]" />
                 <span>Editar Producto</span>
               </h3>
@@ -2819,13 +2809,13 @@ export default function ProductosPage() {
                 className="p-1.5 text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 rounded-full transition cursor-pointer"
                 title="Cerrar modal"
               >
-                <X className="w-4 h-4" />
+                <X className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
             </div>
 
-            {/* Contenido Scrolleable */}
-            <div className="flex-1 overflow-y-auto min-h-0 px-4 sm:px-6 py-4 pb-6 overscroll-contain">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 min-w-0">
+            {/* Cuerpo (Desplazable - flex-1 min-h-0 overflow-y-auto) */}
+            <div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-5 overscroll-contain">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 min-w-0">
                 {/* Columna Izquierda: Información básica y Receta */}
                 <div className="space-y-4 min-w-0">
                   {/* Nombre del Producto */}
@@ -3325,12 +3315,12 @@ export default function ProductosPage() {
           </div>
         </div>
 
-            {/* Footer Fijo / Sticky con Acciones y Soporte para iOS Safe Area */}
-            <div className="shrink-0 border-t border-neutral-100 bg-white px-4 sm:px-6 py-3 sm:py-3.5 z-20 flex items-center justify-end gap-2.5 sm:gap-3 pb-[max(0.875rem,env(safe-area-inset-bottom))] shadow-[0_-4px_16px_rgba(0,0,0,0.04)]">
+            {/* Footer (Fijo en la base - shrink-0) */}
+            <div className="shrink-0 border-t border-gray-100 bg-white px-5 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] flex gap-3 z-10 shadow-[0_-4px_16px_rgba(0,0,0,0.04)]">
               <button
                 type="button"
                 onClick={() => setEditModalProduct(null)}
-                className="flex-1 sm:flex-initial py-2.5 px-4 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-xs font-semibold rounded-2xl transition cursor-pointer text-center"
+                className="flex-1 py-3 px-4 rounded-xl border border-gray-200 text-gray-700 font-medium hover:bg-gray-50 transition cursor-pointer text-center text-xs sm:text-sm"
               >
                 Cancelar
               </button>
@@ -3338,11 +3328,11 @@ export default function ProductosPage() {
                 type="button"
                 onClick={handleSaveEditProduct}
                 disabled={savingEdit || !editName.trim() || isDuplicateEditName}
-                className="flex-2 sm:flex-initial py-2.5 px-5 bg-[#3BB578] hover:bg-[#2E9E65] disabled:opacity-50 text-white text-xs font-bold rounded-2xl transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer disabled:cursor-not-allowed text-center"
+                className="flex-1 py-3 px-4 rounded-xl bg-emerald-600 text-white font-medium hover:bg-emerald-700 shadow-sm transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed text-center text-xs sm:text-sm"
               >
                 {savingEdit ? (
                   <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <Loader2 className="w-4 h-4 animate-spin" />
                     <span>Guardando...</span>
                   </>
                 ) : (
@@ -3351,7 +3341,7 @@ export default function ProductosPage() {
               </button>
             </div>
           </div>
-        </div>,
+        </>,
         document.body
       )}
 
