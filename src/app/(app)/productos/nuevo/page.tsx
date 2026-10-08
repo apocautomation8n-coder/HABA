@@ -457,6 +457,9 @@ export default function NuevoProductoPage() {
 
       if (w > 0 && l > 0) {
         merged.quantity = calculateSurfaceRecipeQuantity(p, w, wU, l, lU, targetUnit);
+      } else if (typeof current.quantity === "number" && current.quantity > 0 && (!merged.width || !merged.length)) {
+        // Conservar la cantidad previa si aún no se completaron ambas dimensiones
+        merged.quantity = current.quantity;
       } else {
         merged.quantity = 0;
       }
@@ -590,11 +593,24 @@ export default function NuevoProductoPage() {
       return;
     }
 
-    if (selectedSupplies.some((s) => {
+    // Asegurar que insumos de superficie recalculen su cantidad si tienen medidas completas
+    for (const s of selectedSupplies) {
+      if (s.supply && isSurfaceSupply(s.supply)) {
+        const p = typeof s.pieces === "number" ? s.pieces : parseFloat(String(s.pieces)) || 1;
+        const w = typeof s.width === "number" ? s.width : parseFloat(String(s.width)) || 0;
+        const l = typeof s.length === "number" ? s.length : parseFloat(String(s.length)) || 0;
+        if (w > 0 && l > 0) {
+          s.quantity = calculateSurfaceRecipeQuantity(p, w, s.widthUnit || "cm", l, s.lengthUnit || "cm", getSurfaceTargetUnit(s.supply));
+        }
+      }
+    }
+
+    const invalidSupply = selectedSupplies.find((s) => {
       const q = typeof s.quantity === "number" ? s.quantity : parseFloat(String(s.quantity));
       return isNaN(q) || q <= 0;
-    })) {
-      setErrorMsg("Completa las medidas o cantidades de todos los insumos agregados.");
+    });
+    if (invalidSupply) {
+      setErrorMsg(`Completa las medidas o cantidad del insumo "${invalidSupply.supply?.name || 'agregado'}".`);
       setCurrentStep(2);
       return;
     }

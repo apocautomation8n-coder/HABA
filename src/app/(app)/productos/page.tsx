@@ -847,6 +847,9 @@ export default function ProductosPage() {
 
       if (w > 0 && l > 0) {
         merged.quantity = calculateSurfaceRecipeQuantity(p, w, wU, l, lU, targetUnit);
+      } else if (typeof current.quantity === "number" && current.quantity > 0 && (!merged.width || !merged.length)) {
+        // Conservar la cantidad previa si aún no se completaron ambas dimensiones
+        merged.quantity = current.quantity;
       } else {
         merged.quantity = 0;
       }
@@ -934,7 +937,10 @@ export default function ProductosPage() {
       return;
     }
 
-    if (isDuplicateProductName(trimmedName, products, editModalProduct.id)) {
+    const isNameChanged = trimmedName.toLowerCase() !== editModalProduct.name.trim().toLowerCase();
+
+    // Solo verificar duplicado si el usuario cambió el nombre del producto
+    if (isNameChanged && isDuplicateProductName(trimmedName, products, editModalProduct.id)) {
       alert("Ya existe un producto con este nombre. Elige un nombre diferente.");
       return;
     }
@@ -945,23 +951,38 @@ export default function ProductosPage() {
       return;
     }
 
-    if (editSupplies.some((s) => {
+    // Asegurar que insumos de superficie recalculen su cantidad si tienen medidas completas
+    for (const s of editSupplies) {
+      if (isSurfaceSupply(s)) {
+        const p = typeof s.pieces === "number" ? s.pieces : parseFloat(String(s.pieces)) || 1;
+        const w = typeof s.width === "number" ? s.width : parseFloat(String(s.width)) || 0;
+        const l = typeof s.length === "number" ? s.length : parseFloat(String(s.length)) || 0;
+        if (w > 0 && l > 0) {
+          s.quantity = calculateSurfaceRecipeQuantity(p, w, s.widthUnit || "cm", l, s.lengthUnit || "cm", getSurfaceTargetUnit(s));
+        }
+      }
+    }
+
+    const invalidSupply = editSupplies.find((s) => {
       const q = typeof s.quantity === "number" ? s.quantity : parseFloat(String(s.quantity));
       return isNaN(q) || q <= 0;
-    })) {
-      alert("Completa las medidas o cantidades de todos los insumos agregados.");
+    });
+    if (invalidSupply) {
+      alert(`Completa las medidas o cantidad del insumo "${invalidSupply.name || 'agregado'}".`);
       return;
     }
 
     try {
       setSavingEdit(true);
 
-      // Doble verificación en base de datos
-      const nameExistsInDb = await checkProductNameExists(supabase, trimmedName, editModalProduct.id);
-      if (nameExistsInDb) {
-        alert("Ya existe un producto con este nombre. Elige un nombre diferente.");
-        setSavingEdit(false);
-        return;
+      // Doble verificación en base de datos de nombre duplicado solo si el nombre cambió
+      if (isNameChanged) {
+        const nameExistsInDb = await checkProductNameExists(supabase, trimmedName, editModalProduct.id);
+        if (nameExistsInDb) {
+          alert("Ya existe un producto con este nombre. Elige un nombre diferente.");
+          setSavingEdit(false);
+          return;
+        }
       }
 
       const nowIso = new Date().toISOString();
@@ -1016,17 +1037,22 @@ export default function ProductosPage() {
         supplyDimensions,
       });
 
-      // 1. Actualizar tabla products
+      // 1. Actualizar tabla products con sanitización de números
+      const safeMins = isNaN(editMins) || editMins < 0 ? 0 : editMins;
+      const safeDirectCost = isNaN(editDirectCost) || editDirectCost < 0 ? 0 : editDirectCost;
+      const safeLaborCost = isNaN(editLaborCost) || editLaborCost < 0 ? 0 : editLaborCost;
+      const safeTotalCost = isNaN(editTotalCost) || editTotalCost < 0 ? 0 : editTotalCost;
+
       const { error: prodErr } = await supabase
         .from("products")
         .update({
-          name: editName.trim(),
+          name: trimmedName,
           description: newDescription,
-          work_time_minutes: editMins,
-          direct_cost: editDirectCost,
-          labor_cost: editLaborCost,
+          work_time_minutes: safeMins,
+          direct_cost: safeDirectCost,
+          labor_cost: safeLaborCost,
           indirect_cost: 0,
-          total_cost: editTotalCost,
+          total_cost: safeTotalCost,
           needs_price_review: false,
           updated_at: nowIso,
         })
@@ -1035,20 +1061,30 @@ export default function ProductosPage() {
       if (prodErr) throw prodErr;
 
       // 2. Reemplazar insumos de la receta en product_supplies
-      await supabase.from("product_supplies").delete().eq("product_id", editModalProduct.id);
+      const { error: delSuppliesErr } = await supabase
+        .from("product_supplies")
+        .delete()
+        .eq("product_id", editModalProduct.id);
+      if (delSuppliesErr) {
+        console.warn("Aviso al limpiar insumos de receta anteriores:", delSuppliesErr);
+      }
 
-      if (editSupplies.length > 0) {
-        const suppliesToInsert = editSupplies.map((s) => {
+      const validSuppliesToInsert = editSupplies
+        .filter((s) => Boolean(s.supply_id))
+        .map((s) => {
           const qty = typeof s.quantity === "number" ? s.quantity : parseFloat(String(s.quantity)) || 0;
           return {
             product_id: editModalProduct.id,
             supply_id: s.supply_id,
-            quantity: qty,
+            quantity: qty > 0 ? qty : 1,
           };
         });
-        const { error: insSuppliesErr } = await supabase.from("product_supplies").insert(suppliesToInsert);
+
+      if (validSuppliesToInsert.length > 0) {
+        const { error: insSuppliesErr } = await supabase.from("product_supplies").insert(validSuppliesToInsert);
         if (insSuppliesErr) {
           console.error("Error updating product supplies:", insSuppliesErr);
+          throw new Error("Error al guardar insumos de la receta: " + insSuppliesErr.message);
         }
       }
 
@@ -1080,16 +1116,20 @@ export default function ProductosPage() {
         return;
       }
 
+      // Helper para verificar UUID válido de base de datos
+      const isDbUuid = (id?: string) =>
+        Boolean(id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id));
+
       // Obtener los IDs originales de precios que tenía el producto en BD
       const originalPriceIds = (editModalProduct.product_prices || [])
         .map((p) => p.id)
-        .filter(Boolean);
+        .filter(isDbUuid);
 
       // Identificar los IDs existentes que se conservaron en la edición
       const keptPriceIds = new Set(
         editPrices
           .map((p) => p.id)
-          .filter((id): id is string => Boolean(id && !id.startsWith("custom-") && !id.startsWith("new-")))
+          .filter(isDbUuid)
       );
 
       // Eliminar de BD los canales que el usuario removió
@@ -1107,24 +1147,25 @@ export default function ProductosPage() {
 
       // Actualizar canales existentes o insertar canales nuevos
       for (const price of editPrices) {
-        const finalMargin =
+        const rawMargin =
           typeof price.profit_margin_percent === "number"
             ? price.profit_margin_percent
             : parseFloat(String(price.profit_margin_percent)) || 0;
-        let finalSelling =
+        let rawSelling =
           typeof price.selling_price === "number"
             ? price.selling_price
             : parseFloat(String(price.selling_price)) || 0;
         
         // Si el precio de venta quedó vacío o en 0 pero tiene margen, calcular según costo unitario
-        if (finalSelling === 0 && finalMargin > 0) {
-          finalSelling = Math.round(editTotalCost * (1 + finalMargin / 100));
+        if (rawSelling === 0 && rawMargin > 0) {
+          rawSelling = Math.round(safeTotalCost * (1 + rawMargin / 100));
         }
 
+        const finalMargin = isNaN(rawMargin) ? 0 : Math.round(rawMargin * 100) / 100;
+        const finalSelling = isNaN(rawSelling) || rawSelling < 0 ? 0 : Math.round(rawSelling);
         const channelName = (price.channel_name || "").trim() || "General";
 
-        const isExisting = price.id && !price.id.startsWith("custom-") && !price.id.startsWith("new-");
-        if (isExisting) {
+        if (isDbUuid(price.id)) {
           const { error: updateErr } = await supabase
             .from("product_prices")
             .update({
@@ -1194,13 +1235,13 @@ export default function ProductosPage() {
           if (p.id !== editModalProduct.id) return p;
           return {
             ...p,
-            name: editName.trim(),
+            name: trimmedName,
             description: newDescription,
-            work_time_minutes: editMins,
-            direct_cost: editDirectCost,
-            labor_cost: editLaborCost,
+            work_time_minutes: safeMins,
+            direct_cost: safeDirectCost,
+            labor_cost: safeLaborCost,
             indirect_cost: 0,
-            total_cost: editTotalCost,
+            total_cost: safeTotalCost,
             needs_price_review: false,
             updated_at: nowIso,
             product_supplies: updatedProductSuppliesForState as any,
@@ -1222,7 +1263,7 @@ export default function ProductosPage() {
       setEditModalProduct(null);
       await loadProducts();
       router.refresh();
-      setSuccessToast(`¡Producto "${editName.trim()}" actualizado correctamente con sus precios e insumos!`);
+      setSuccessToast(`¡Producto "${trimmedName}" actualizado correctamente con sus precios e insumos!`);
       setTimeout(() => {
         setSuccessToast(null);
       }, 4000);
@@ -1506,6 +1547,10 @@ export default function ProductosPage() {
   // Detección reactiva de nombre duplicado en edición
   const isDuplicateEditName = useMemo(() => {
     if (!editModalProduct) return false;
+    // Si el nombre no fue modificado respecto al producto original, no marcar como duplicado
+    if (editName.trim().toLowerCase() === editModalProduct.name.trim().toLowerCase()) {
+      return false;
+    }
     return isDuplicateProductName(editName, products, editModalProduct.id);
   }, [editName, products, editModalProduct]);
 
