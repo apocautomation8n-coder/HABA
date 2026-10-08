@@ -51,21 +51,17 @@ const getCleanUnitLabel = (preset: UnitPreset): string => {
     case "g-g":
       return "Gramo (g)";
     case "g-mg":
-      return "Gramo (g) → Miligramo (mg)";
+      return "Gramo (g)";
     case "l-ml":
       return "Litro (l)";
     case "ml-ml":
       return "Mililitro (ml)";
     case "m-cm":
       return "Metro (m)";
-    case "m-mm":
-      return "Metro (m) → Milímetro (mm)";
     case "cm-cm":
       return "Centímetro (cm)";
     case "m2-cm2":
       return "Metro cuadrado (m²)";
-    case "m2-m2":
-      return "Metro cuadrado (m² directos)";
     case "cm2-cm2":
       return "Centímetro cuadrado (cm²)";
     case "docena-u":
@@ -136,16 +132,24 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
   // Combobox desplegable con búsqueda limpia por defecto para Unidad de Compra
   const [isUnitDropdownOpen, setIsUnitDropdownOpen] = useState(false);
   const [unitSearch, setUnitSearch] = useState("");
+  const [openUpwards, setOpenUpwards] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const unitDropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setMounted(true);
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 640);
+    };
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
   }, []);
 
-  // Cerrar dropdown al hacer click fuera y resetear buscador
+  // Cerrar dropdown al hacer click fuera y resetear buscador (en escritorio)
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent | TouchEvent) => {
-      if (unitDropdownRef.current && !unitDropdownRef.current.contains(e.target as Node)) {
+      if (!isMobile && unitDropdownRef.current && !unitDropdownRef.current.contains(e.target as Node)) {
         setIsUnitDropdownOpen(false);
         setUnitSearch("");
       }
@@ -156,7 +160,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
       document.removeEventListener("mousedown", handleClickOutside);
       document.removeEventListener("touchstart", handleClickOutside);
     };
-  }, []);
+  }, [isMobile]);
 
   // Cerrar dropdown al presionar Escape y resetear buscador
   useEffect(() => {
@@ -530,6 +534,23 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
     }
   };
 
+  const handleToggleDropdown = () => {
+    if (!isUnitDropdownOpen) {
+      setUnitSearch("");
+      if (unitDropdownRef.current) {
+        const rect = unitDropdownRef.current.getBoundingClientRect();
+        const spaceBelow = window.innerHeight - rect.bottom;
+        const spaceAbove = rect.top;
+        setOpenUpwards(spaceBelow < 240 && spaceAbove > spaceBelow);
+        unitDropdownRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+      setIsUnitDropdownOpen(true);
+    } else {
+      setIsUnitDropdownOpen(false);
+      setUnitSearch("");
+    }
+  };
+
   // Selector desplegable de unidades con búsqueda limpia por defecto
   const renderUnitDropdown = () => (
     <div className="space-y-1 relative" ref={unitDropdownRef}>
@@ -539,10 +560,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
       <div className="relative">
         <button
           type="button"
-          onClick={() => {
-            setUnitSearch("");
-            setIsUnitDropdownOpen((prev) => !prev);
-          }}
+          onClick={handleToggleDropdown}
           aria-label="Seleccionar unidad de compra"
           aria-expanded={isUnitDropdownOpen}
           className="w-full h-9 pl-3 pr-8 text-xs font-semibold bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl hover:bg-neutral-50 focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B] transition flex items-center justify-between text-left cursor-pointer"
@@ -557,9 +575,13 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
           </span>
         </button>
 
-        {/* Dropdown de Unidades Limpio */}
-        {isUnitDropdownOpen && (
-          <div className="absolute z-[120] left-0 right-0 sm:left-auto sm:right-0 sm:w-[270px] max-w-[calc(100vw-2rem)] mt-1 max-h-56 overflow-y-auto bg-white border border-[#C3EBC0] rounded-2xl shadow-xl p-1.5 space-y-0.5 animate-in fade-in zoom-in-95 duration-100 overscroll-contain">
+        {/* Dropdown de Unidades en Escritorio con Flip/Dropup */}
+        {!isMobile && isUnitDropdownOpen && (
+          <div
+            className={`absolute z-[120] left-0 right-0 sm:left-auto sm:right-0 sm:w-[270px] max-w-[calc(100vw-2rem)] ${
+              openUpwards ? "bottom-full mb-1.5" : "top-full mt-1.5"
+            } max-h-[220px] overflow-y-auto bg-white border border-[#C3EBC0] rounded-2xl shadow-xl p-1.5 space-y-0.5 animate-in fade-in zoom-in-95 duration-100 overscroll-contain`}
+          >
             <div className="px-2 py-1 border-b border-neutral-100 mb-1 flex items-center gap-1.5 text-neutral-400">
               <Search className="w-3 h-3 text-[#3BB578] shrink-0" />
               <input
@@ -948,6 +970,112 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
           </div>
         </form>
       </div>
+
+      {/* Bottom Sheet Drawer Selector para Móviles (se adapta automáticamente al teclado con max-h-[85dvh]) */}
+      {isMobile && isUnitDropdownOpen && (
+        <div
+          className="fixed inset-0 z-[100000] bg-black/60 backdrop-blur-xs flex flex-col justify-end animate-in fade-in duration-200"
+          onClick={() => {
+            setIsUnitDropdownOpen(false);
+            setUnitSearch("");
+          }}
+        >
+          <div
+            className="bg-white w-full rounded-t-3xl shadow-2xl flex flex-col border-t border-[#EAF0E8] max-h-[85dvh] max-h-[85vh] animate-in slide-in-from-bottom duration-200 overflow-hidden"
+            style={{
+              paddingBottom: "max(env(safe-area-inset-bottom, 12px), 16px)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Indicador de arrastre / handle */}
+            <div className="w-10 h-1 bg-neutral-300 rounded-full mx-auto mt-2.5 mb-1 shrink-0" />
+
+            {/* Cabecera del Drawer */}
+            <div className="px-4 py-3 border-b border-[#EAF0E8] flex items-center justify-between bg-white shrink-0">
+              <div>
+                <h3 className="text-sm font-bold text-[#2B2B2B]">Unidad de Compra</h3>
+                <p className="text-[11px] text-neutral-400">Seleccioná cómo comprás este insumo</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsUnitDropdownOpen(false);
+                  setUnitSearch("");
+                }}
+                className="w-8 h-8 rounded-full bg-neutral-100 hover:bg-neutral-200 text-neutral-500 flex items-center justify-center transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Buscador fijo */}
+            <div className="p-3 border-b border-neutral-100 bg-white shrink-0">
+              <div className="relative flex items-center">
+                <Search className="w-4 h-4 text-[#3BB578] absolute left-3 pointer-events-none" />
+                <input
+                  type="text"
+                  value={unitSearch}
+                  onChange={(e) => setUnitSearch(e.target.value)}
+                  placeholder="Buscar unidad (ej: metro, kilo, resma)..."
+                  className="w-full h-10 pl-9 pr-9 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl outline-none focus:bg-white focus:border-[#3BB578] text-[#2B2B2B] transition placeholder:text-neutral-400 font-medium"
+                  autoFocus
+                />
+                {unitSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setUnitSearch("")}
+                    className="absolute right-2.5 text-neutral-400 hover:text-neutral-600 p-1 cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Lista de unidades scrolleable */}
+            <div className="flex-1 overflow-y-auto overscroll-contain p-2 space-y-1">
+              {filteredPresets.length === 0 ? (
+                <div className="p-4 text-center text-xs text-neutral-500">
+                  <p className="font-semibold">Sin coincidencias exactas</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedPresetId("custom");
+                      setPurchaseUnit(unitSearch || purchaseUnit);
+                      setUseUnit("unidad");
+                      setConversionFactor(1);
+                      setIsUnitDropdownOpen(false);
+                      setUnitSearch("");
+                    }}
+                    className="mt-2 text-xs text-[#1F7A4C] font-bold underline hover:text-[#165837] block w-full cursor-pointer py-1.5"
+                  >
+                    Usar &quot;{unitSearch || purchaseUnit}&quot; como unidad manual
+                  </button>
+                </div>
+              ) : (
+                filteredPresets.map((preset) => {
+                  const isSelected = selectedPresetId === preset.id;
+                  return (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => handleSelectPreset(preset)}
+                      className={`w-full text-left px-3.5 py-2.5 rounded-2xl transition flex items-center justify-between text-xs cursor-pointer ${
+                        isSelected
+                          ? "bg-[#DCF4D7] text-[#1F7A4C] font-bold"
+                          : "hover:bg-[#F6F7F2] text-[#2B2B2B] active:bg-[#F0F4EE]"
+                      }`}
+                    >
+                      <span className="truncate">{getCleanUnitLabel(preset)}</span>
+                      {isSelected && <Check className="w-4 h-4 text-[#1F7A4C] flex-shrink-0 ml-2" />}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 
