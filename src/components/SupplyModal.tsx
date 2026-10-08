@@ -89,6 +89,20 @@ const getCleanUnitLabel = (preset: UnitPreset): string => {
   }
 };
 
+const toMeters = (val: number, unit: "m" | "cm" | "mm"): number => {
+  if (unit === "m") return val;
+  if (unit === "cm") return val / 100;
+  if (unit === "mm") return val / 1000;
+  return val;
+};
+
+const toCentimeters = (val: number, unit: "m" | "cm" | "mm"): number => {
+  if (unit === "m") return val * 100;
+  if (unit === "cm") return val;
+  if (unit === "mm") return val / 10;
+  return val;
+};
+
 export const SupplyModal: React.FC<SupplyModalProps> = ({
   isOpen,
   onClose,
@@ -104,6 +118,13 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
   const [name, setName] = useState("");
   const [purchaseUnit, setPurchaseUnit] = useState("kg");
   const [purchaseQuantity, setPurchaseQuantity] = useState<number | string>("");
+
+  // Campos dimensionales para insumos medidos por superficie (m2 y cm2)
+  const [dimWidth, setDimWidth] = useState<number | string>("");
+  const [dimWidthUnit, setDimWidthUnit] = useState<"m" | "cm" | "mm">("cm");
+  const [dimLength, setDimLength] = useState<number | string>("");
+  const [dimLengthUnit, setDimLengthUnit] = useState<"m" | "cm" | "mm">("m");
+
   const [currentPrice, setCurrentPrice] = useState<number | string>("");
   const [useUnit, setUseUnit] = useState("g");
   const [conversionFactor, setConversionFactor] = useState<number | string>(1000);
@@ -112,7 +133,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Combobox desplegable con búsqueda y autocompletado predictivo para Unidad de Compra
+  // Combobox desplegable con búsqueda limpia por defecto para Unidad de Compra
   const [isUnitDropdownOpen, setIsUnitDropdownOpen] = useState(false);
   const [unitSearch, setUnitSearch] = useState("");
   const unitDropdownRef = useRef<HTMLDivElement>(null);
@@ -121,11 +142,12 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
     setMounted(true);
   }, []);
 
-  // Cerrar dropdown al hacer click fuera
+  // Cerrar dropdown al hacer click fuera y resetear buscador
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent | TouchEvent) => {
       if (unitDropdownRef.current && !unitDropdownRef.current.contains(e.target as Node)) {
         setIsUnitDropdownOpen(false);
+        setUnitSearch("");
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
@@ -135,6 +157,18 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
       document.removeEventListener("touchstart", handleClickOutside);
     };
   }, []);
+
+  // Cerrar dropdown al presionar Escape y resetear buscador
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isUnitDropdownOpen) {
+        setIsUnitDropdownOpen(false);
+        setUnitSearch("");
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [isUnitDropdownOpen]);
 
   // Oscurecer status bar nativo en móviles y bloquear scroll del fondo cuando el modal está abierto
   useEffect(() => {
@@ -160,6 +194,39 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
     };
   }, [isOpen]);
 
+  // Normalización y detección de unidades de superficie (m2 y cm2)
+  const normPurchase = useMemo(() => normalizeUnit(purchaseUnit), [purchaseUnit]);
+  const isSurfaceUnit = normPurchase === "m2" || normPurchase === "cm2";
+
+  // Cálculo de superficie automático: Ancho x Largo -> m2 o cm2
+  useEffect(() => {
+    if (!isSurfaceUnit) return;
+
+    const w = parseFloat(String(dimWidth));
+    const l = parseFloat(String(dimLength));
+
+    if (!isNaN(w) && w > 0 && !isNaN(l) && l > 0) {
+      let area = 0;
+      if (normPurchase === "m2") {
+        const wMeters = toMeters(w, dimWidthUnit);
+        const lMeters = toMeters(l, dimLengthUnit);
+        area = wMeters * lMeters;
+      } else if (normPurchase === "cm2") {
+        const wCm = toCentimeters(w, dimWidthUnit);
+        const lCm = toCentimeters(l, dimLengthUnit);
+        area = wCm * lCm;
+      }
+      if (area > 0) {
+        // Evitar desbordes numéricos de punto flotante
+        const cleanArea = parseFloat(area.toFixed(6));
+        setPurchaseQuantity(cleanArea);
+      }
+    } else if (dimWidth !== "" || dimLength !== "") {
+      // Si el usuario borra alguna dimensión mientras ingresa
+      setPurchaseQuantity("");
+    }
+  }, [isSurfaceUnit, normPurchase, dimWidth, dimWidthUnit, dimLength, dimLengthUnit]);
+
   // Cargar insumo inicial o restaurar borrador no guardado
   useEffect(() => {
     if (initialSupply) {
@@ -170,6 +237,10 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
       setCurrentPrice(initialSupply.current_price ?? "");
       setUseUnit(initialSupply.use_unit || "g");
       setConversionFactor(initialSupply.conversion_factor ?? 1000);
+      setDimWidth("");
+      setDimWidthUnit("cm");
+      setDimLength("");
+      setDimLengthUnit("m");
 
       const matched = findMatchingPreset(initialSupply.purchase_unit, initialSupply.use_unit);
       if (matched) {
@@ -185,7 +256,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
       try {
         const draft = formDraftStorage.get<any>("haba_draft_supply_modal");
         if (draft) {
-          if (draft.name || draft.currentPrice) {
+          if (draft.name || draft.currentPrice || draft.dimWidth || draft.dimLength) {
             setName(draft.name || "");
             setCategory(draft.category || "materia_prima");
             setPurchaseUnit(draft.purchaseUnit || "kg");
@@ -194,6 +265,10 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
             setUseUnit(draft.useUnit || "g");
             setConversionFactor(draft.conversionFactor ?? 1000);
             setSelectedPresetId(draft.selectedPresetId || "kg-g");
+            if (draft.dimWidth !== undefined) setDimWidth(draft.dimWidth);
+            if (draft.dimWidthUnit) setDimWidthUnit(draft.dimWidthUnit);
+            if (draft.dimLength !== undefined) setDimLength(draft.dimLength);
+            if (draft.dimLengthUnit) setDimLengthUnit(draft.dimLengthUnit);
             restored = true;
           }
         }
@@ -210,6 +285,10 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
         setUseUnit("g");
         setConversionFactor(1000);
         setSelectedPresetId("kg-g");
+        setDimWidth("");
+        setDimWidthUnit("cm");
+        setDimLength("");
+        setDimLengthUnit("m");
       }
       setError(null);
     }
@@ -219,7 +298,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
   useEffect(() => {
     if (!isOpen || initialSupply) return;
     try {
-      if (name.trim() || currentPrice) {
+      if (name.trim() || currentPrice || dimWidth || dimLength) {
         formDraftStorage.set("haba_draft_supply_modal", {
           name,
           category,
@@ -229,12 +308,31 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
           useUnit,
           conversionFactor,
           selectedPresetId,
+          dimWidth,
+          dimWidthUnit,
+          dimLength,
+          dimLengthUnit,
         });
       }
     } catch {
       // ignore
     }
-  }, [isOpen, initialSupply, name, category, purchaseUnit, purchaseQuantity, currentPrice, useUnit, conversionFactor, selectedPresetId]);
+  }, [
+    isOpen,
+    initialSupply,
+    name,
+    category,
+    purchaseUnit,
+    purchaseQuantity,
+    currentPrice,
+    useUnit,
+    conversionFactor,
+    selectedPresetId,
+    dimWidth,
+    dimWidthUnit,
+    dimLength,
+    dimLengthUnit,
+  ]);
 
   // Preset activo actual
   const activePreset: UnitPreset | undefined = useMemo(() => {
@@ -245,7 +343,15 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
     return UNIT_PRESETS.find((p) => p.id === "custom");
   }, [selectedPresetId, purchaseUnit, useUnit]);
 
-  // Opciones filtradas en el desplegable según búsqueda predictiva
+  // Texto legible para el botón de selección de unidad
+  const displayUnitLabel = useMemo(() => {
+    if (activePreset && activePreset.id !== "custom") {
+      return getCleanUnitLabel(activePreset);
+    }
+    return purchaseUnit || "Seleccionar unidad...";
+  }, [activePreset, purchaseUnit]);
+
+  // Opciones filtradas en el desplegable según búsqueda reactiva
   const filteredPresets = useMemo(() => {
     if (!unitSearch.trim()) return UNIT_PRESETS;
     const q = normalizeUnit(unitSearch);
@@ -265,22 +371,14 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
     setConversionFactor(preset.defaultFactor);
     setIsUnitDropdownOpen(false);
     setUnitSearch("");
-  };
 
-  const handlePurchaseUnitInput = (val: string) => {
-    setPurchaseUnit(val);
-    setUnitSearch(val);
-    setIsUnitDropdownOpen(true);
-
-    const matched = findMatchingPreset(val);
-    if (matched) {
-      setSelectedPresetId(matched.id);
-      setUseUnit(matched.useUnit);
-      if (matched.isStandard) {
-        setConversionFactor(matched.defaultFactor);
-      }
-    } else {
-      setSelectedPresetId("custom");
+    const norm = normalizeUnit(preset.purchaseUnit);
+    if (norm === "m2") {
+      if (!dimWidthUnit) setDimWidthUnit("cm");
+      if (!dimLengthUnit) setDimLengthUnit("m");
+    } else if (norm === "cm2") {
+      if (!dimWidthUnit) setDimWidthUnit("cm");
+      if (!dimLengthUnit) setDimLengthUnit("cm");
     }
   };
 
@@ -309,8 +407,20 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
       setError("El precio de reposición debe ser mayor a 0");
       return;
     }
+    if (isSurfaceUnit) {
+      const w = parseFloat(String(dimWidth));
+      const l = parseFloat(String(dimLength));
+      if ((isNaN(w) || w <= 0 || isNaN(l) || l <= 0) && parsedQuantity <= 0) {
+        setError("Por favor ingresá el ancho y el largo del insumo (mayores a 0)");
+        return;
+      }
+    }
     if (parsedQuantity <= 0) {
-      setError("La cantidad debe ser mayor a 0");
+      setError(
+        isSurfaceUnit
+          ? "Por favor ingresá el ancho y el largo del insumo (mayores a 0)"
+          : "La cantidad debe ser mayor a 0"
+      );
       return;
     }
     if (parsedConversion <= 0) {
@@ -420,6 +530,101 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
     }
   };
 
+  // Selector desplegable de unidades con búsqueda limpia por defecto
+  const renderUnitDropdown = () => (
+    <div className="space-y-1 relative" ref={unitDropdownRef}>
+      <label className="text-[11px] font-semibold text-[#2B2B2B] block truncate">
+        Unidad de Compra *
+      </label>
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => {
+            setUnitSearch("");
+            setIsUnitDropdownOpen((prev) => !prev);
+          }}
+          aria-label="Seleccionar unidad de compra"
+          aria-expanded={isUnitDropdownOpen}
+          className="w-full h-9 pl-3 pr-8 text-xs font-semibold bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl hover:bg-neutral-50 focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B] transition flex items-center justify-between text-left cursor-pointer"
+        >
+          <span className="truncate">{displayUnitLabel}</span>
+          <span className="absolute inset-y-0 right-0 pr-2.5 flex items-center text-neutral-400 pointer-events-none">
+            <ChevronDown
+              className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                isUnitDropdownOpen ? "rotate-180" : ""
+              }`}
+            />
+          </span>
+        </button>
+
+        {/* Dropdown de Unidades Limpio */}
+        {isUnitDropdownOpen && (
+          <div className="absolute z-[120] left-0 right-0 sm:left-auto sm:right-0 sm:w-[270px] max-w-[calc(100vw-2rem)] mt-1 max-h-56 overflow-y-auto bg-white border border-[#C3EBC0] rounded-2xl shadow-xl p-1.5 space-y-0.5 animate-in fade-in zoom-in-95 duration-100 overscroll-contain">
+            <div className="px-2 py-1 border-b border-neutral-100 mb-1 flex items-center gap-1.5 text-neutral-400">
+              <Search className="w-3 h-3 text-[#3BB578] shrink-0" />
+              <input
+                type="text"
+                value={unitSearch}
+                onChange={(e) => setUnitSearch(e.target.value)}
+                placeholder="Buscar unidad..."
+                className="w-full text-[11px] bg-transparent outline-none text-[#2B2B2B] placeholder:text-neutral-400"
+                autoFocus
+              />
+              {unitSearch && (
+                <button
+                  type="button"
+                  onClick={() => setUnitSearch("")}
+                  className="text-neutral-400 hover:text-neutral-600 p-0.5 cursor-pointer"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+
+            {filteredPresets.length === 0 ? (
+              <div className="p-2 text-center text-xs text-neutral-500">
+                <p className="font-semibold">Sin coincidencias exactas</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedPresetId("custom");
+                    setPurchaseUnit(unitSearch || purchaseUnit);
+                    setUseUnit("unidad");
+                    setConversionFactor(1);
+                    setIsUnitDropdownOpen(false);
+                    setUnitSearch("");
+                  }}
+                  className="mt-1.5 text-[11px] text-[#1F7A4C] font-bold underline hover:text-[#165837] block w-full cursor-pointer"
+                >
+                  Usar &quot;{unitSearch || purchaseUnit}&quot; como unidad manual
+                </button>
+              </div>
+            ) : (
+              filteredPresets.map((preset) => {
+                const isSelected = selectedPresetId === preset.id;
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => handleSelectPreset(preset)}
+                    className={`w-full text-left px-2.5 py-1.5 rounded-xl transition flex items-center justify-between text-xs cursor-pointer ${
+                      isSelected
+                        ? "bg-[#DCF4D7] text-[#1F7A4C] font-bold"
+                        : "hover:bg-[#F6F7F2] text-[#2B2B2B]"
+                    }`}
+                  >
+                    <span className="truncate">{getCleanUnitLabel(preset)}</span>
+                    {isSelected && <Check className="w-3.5 h-3.5 text-[#1F7A4C] flex-shrink-0 ml-1.5" />}
+                  </button>
+                );
+              })
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
   const modalContent = (
     <div
       className={`fixed inset-0 ${zIndex} bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200`}
@@ -526,124 +731,103 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
               />
             </div>
 
-            {/* Fila Horizontal: Cantidad * y Unidad de Compra * */}
-            <div className="grid grid-cols-2 gap-3 items-start">
-              <div className="space-y-1">
-                <label className="text-[11px] font-semibold text-[#2B2B2B] block">
-                  Cantidad *
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  min="0.001"
-                  value={purchaseQuantity}
-                  onChange={(e) => setPurchaseQuantity(e.target.value)}
-                  placeholder="1"
-                  required
-                  className="w-full h-9 px-3 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B] transition"
-                />
-              </div>
-
-              <div className="space-y-1 relative" ref={unitDropdownRef}>
-                <label className="text-[11px] font-semibold text-[#2B2B2B] block">
-                  Unidad de Compra *
-                </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={purchaseUnit}
-                    onChange={(e) => handlePurchaseUnitInput(e.target.value)}
-                    onFocus={() => {
-                      setUnitSearch(purchaseUnit);
-                      setIsUnitDropdownOpen(true);
-                    }}
-                    placeholder="kg, resma, caja, metro..."
-                    required
-                    autoComplete="off"
-                    className="w-full h-9 pl-3 pr-8 text-xs font-semibold bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B] transition"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setUnitSearch("");
-                      setIsUnitDropdownOpen((prev) => !prev);
-                    }}
-                    className="absolute inset-y-0 right-0 pr-2.5 flex items-center text-neutral-400 hover:text-neutral-600 cursor-pointer"
-                    tabIndex={-1}
-                  >
-                    <ChevronDown
-                      className={`w-3.5 h-3.5 transition-transform duration-200 ${
-                        isUnitDropdownOpen ? "rotate-180" : ""
-                      }`}
-                    />
-                  </button>
-
-                  {/* Dropdown de Unidades Limpio */}
-                  {isUnitDropdownOpen && (
-                    <div className="absolute z-[120] left-0 right-0 mt-1 max-h-56 overflow-y-auto bg-white border border-[#C3EBC0] rounded-2xl shadow-xl p-1.5 space-y-0.5 animate-in fade-in zoom-in-95 duration-100 overscroll-contain">
-                      <div className="px-2 py-1 border-b border-neutral-100 mb-1 flex items-center gap-1.5 text-neutral-400">
-                        <Search className="w-3 h-3 text-[#3BB578]" />
-                        <input
-                          type="text"
-                          value={unitSearch}
-                          onChange={(e) => setUnitSearch(e.target.value)}
-                          placeholder="Buscar unidad..."
-                          className="w-full text-[11px] bg-transparent outline-none text-[#2B2B2B] placeholder:text-neutral-400"
-                          autoFocus
-                        />
-                        {unitSearch && (
-                          <button
-                            type="button"
-                            onClick={() => setUnitSearch("")}
-                            className="text-neutral-400 hover:text-neutral-600"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        )}
+            {/* Fila Dimensional Dinámica (m2 / cm2) o Estándar */}
+            {isSurfaceUnit ? (
+              <div className="flex flex-col sm:flex-row gap-3 items-start">
+                {/* Inputs dimensionales compartiendo primera fila en móviles */}
+                <div className="grid grid-cols-2 gap-3 w-full sm:flex-1">
+                  {/* Ancho */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-semibold text-[#2B2B2B] block">
+                      Ancho *
+                    </label>
+                    <div className="flex items-center h-9 bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus-within:bg-white focus-within:border-[#3BB578] transition overflow-hidden">
+                      <input
+                        type="number"
+                        step="any"
+                        min="0.001"
+                        value={dimWidth}
+                        onChange={(e) => setDimWidth(e.target.value)}
+                        placeholder="50"
+                        required={isSurfaceUnit}
+                        className="w-full h-full pl-3 pr-1 text-xs text-[#2B2B2B] bg-transparent outline-none font-semibold min-w-0"
+                      />
+                      <div className="relative shrink-0 flex items-center h-full">
+                        <select
+                          value={dimWidthUnit}
+                          onChange={(e) => setDimWidthUnit(e.target.value as "m" | "cm" | "mm")}
+                          aria-label="Unidad de ancho"
+                          className="h-full bg-neutral-100 hover:bg-neutral-200/80 text-[#2B2B2B] text-[11px] font-bold pl-2 pr-5 border-l border-[#EAF0E8] outline-none cursor-pointer transition appearance-none"
+                        >
+                          <option value="m">m</option>
+                          <option value="cm">cm</option>
+                          <option value="mm">mm</option>
+                        </select>
+                        <ChevronDown className="w-2.5 h-2.5 text-neutral-400 pointer-events-none absolute right-1.5" />
                       </div>
-
-                      {filteredPresets.length === 0 ? (
-                        <div className="p-2 text-center text-xs text-neutral-500">
-                          <p className="font-semibold">Sin coincidencias exactas</p>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedPresetId("custom");
-                              setPurchaseUnit(unitSearch || purchaseUnit);
-                              setUseUnit("unidad");
-                              setConversionFactor(1);
-                              setIsUnitDropdownOpen(false);
-                            }}
-                            className="mt-1.5 text-[11px] text-[#1F7A4C] font-bold underline hover:text-[#165837] block w-full"
-                          >
-                            Usar &quot;{unitSearch || purchaseUnit}&quot; como unidad manual
-                          </button>
-                        </div>
-                      ) : (
-                        filteredPresets.map((preset) => {
-                          const isSelected = selectedPresetId === preset.id;
-                          return (
-                            <button
-                              key={preset.id}
-                              type="button"
-                              onClick={() => handleSelectPreset(preset)}
-                              className={`w-full text-left px-2.5 py-1.5 rounded-xl transition flex items-center justify-between text-xs ${
-                                isSelected
-                                  ? "bg-[#DCF4D7] text-[#1F7A4C] font-bold"
-                                  : "hover:bg-[#F6F7F2] text-[#2B2B2B]"
-                              }`}
-                            >
-                              <span className="truncate">{getCleanUnitLabel(preset)}</span>
-                              {isSelected && <Check className="w-3.5 h-3.5 text-[#1F7A4C] flex-shrink-0" />}
-                            </button>
-                          );
-                        })
-                      )}
                     </div>
-                  )}
+                  </div>
+
+                  {/* Largo */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-semibold text-[#2B2B2B] block">
+                      Largo *
+                    </label>
+                    <div className="flex items-center h-9 bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus-within:bg-white focus-within:border-[#3BB578] transition overflow-hidden">
+                      <input
+                        type="number"
+                        step="any"
+                        min="0.001"
+                        value={dimLength}
+                        onChange={(e) => setDimLength(e.target.value)}
+                        placeholder="1.5"
+                        required={isSurfaceUnit}
+                        className="w-full h-full pl-3 pr-1 text-xs text-[#2B2B2B] bg-transparent outline-none font-semibold min-w-0"
+                      />
+                      <div className="relative shrink-0 flex items-center h-full">
+                        <select
+                          value={dimLengthUnit}
+                          onChange={(e) => setDimLengthUnit(e.target.value as "m" | "cm" | "mm")}
+                          aria-label="Unidad de largo"
+                          className="h-full bg-neutral-100 hover:bg-neutral-200/80 text-[#2B2B2B] text-[11px] font-bold pl-2 pr-5 border-l border-[#EAF0E8] outline-none cursor-pointer transition appearance-none"
+                        >
+                          <option value="m">m</option>
+                          <option value="cm">cm</option>
+                          <option value="mm">mm</option>
+                        </select>
+                        <ChevronDown className="w-2.5 h-2.5 text-neutral-400 pointer-events-none absolute right-1.5" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Unidad de Compra (m2 / cm2) */}
+                <div className="w-full sm:w-[170px] sm:shrink-0">
+                  {renderUnitDropdown()}
                 </div>
               </div>
-            </div>
+            ) : (
+              /* Fila Estándar: Cantidad y Unidad de Compra */
+              <div className="grid grid-cols-2 gap-3 items-start">
+                <div className="space-y-1">
+                  <label className="text-[11px] font-semibold text-[#2B2B2B] block">
+                    Cantidad *
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0.001"
+                    value={purchaseQuantity}
+                    onChange={(e) => setPurchaseQuantity(e.target.value)}
+                    placeholder="1"
+                    required
+                    className="w-full h-9 px-3 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B] transition"
+                  />
+                </div>
+
+                {renderUnitDropdown()}
+              </div>
+            )}
 
             {/* Precio de Reposición y Pregunta Dinámica (para Unidades Variables) */}
             <div
