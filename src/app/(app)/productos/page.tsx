@@ -2509,6 +2509,17 @@ export default function ProductosPage() {
                                     )}
                                   </div>
                                   <span className="text-[10px] text-neutral-400 block mt-0.5">
+                                    {(() => {
+                                      const dim = product.meta.supplyDimensions?.[item.supply_id || supply?.id || ""];
+                                      if (dim && dim.pieces > 0 && dim.width > 0 && dim.length > 0) {
+                                        return (
+                                          <span className="text-neutral-600 font-semibold mr-1">
+                                            {dim.pieces} {dim.pieces === 1 ? "pieza" : "piezas"} ({dim.width} × {dim.length} {dim.widthUnit || "cm"}) →{" "}
+                                          </span>
+                                        );
+                                      }
+                                      return null;
+                                    })()}
                                     {item.quantity} {supply?.use_unit || "u"} • {formatCurrency(unitCost)} /{supply?.use_unit || "u"}
                                     {isModified && modInfo && (
                                       <span
@@ -2793,29 +2804,27 @@ export default function ProductosPage() {
           }}
         >
           <div
-            className="bg-white w-full max-w-lg md:max-w-4xl lg:max-w-5xl rounded-t-3xl sm:rounded-3xl p-4 sm:p-5 shadow-2xl border border-[#EAF0E8] flex flex-col animate-in slide-in-from-bottom-6 sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-200 overflow-hidden overflow-x-hidden"
-            style={{
-              height: "min(92vh, 760px)",
-              maxHeight: "calc(100dvh - env(safe-area-inset-top, 20px) - 10px)",
-            }}
+            className="bg-white w-full max-w-lg md:max-w-4xl lg:max-w-5xl rounded-t-3xl sm:rounded-3xl shadow-2xl border border-[#EAF0E8] flex flex-col max-h-[92dvh] sm:max-h-[85vh] h-[92dvh] sm:h-auto overflow-hidden animate-in slide-in-from-bottom-6 sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Header del Modal */}
-            <div className="flex items-center justify-between border-b border-neutral-100 pb-3 flex-shrink-0">
+            {/* Header del Modal Fijo */}
+            <div className="flex items-center justify-between border-b border-neutral-100 px-4 sm:px-6 py-3.5 shrink-0 bg-white z-10">
               <h3 className="text-sm font-bold text-neutral-800 flex items-center gap-2 font-display">
                 <Pencil className="w-4 h-4 text-[#3BB578]" />
                 <span>Editar Producto</span>
               </h3>
               <button
+                type="button"
                 onClick={() => setEditModalProduct(null)}
-                className="p-1 text-neutral-400 hover:text-neutral-600 rounded-full text-sm font-bold"
+                className="p-1.5 text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 rounded-full transition cursor-pointer"
+                title="Cerrar modal"
               >
-                ✕
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Contenido con Scroll */}
-            <div className="overflow-y-auto overflow-x-hidden min-w-0 pr-1 py-3 flex-1">
+            {/* Contenido Scrolleable */}
+            <div className="flex-1 overflow-y-auto min-h-0 px-4 sm:px-6 py-4 pb-6 overscroll-contain">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 min-w-0">
                 {/* Columna Izquierda: Información básica y Receta */}
                 <div className="space-y-4 min-w-0">
@@ -3316,12 +3325,12 @@ export default function ProductosPage() {
           </div>
         </div>
 
-            {/* Footer con Acciones */}
-            <div className="pt-3 flex justify-end gap-2 border-t border-neutral-100 flex-shrink-0">
+            {/* Footer Fijo / Sticky con Acciones y Soporte para iOS Safe Area */}
+            <div className="shrink-0 border-t border-neutral-100 bg-white px-4 sm:px-6 py-3 sm:py-3.5 z-20 flex items-center justify-end gap-2.5 sm:gap-3 pb-[max(0.875rem,env(safe-area-inset-bottom))] shadow-[0_-4px_16px_rgba(0,0,0,0.04)]">
               <button
                 type="button"
                 onClick={() => setEditModalProduct(null)}
-                className="py-2 px-4 bg-neutral-100 hover:bg-neutral-200 text-neutral-600 text-xs font-semibold rounded-2xl transition cursor-pointer"
+                className="flex-1 sm:flex-initial py-2.5 px-4 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-xs font-semibold rounded-2xl transition cursor-pointer text-center"
               >
                 Cancelar
               </button>
@@ -3329,7 +3338,7 @@ export default function ProductosPage() {
                 type="button"
                 onClick={handleSaveEditProduct}
                 disabled={savingEdit || !editName.trim() || isDuplicateEditName}
-                className="py-2 px-5 bg-[#3BB578] hover:bg-[#2E9E65] disabled:opacity-50 text-white text-xs font-bold rounded-2xl transition flex items-center gap-1.5 shadow-sm cursor-pointer disabled:cursor-not-allowed"
+                className="flex-2 sm:flex-initial py-2.5 px-5 bg-[#3BB578] hover:bg-[#2E9E65] disabled:opacity-50 text-white text-xs font-bold rounded-2xl transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer disabled:cursor-not-allowed text-center"
               >
                 {savingEdit ? (
                   <>
