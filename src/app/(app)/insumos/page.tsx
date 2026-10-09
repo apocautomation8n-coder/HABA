@@ -170,10 +170,20 @@ export default function InsumosPage() {
         .select()
         .single();
 
-      if (insertError) throw insertError;
-
       // Recargar lista y actualizar estado local
       await loadSupplies();
+
+      // Recalcular en cascada insumos derivados que dependan de este insumo
+      try {
+        const { recalculateAndPropagatePrintingDependencies } = await import(
+          "@/lib/printingCalculations"
+        );
+        await recalculateAndPropagatePrintingDependencies(supabase, [
+          { id: insumoId, price: newRecordData.price },
+        ]);
+      } catch (propErr) {
+        console.warn("Aviso en recálculo en cascada desde insumos:", propErr);
+      }
 
       if (selectedInsumoForDrawer && selectedInsumoForDrawer.id === insumoId) {
         const newRecord: PriceRecord = {

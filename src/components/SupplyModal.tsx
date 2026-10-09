@@ -27,6 +27,11 @@ import {
   isDuplicateSupplyName,
   checkSupplyNameExists,
 } from "@/lib/supplies";
+import {
+  matchSourceInsumos,
+  recalculateAndPropagatePrintingDependencies,
+  getDefaultSourceSupplyName,
+} from "@/lib/printingCalculations";
 
 export interface SupplyItem {
   id?: string;
@@ -128,6 +133,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
   const [isPrintingMode, setIsPrintingMode] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [internalSupplies, setInternalSupplies] = useState<Array<{ id?: string; name: string }>>([]);
+  const [fullUserSupplies, setFullUserSupplies] = useState<SupplyItem[]>([]);
   const [category, setCategory] = useState<"materia_prima" | "packaging">("materia_prima");
   const [name, setName] = useState("");
   const [purchaseUnit, setPurchaseUnit] = useState("kg");
@@ -156,19 +162,16 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
     setMounted(true);
   }, []);
 
-  // Cargar insumos existentes si no fueron provistos en props
+  // Cargar insumos existentes para validación y vinculación de consumibles
   useEffect(() => {
-    if (existingSupplies && existingSupplies.length > 0) {
-      setInternalSupplies(existingSupplies);
-      return;
-    }
     if (!isOpen) return;
 
     let isCancelled = false;
     async function fetchSuppliesForValidation() {
       try {
-        const { data } = await supabase.from("supplies").select("id, name");
+        const { data } = await supabase.from("supplies").select("*");
         if (!isCancelled && data) {
+          setFullUserSupplies(data as SupplyItem[]);
           setInternalSupplies(data);
         }
       } catch (err) {
@@ -179,7 +182,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
     return () => {
       isCancelled = true;
     };
-  }, [isOpen, existingSupplies, supabase]);
+  }, [isOpen, supabase]);
 
   const effectiveSupplies =
     existingSupplies && existingSupplies.length > 0 ? existingSupplies : internalSupplies;
@@ -210,11 +213,43 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
   useEffect(() => {
     if (!isOpen) return;
 
-    (window as any).HABA_INTEGRATION = {
+    // Calcular mapeo de consumibles fuente existentes para todas las tecnologías
+    const sourcesByTech: Record<string, {
+      sourceInsumoIdsByConfigId: Record<string, string>;
+      sourceSuppliesByConfigId: Record<string, any>;
+    }> = {};
+    const allSourcesMap: Record<string, string> = {};
+    const allSourceSupplies: Record<string, any> = {};
+    const techKeys = ["tank4", "tank6", "cartridge", "sublimation", "laserMono", "laserColor"];
+
+    techKeys.forEach((techId) => {
+      const matched = matchSourceInsumos(fullUserSupplies, techId);
+      sourcesByTech[techId] = matched;
+      Object.assign(allSourcesMap, matched.sourceInsumoIdsByConfigId);
+      Object.assign(allSourceSupplies, matched.sourceSuppliesByConfigId);
+    });
+
+    // Cargar consumibles previamente guardados por tecnología desde localStorage
+    const savedConsumablesByTech: Record<string, any[]> = {};
+    if (typeof window !== "undefined") {
+      techKeys.forEach((techId) => {
+        try {
+          const raw = localStorage.getItem(`haba_printing_consumables_${techId}`);
+          if (raw) {
+            savedConsumablesByTech[techId] = JSON.parse(raw);
+          }
+        } catch {}
+      });
+    }
+
+    const habaIntegration = {
       context: {
         origin: origin || "insumos",
         productId: productId || null,
-        sourceInsumoIdsByConfigId: {},
+        sourcesByTech,
+        sourceInsumoIdsByConfigId: sourcesByTech["tank4"]?.sourceInsumoIdsByConfigId || allSourcesMap,
+        sourceSuppliesByConfigId: sourcesByTech["tank4"]?.sourceSuppliesByConfigId || allSourceSupplies,
+        savedConsumablesByTech,
       },
       savePrintingInsumo: async (payload: any) => {
         try {
@@ -251,6 +286,132 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
           }
 
           const nowIso = new Date().toISOString();
+          const updatedSourceSupplies: Array<{ id: string; price: number }> = [];
+          const sourceIdsMap: Record<string, string> = {};
+
+          // Si el usuario confirmó actualizar las tintas base en su catálogo
+          if (payload.updateSourceSupplies && Array.isArray(payload.sourceConsumables)) {
+            for (const line of payload.sourceConsumables) {
+              const pPrice =
+                typeof line.purchasePrice === "number"
+                  ? line.purchasePrice
+                  : parseFloat(line.purchasePrice) || 0;
+              if (pPrice <= 0) continue;
+
+              let targetSupplyId = line.sourceInsumoId;
+              let existingSupply = targetSupplyId
+                ? fullUserSupplies.find((s) => s.id === targetSupplyId)
+                : undefined;
+
+              if (!existingSupply) {
+                const defName = getDefaultSourceSupplyName(
+                  line.localConfigId || "",
+                  line.name || "",
+                  payload.technology?.id || ""
+                );
+                existingSupply = fullUserSupplies.find(
+                  (s) =>
+                    s.name.trim().toLowerCase() === defName.trim().toLowerCase() ||
+                    s.name.trim().toLowerCase() === (line.name || "").trim().toLowerCase()
+                );
+                if (existingSupply) {
+                  targetSupplyId = existingSupply.id;
+                }
+              }
+
+              if (existingSupply && targetSupplyId) {
+                // Actualizar insumo existente
+                const oldPrice = Number(existingSupply.current_price) || 0;
+                const priceChanged = Math.abs(pPrice - oldPrice) > 0.0001;
+
+                if (priceChanged) {
+                  await supabase.from("supply_price_history").insert({
+                    supply_id: targetSupplyId,
+                    price: pPrice,
+                    changed_at: nowIso,
+                  });
+
+                  await supabase
+                    .from("supplies")
+                    .update({
+                      current_price: pPrice,
+                      purchase_quantity:
+                        Number(line.quantityPurchased) || existingSupply.purchase_quantity || 1,
+                      purchase_unit: line.purchaseUnit || existingSupply.purchase_unit || "ml",
+                      updated_at: nowIso,
+                    })
+                    .eq("id", targetSupplyId);
+
+                  updatedSourceSupplies.push({ id: targetSupplyId, price: pPrice });
+                }
+                line.sourceInsumoId = targetSupplyId;
+                if (line.localConfigId) sourceIdsMap[line.localConfigId] = targetSupplyId;
+              } else {
+                // Dar de alta la tinta/tóner fuente en el catálogo de insumos
+                const defName = getDefaultSourceSupplyName(
+                  line.localConfigId || "",
+                  line.name || "",
+                  payload.technology?.id || ""
+                );
+                const { data: createdSource, error: createSourceError } = await supabase
+                  .from("supplies")
+                  .insert({
+                    user_id: user.id,
+                    name: defName,
+                    category: "materia_prima",
+                    purchase_unit: line.purchaseUnit || "ml",
+                    purchase_quantity: Number(line.quantityPurchased) || 1,
+                    current_price: pPrice,
+                    use_unit: line.purchaseUnit || "ml",
+                    conversion_factor: 1,
+                  })
+                  .select("*")
+                  .single();
+
+                if (!createSourceError && createdSource) {
+                  await supabase.from("supply_price_history").insert({
+                    supply_id: createdSource.id,
+                    price: pPrice,
+                    changed_at: nowIso,
+                  });
+
+                  line.sourceInsumoId = createdSource.id;
+                  if (line.localConfigId) sourceIdsMap[line.localConfigId] = createdSource.id;
+                  updatedSourceSupplies.push({ id: createdSource.id, price: pPrice });
+                }
+              }
+            }
+
+            // Persistir mapa de fuentes para esta tecnología en localStorage
+            if (payload.technology?.id && Object.keys(sourceIdsMap).length > 0) {
+              try {
+                const existingKey = `haba_printing_sources_${payload.technology.id}`;
+                const prevMap = JSON.parse(localStorage.getItem(existingKey) || "{}");
+                localStorage.setItem(existingKey, JSON.stringify({ ...prevMap, ...sourceIdsMap }));
+              } catch {}
+            }
+          } else if (Array.isArray(payload.sourceConsumables)) {
+            // No confirma actualizar precio maestro: conservar vínculos si ya existían
+            for (const line of payload.sourceConsumables) {
+              if (!line.sourceInsumoId && line.localConfigId && allSourcesMap[line.localConfigId]) {
+                line.sourceInsumoId = allSourcesMap[line.localConfigId];
+              }
+            }
+          }
+
+          // Resolver sourceInsumoIds completos en la clave dependency
+          const resolvedSourceIds = Array.isArray(payload.sourceConsumables)
+            ? payload.sourceConsumables.map((c: any) => c.sourceInsumoId).filter(Boolean)
+            : [];
+
+          payload.dependency = {
+            type: "derived",
+            recalculateWhenSourceChanges: true,
+            sourceInsumoIds: resolvedSourceIds,
+            propagationTarget: "haba.insumos.products",
+          };
+
+          // Guardar el insumo derivado de impresión en HABA
           const { data: newSupply, error: insertError } = await supabase
             .from("supplies")
             .insert({
@@ -277,16 +438,40 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
 
             // Persistir metadatos completos para recálculo y alertas
             try {
-              localStorage.setItem(
-                `haba_printing_supply_${newSupply.id}`,
-                JSON.stringify(payload)
-              );
+              localStorage.setItem(`haba_printing_supply_${newSupply.id}`, JSON.stringify(payload));
               const listRaw = localStorage.getItem("haba-printing-derived-insumos");
               const list = listRaw ? JSON.parse(listRaw) : [];
               list.push({ id: newSupply.id, ...payload });
               localStorage.setItem("haba-printing-derived-insumos", JSON.stringify(list));
             } catch (storageErr) {
               console.warn("Error guardando metadatos de impresión:", storageErr);
+            }
+          }
+
+          // Persistir consumibles de la última sesión para esta tecnología
+          if (payload.technology?.id && Array.isArray(payload.sourceConsumables)) {
+            try {
+              const toPersist = payload.sourceConsumables.map((c: any) => ({
+                configId: c.localConfigId,
+                name: c.name,
+                quantity: c.quantityPurchased,
+                unit: c.purchaseUnit,
+                price: c.purchasePrice,
+                sourceInsumoId: c.sourceInsumoId,
+              }));
+              localStorage.setItem(
+                `haba_printing_consumables_${payload.technology.id}`,
+                JSON.stringify(toPersist)
+              );
+            } catch {}
+          }
+
+          // Si hubo actualización de tintas fuente, ejecutar recálculo en cascada de insumos derivados
+          if (updatedSourceSupplies.length > 0) {
+            try {
+              await recalculateAndPropagatePrintingDependencies(supabase, updatedSourceSupplies);
+            } catch (cascadeErr) {
+              console.warn("Error en recálculo en cascada de dependencias:", cascadeErr);
             }
           }
 
@@ -334,10 +519,40 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
       },
     };
 
+    (window as any).HABA_INTEGRATION = habaIntegration;
+
+    const handleWindowMessage = (e: MessageEvent) => {
+      if (!e.data || typeof e.data !== "object") return;
+      if (e.data.type === "HABA_PERSIST_CONSUMABLES" && e.data.technologyId && Array.isArray(e.data.consumables)) {
+        try {
+          if (typeof window !== "undefined") {
+            localStorage.setItem(
+              `haba_printing_consumables_${e.data.technologyId}`,
+              JSON.stringify(e.data.consumables)
+            );
+          }
+        } catch {}
+      } else if (e.data.type === "HABA_CLEAR_CONSUMABLES" && e.data.technologyId) {
+        try {
+          if (typeof window !== "undefined") {
+            localStorage.removeItem(`haba_printing_consumables_${e.data.technologyId}`);
+          }
+        } catch {}
+      }
+    };
+    window.addEventListener("message", handleWindowMessage);
+
+    if (iframeRef.current && iframeRef.current.contentWindow) {
+      try {
+        (iframeRef.current.contentWindow as any).HABA_INTEGRATION = habaIntegration;
+      } catch {}
+    }
+
     return () => {
+      window.removeEventListener("message", handleWindowMessage);
       delete (window as any).HABA_INTEGRATION;
     };
-  }, [isOpen, origin, productId, supabase, onSuccess, onClose]);
+  }, [isOpen, origin, productId, fullUserSupplies, supabase, onSuccess, onClose]);
 
   // Cerrar dropdown al hacer click fuera y resetear buscador
   useEffect(() => {
@@ -686,6 +901,15 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
             price: parsedPrice,
             changed_at: nowIso,
           });
+
+          // Recalcular en cascada insumos derivados que dependan de este insumo
+          try {
+            await recalculateAndPropagatePrintingDependencies(supabase, [
+              { id: initialSupply.id, price: parsedPrice },
+            ]);
+          } catch (propErr) {
+            console.warn("Error propagando dependencia de insumo modificado:", propErr);
+          }
         }
 
         const { error: updateError } = await supabase
@@ -983,9 +1207,27 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
               title="Calculadora de Costo de Impresión HABA"
               onLoad={(e) => {
                 try {
-                  const cw = e.currentTarget.contentWindow;
+                  const cw = e.currentTarget.contentWindow as any;
                   if (cw && (window as any).HABA_INTEGRATION) {
-                    (cw as any).HABA_INTEGRATION = (window as any).HABA_INTEGRATION;
+                    cw.HABA_INTEGRATION = (window as any).HABA_INTEGRATION;
+                    if (typeof cw.syncInitialConsumablesFromContext === "function") {
+                      cw.syncInitialConsumablesFromContext();
+                      if (typeof cw.renderAll === "function") {
+                        cw.renderAll();
+                      }
+                    }
+                    cw.dispatchEvent?.(
+                      new CustomEvent("haba-integration-ready", {
+                        detail: (window as any).HABA_INTEGRATION,
+                      })
+                    );
+                    cw.postMessage?.(
+                      {
+                        type: "HABA_SYNC_CONTEXT",
+                        context: (window as any).HABA_INTEGRATION?.context,
+                      },
+                      "*"
+                    );
                   }
                 } catch (err) {
                   console.warn("Iframe sync error:", err);

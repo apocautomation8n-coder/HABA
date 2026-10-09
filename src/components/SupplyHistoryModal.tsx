@@ -199,6 +199,18 @@ export const SupplyHistoryModal: React.FC<SupplyHistoryModalProps> = ({
         setNewPrice("");
         setNewNote("");
         onPriceUpdated?.();
+
+        // Recalcular en cascada insumos derivados que dependan de este insumo
+        try {
+          const { recalculateAndPropagatePrintingDependencies } = await import(
+            "@/lib/printingCalculations"
+          );
+          await recalculateAndPropagatePrintingDependencies(supabase, [
+            { id: supply.id, price: priceNum },
+          ]);
+        } catch (propErr) {
+          console.warn("Aviso en recálculo en cascada desde historial de precios:", propErr);
+        }
       }
     } catch (err) {
       console.error("Error saving new price:", err);
