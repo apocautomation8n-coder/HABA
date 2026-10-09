@@ -23,6 +23,10 @@ import {
 } from "@/lib/units";
 import { useModalThemeColor } from "@/hooks/useModalThemeColor";
 import { formDraftStorage } from "@/lib/formStorage";
+import {
+  isDuplicateSupplyName,
+  checkSupplyNameExists,
+} from "@/lib/supplies";
 
 export interface SupplyItem {
   id?: string;
@@ -45,6 +49,7 @@ interface SupplyModalProps {
   zIndex?: string;
   origin?: "insumos" | "producto";
   productId?: string | null;
+  existingSupplies?: Array<{ id?: string; name: string }>;
 }
 
 const getCleanUnitLabel = (preset: UnitPreset): string => {
@@ -114,6 +119,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
   zIndex = "z-[99999]",
   origin = "insumos",
   productId = null,
+  existingSupplies,
 }) => {
   const supabase = createClient();
   useModalThemeColor(isOpen);
@@ -121,6 +127,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
   const [mounted, setMounted] = useState(false);
   const [isPrintingMode, setIsPrintingMode] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [internalSupplies, setInternalSupplies] = useState<Array<{ id?: string; name: string }>>([]);
   const [category, setCategory] = useState<"materia_prima" | "packaging">("materia_prima");
   const [name, setName] = useState("");
   const [purchaseUnit, setPurchaseUnit] = useState("kg");
@@ -148,6 +155,49 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Cargar insumos existentes si no fueron provistos en props
+  useEffect(() => {
+    if (existingSupplies && existingSupplies.length > 0) {
+      setInternalSupplies(existingSupplies);
+      return;
+    }
+    if (!isOpen) return;
+
+    let isCancelled = false;
+    async function fetchSuppliesForValidation() {
+      try {
+        const { data } = await supabase.from("supplies").select("id, name");
+        if (!isCancelled && data) {
+          setInternalSupplies(data);
+        }
+      } catch (err) {
+        console.warn("No se pudieron cargar insumos para validación de nombres:", err);
+      }
+    }
+    fetchSuppliesForValidation();
+    return () => {
+      isCancelled = true;
+    };
+  }, [isOpen, existingSupplies, supabase]);
+
+  const effectiveSupplies =
+    existingSupplies && existingSupplies.length > 0 ? existingSupplies : internalSupplies;
+
+  // Detección reactiva de nombre duplicado en el formulario
+  const isDuplicateName = useMemo(() => {
+    const trimmed = name.trim();
+    if (!trimmed) return false;
+    // Si estamos en edición y el nombre no cambió respecto al original, no es duplicado
+    if (
+      initialSupply?.id &&
+      initialSupply?.name &&
+      trimmed.toLowerCase() === initialSupply.name.trim().toLowerCase()
+    ) {
+      return false;
+    }
+    return isDuplicateSupplyName(trimmed, effectiveSupplies, initialSupply?.id);
+  }, [name, effectiveSupplies, initialSupply]);
 
   // Resetear modo impresión al cerrar
   useEffect(() => {
@@ -181,12 +231,31 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
               ? payload.replacementCost
               : parseFloat(payload.replacementCost) || 0;
 
+          const trimmedPayloadName = (payload.name || "Insumo de Impresión").trim();
+          if (!trimmedPayloadName) {
+            return { ok: false, message: "El nombre del insumo es obligatorio." };
+          }
+
+          // Validación de unicidad de nombre antes de insertar
+          const nameExists = await checkSupplyNameExists(
+            supabase,
+            trimmedPayloadName,
+            undefined,
+            user.id
+          );
+          if (nameExists) {
+            return {
+              ok: false,
+              message: "Ya existe un insumo con este nombre. Elegí un nombre diferente.",
+            };
+          }
+
           const nowIso = new Date().toISOString();
           const { data: newSupply, error: insertError } = await supabase
             .from("supplies")
             .insert({
               user_id: user.id,
-              name: (payload.name || "Insumo de Impresión").trim(),
+              name: trimmedPayloadName,
               category: "materia_prima",
               purchase_unit: "u",
               purchase_quantity: 1,
@@ -229,6 +298,17 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
           return { ok: true, insumoId: newSupply.id };
         } catch (err: any) {
           console.error("Error guardando insumo de impresión:", err);
+          if (
+            err.code === "23505" ||
+            err.message?.toLowerCase().includes("unique") ||
+            err.message?.toLowerCase().includes("duplicate") ||
+            err.message?.toLowerCase().includes("ya existe")
+          ) {
+            return {
+              ok: false,
+              message: "Ya existe un insumo con este nombre. Elegí un nombre diferente.",
+            };
+          }
           return { ok: false, message: err.message || "Error al guardar el insumo" };
         }
       },
@@ -516,10 +596,17 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
     e.preventDefault();
     setError(null);
 
-    if (!name.trim()) {
+    const trimmedName = name.trim();
+    if (!trimmedName) {
       setError("Por favor ingresá un nombre para el insumo");
       return;
     }
+
+    if (isDuplicateName) {
+      setError("Ya existe un insumo con este nombre. Elegí un nombre diferente.");
+      return;
+    }
+
     if (parsedPrice <= 0) {
       setError("El precio de reposición debe ser mayor a 0");
       return;
@@ -557,6 +644,19 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
 
       if (!user) {
         setError("Sesión expirada. Por favor volvé a iniciar sesión.");
+        return;
+      }
+
+      // Verificación en Supabase antes de insertar o actualizar
+      const nameExistsInDb = await checkSupplyNameExists(
+        supabase,
+        trimmedName,
+        initialSupply?.id,
+        user.id
+      );
+      if (nameExistsInDb) {
+        setError("Ya existe un insumo con este nombre. Elegí un nombre diferente.");
+        setLoading(false);
         return;
       }
 
@@ -641,7 +741,16 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
       onClose();
     } catch (err: any) {
       console.error("Error saving supply:", err);
-      setError(err.message || "Error al guardar el insumo");
+      if (
+        err.code === "23505" ||
+        err.message?.toLowerCase().includes("unique") ||
+        err.message?.toLowerCase().includes("duplicate") ||
+        err.message?.toLowerCase().includes("ya existe")
+      ) {
+        setError("Ya existe un insumo con este nombre. Elegí un nombre diferente.");
+      } else {
+        setError(err.message || "Error al guardar el insumo");
+      }
     } finally {
       setLoading(false);
     }
@@ -936,15 +1045,29 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
                 <input
                   type="text"
                   value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  onChange={(e) => {
+                    setName(e.target.value);
+                    if (error) setError(null);
+                  }}
                   placeholder={
                     category === "packaging"
                       ? "Ej: Caja 15x15, Sobre Kraft, Bolsa..."
                       : "Ej: Cera de Soja, Harina, Resina, Tela..."
                   }
                   required
-                  className="w-full h-9 px-3 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none transition text-[#2B2B2B]"
+                  aria-invalid={isDuplicateName ? "true" : "false"}
+                  className={`w-full h-9 px-3 text-xs border rounded-2xl outline-none transition text-[#2B2B2B] ${
+                    isDuplicateName
+                      ? "bg-rose-50/20 border-rose-300 ring-2 ring-rose-100 text-rose-900"
+                      : "bg-[#F6F7F2] border-[#EAF0E8] focus:bg-white focus:border-[#3BB578]"
+                  }`}
                 />
+                {isDuplicateName && (
+                  <p className="text-[11px] text-rose-500 flex items-center gap-1 mt-1 font-medium">
+                    <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span>Ya existe un insumo con este nombre. Elegí un nombre diferente.</span>
+                  </p>
+                )}
               </div>
 
             {/* Fila Dimensional Dinámica (m2 / cm2) o Estándar */}
@@ -1156,7 +1279,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
             </button>
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || isDuplicateName}
               className="flex-1 py-2.5 px-3 bg-[#3BB578] hover:bg-[#2E9E65] text-white rounded-2xl text-xs font-bold transition shadow-sm disabled:opacity-60 cursor-pointer active:scale-98"
             >
               {loading ? "Guardando..." : initialSupply ? "Actualizar Insumo" : "Guardar Insumo"}

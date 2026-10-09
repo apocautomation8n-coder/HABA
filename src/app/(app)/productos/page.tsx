@@ -3353,6 +3353,7 @@ export default function ProductosPage() {
         zIndex="z-[100001]"
         origin="producto"
         productId={editModalProduct?.id || null}
+        existingSupplies={allSupplies}
       />
 
       {/* Modal de Revisión Detallada de Precios por Modificación de Insumos */}
