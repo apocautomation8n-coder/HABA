@@ -828,7 +828,7 @@ function getInitialConsumables(techId){
       : null;
 
     let price = "";
-    let quantity = tech.inputMode === "single" ? 1 : (c.referenceQuantity || "");
+    let quantity = tech.inputMode === "single" ? 1 : "";
     let unit = c.unit;
     let sourceInsumoId = hostSupply ? hostSupply.id : (hostIds[c.id] || (saved ? saved.sourceInsumoId : null));
 
@@ -1461,6 +1461,8 @@ function renderResults(){
 
   const saveWrap = $("saveInsumoWrap");
   if(saveWrap) saveWrap.hidden = !valid;
+  const saveBtn = $("saveInsumoBtn");
+  if(saveBtn) saveBtn.disabled = !valid;
 
   const detail = [];
   calc.lines.forEach(line => {
@@ -1529,8 +1531,14 @@ function addConsumable(){
 function clearData(){
   const tech = technologyConfig[state.technologyId];
   state.consumables = tech.consumables.map(c => ({
-    name:c.name, quantity:(tech.inputMode === "single" ? 1 : (c.referenceQuantity || 1)), unit:c.unit, price:"",
-    configId:c.id, referenceQuantity:c.referenceQuantity, referenceUnit:c.unit
+    name: c.name,
+    quantity: (tech.inputMode === "single" ? 1 : ""),
+    unit: c.unit,
+    price: "",
+    configId: c.id,
+    referenceQuantity: c.referenceQuantity,
+    referenceUnit: c.unit,
+    sourceInsumoId: null
   }));
   state.exampleMode = false;
   state.referenceYieldOverride = null;
@@ -1540,6 +1548,8 @@ function clearData(){
   state.portionValue = 1;
   state.customWidth = 21;
   state.customHeight = 29.7;
+  calculatorDirty = false;
+
   const key = "haba_printing_consumables_" + state.technologyId;
   try{
     if (typeof localStorage !== "undefined") localStorage.removeItem(key);
@@ -1564,7 +1574,22 @@ function clearData(){
   if (host && host.context && host.context.savedConsumablesByTech) {
     delete host.context.savedConsumablesByTech[state.technologyId];
   }
+  if (HABA_CONTEXT.sourcesByTech && HABA_CONTEXT.sourcesByTech[state.technologyId]) {
+    delete HABA_CONTEXT.sourcesByTech[state.technologyId];
+  }
+  if (host && host.context && host.context.sourcesByTech && host.context.sourcesByTech[state.technologyId]) {
+    delete host.context.sourcesByTech[state.technologyId];
+  }
+
   renderAll();
+  const calc = getCalculation();
+  const valid = calc.base5 !== null;
+  const saveWrap = $("saveInsumoWrap");
+  if(saveWrap) saveWrap.hidden = !valid;
+  const saveBtn = $("saveInsumoBtn");
+  if(saveBtn) saveBtn.disabled = !valid;
+  const inputStatus = $("inputStatus");
+  if(inputStatus) inputStatus.textContent = "";
 }
 function updatePortionUI(){
   const input = $("portionValue");
