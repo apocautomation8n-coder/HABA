@@ -522,6 +522,180 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
           return { ok: false, message: err.message || "Error al guardar el insumo" };
         }
       },
+      updatePrintingConsumables: async (payload: { technologyId: string; consumables: any[] }) => {
+        try {
+          const {
+            data: { user },
+          } = await supabase.auth.getUser();
+
+          if (!user) {
+            return { ok: false, message: "Sesión no válida o usuario no autenticado." };
+          }
+
+          const techId = payload.technologyId;
+          if (!techId || !Array.isArray(payload.consumables)) {
+            return { ok: false, message: "Datos de consumibles inválidos." };
+          }
+
+          const nowIso = new Date().toISOString();
+          const updatedSourceSupplies: Array<{ id: string; price: number }> = [];
+          const sourceIdsMap: Record<string, string> = {};
+
+          for (const line of payload.consumables) {
+            const pPrice =
+              typeof line.price === "number"
+                ? line.price
+                : parseFloat(line.price) || 0;
+            if (pPrice <= 0) continue;
+
+            const configId = line.configId || line.localConfigId || "";
+            let targetSupplyId = line.sourceInsumoId || (configId ? allSourcesMap[configId] : undefined);
+            let existingSupply = targetSupplyId
+              ? fullUserSupplies.find((s) => s.id === targetSupplyId)
+              : undefined;
+
+            if (!existingSupply) {
+              const defName = getDefaultSourceSupplyName(
+                configId,
+                line.name || "",
+                techId
+              );
+              existingSupply = fullUserSupplies.find(
+                (s) =>
+                  s.name.trim().toLowerCase() === defName.trim().toLowerCase() ||
+                  s.name.trim().toLowerCase() === (line.name || "").trim().toLowerCase()
+              );
+              if (existingSupply) {
+                targetSupplyId = existingSupply.id;
+              }
+            }
+
+            if (existingSupply && targetSupplyId) {
+              const oldPrice = Number(existingSupply.current_price) || 0;
+              const priceChanged = Math.abs(pPrice - oldPrice) > 0.0001;
+
+              if (priceChanged) {
+                await supabase.from("supply_price_history").insert({
+                  supply_id: targetSupplyId,
+                  price: pPrice,
+                  changed_at: nowIso,
+                });
+
+                await supabase
+                  .from("supplies")
+                  .update({
+                    current_price: pPrice,
+                    purchase_quantity:
+                      Number(line.quantity) || existingSupply.purchase_quantity || 1,
+                    purchase_unit: line.unit || existingSupply.purchase_unit || "ml",
+                    updated_at: nowIso,
+                  })
+                  .eq("id", targetSupplyId);
+
+                updatedSourceSupplies.push({ id: targetSupplyId, price: pPrice });
+              }
+              existingSupply.current_price = pPrice;
+              existingSupply.purchase_quantity =
+                Number(line.quantity) || existingSupply.purchase_quantity || 1;
+              existingSupply.purchase_unit = line.unit || existingSupply.purchase_unit || "ml";
+              line.sourceInsumoId = targetSupplyId;
+              if (configId) sourceIdsMap[configId] = targetSupplyId;
+            } else {
+              const defName = getDefaultSourceSupplyName(
+                configId,
+                line.name || "",
+                techId
+              );
+              const { data: createdSource, error: createSourceError } = await supabase
+                .from("supplies")
+                .insert({
+                  user_id: user.id,
+                  name: defName,
+                  category: "materia_prima",
+                  purchase_unit: line.unit || "ml",
+                  purchase_quantity: Number(line.quantity) || 1,
+                  current_price: pPrice,
+                  use_unit: line.unit || "ml",
+                  conversion_factor: 1,
+                })
+                .select("*")
+                .single();
+
+              if (!createSourceError && createdSource) {
+                await supabase.from("supply_price_history").insert({
+                  supply_id: createdSource.id,
+                  price: pPrice,
+                  changed_at: nowIso,
+                });
+
+                fullUserSupplies.push(createdSource as SupplyItem);
+                line.sourceInsumoId = createdSource.id;
+                if (configId) sourceIdsMap[configId] = createdSource.id;
+                updatedSourceSupplies.push({ id: createdSource.id, price: pPrice });
+              }
+            }
+          }
+
+          if (Object.keys(sourceIdsMap).length > 0) {
+            try {
+              const existingKey = `haba_printing_sources_${techId}`;
+              const prevMap = JSON.parse(localStorage.getItem(existingKey) || "{}");
+              localStorage.setItem(existingKey, JSON.stringify({ ...prevMap, ...sourceIdsMap }));
+            } catch {}
+          }
+
+          const toPersist = payload.consumables.map((c: any) => ({
+            configId: c.configId || c.localConfigId,
+            name: c.name,
+            quantity: Number(c.quantity) || 1,
+            unit: c.unit,
+            price: Number(c.price) || 0,
+            sourceInsumoId: c.sourceInsumoId || (c.configId ? sourceIdsMap[c.configId] : null),
+          }));
+
+          try {
+            localStorage.setItem(`haba_printing_consumables_${techId}`, JSON.stringify(toPersist));
+            if (habaIntegration.context.savedConsumablesByTech) {
+              habaIntegration.context.savedConsumablesByTech[techId] = toPersist;
+            }
+          } catch {}
+
+          const updatedMatched = matchSourceInsumos(fullUserSupplies, techId);
+          sourcesByTech[techId] = updatedMatched;
+          if (habaIntegration.context.sourcesByTech) {
+            habaIntegration.context.sourcesByTech[techId] = updatedMatched;
+          }
+
+          if (updatedSourceSupplies.length > 0) {
+            try {
+              await recalculateAndPropagatePrintingDependencies(supabase, updatedSourceSupplies);
+            } catch (cascadeErr) {
+              console.warn("Error en recálculo en cascada de dependencias:", cascadeErr);
+            }
+          }
+
+          if (iframeRef.current?.contentWindow) {
+            iframeRef.current.contentWindow.postMessage(
+              {
+                type: "HABA_SYNC_CONTEXT",
+                context: habaIntegration.context,
+              },
+              "*"
+            );
+          }
+
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent("haba-supplies-updated"));
+            window.dispatchEvent(new CustomEvent("haba-products-updated"));
+            window.dispatchEvent(new CustomEvent("haba-notifications-updated"));
+          }
+
+          return { ok: true };
+        } catch (err: any) {
+          console.error("Error al actualizar consumibles de impresión:", err);
+          return { ok: false, message: err.message || "Error al actualizar consumibles" };
+        }
+      },
       onPrintingInsumoSaved: async ({ productId: _pid, insumoId, payload }: any) => {
         // En contexto producto: cerrar calculadora y agregar de inmediato el nuevo insumo a la receta
         const createdSupply: SupplyItem = {
@@ -557,6 +731,11 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
             );
           }
         } catch {}
+      } else if (e.data.type === "HABA_UPDATE_PRINTING_CONSUMABLES" && e.data.technologyId && Array.isArray(e.data.consumables)) {
+        habaIntegration.updatePrintingConsumables({
+          technologyId: e.data.technologyId,
+          consumables: e.data.consumables,
+        });
       } else if (e.data.type === "HABA_CLEAR_CONSUMABLES" && e.data.technologyId) {
         try {
           if (typeof window !== "undefined") {

@@ -332,6 +332,17 @@
   .hero{min-height:0;}
   .hero-copy{max-width:100%;padding-right:0;}
   @media(max-width:680px){.hero{min-height:0;padding-bottom:24px;}.hero h2{max-width:none;}.hero p{max-width:none;}}
+  .update-values-card{margin-top:18px;background:#1E3A34;border:1px solid #294C4B;border-radius:18px;padding:16px 20px;color:#FFFFFF;display:flex;align-items:center;justify-content:space-between;gap:16px;box-shadow:0 10px 24px rgba(30,58,52,.16);transition:opacity .2s ease,transform .2s ease}
+  .update-values-card[hidden]{display:none!important}
+  .update-values-body{display:flex;flex-direction:column;gap:4px}
+  .update-values-header{display:flex;align-items:center;gap:8px}
+  .update-values-icon{font-size:15px;line-height:1}
+  .update-values-title{font-size:15px;font-weight:800;color:#FFFFFF;letter-spacing:-.01em}
+  .update-values-text{margin:0;font-size:13px;line-height:1.4;color:#D2E3D8}
+  .btn-update-values{background:#8FB5A0;color:#173F3D;border:none;font-weight:800;font-size:13.5px;padding:10px 18px;border-radius:12px;white-space:nowrap;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,.12);transition:background .15s ease,transform .12s ease;flex-shrink:0}
+  .btn-update-values:hover{background:#A1C6B1;transform:translateY(-1px)}
+  .btn-update-values:disabled,.btn-update-values.saving{opacity:.65;cursor:not-allowed;pointer-events:none}
+  @media(max-width:680px){.update-values-card{flex-direction:column;align-items:stretch;gap:14px;padding:14px 16px}.btn-update-values{width:100%;text-align:center;justify-content:center}}
 </style>
 </head>
 <body>
@@ -414,6 +425,17 @@
         </div>
         <div id="singleUnitNote" class="single-unit-note" hidden></div>
         <div id="inputStatus" class="status" aria-live="polite"></div>
+
+        <div id="updateValuesCard" class="update-values-card" hidden>
+          <div class="update-values-body">
+            <div class="update-values-header">
+              <span class="update-values-icon" aria-hidden="true">🔄</span>
+              <span class="update-values-title">Actualizar valores</span>
+            </div>
+            <p class="update-values-text">El nuevo importe se aplicará a los insumos de impresión vinculados a esta tinta.</p>
+          </div>
+          <button id="btnUpdateValues" class="btn-update-values" type="button">Guardar y actualizar valores</button>
+        </div>
       </section>
     </div>
 
@@ -828,6 +850,8 @@ function hasValidPrices(consumablesList) {
   });
 }
 
+let lastSavedConsumablesByTech = {};
+
 function getInitialConsumables(techId){
   const tech = technologyConfig[techId];
   if(!tech) return [];
@@ -897,6 +921,16 @@ function getInitialConsumables(techId){
         sourceInsumoId: s.sourceInsumoId || null
       });
     });
+  }
+
+  if (storedIsValid && Array.isArray(stored)) {
+    lastSavedConsumablesByTech[techId] = result.map(item => ({
+      configId: item.configId || item.id || "custom",
+      price: priceValue(item),
+      quantity: Number(item.quantity) || 0
+    }));
+  } else {
+    lastSavedConsumablesByTech[techId] = null;
   }
 
   return result;
@@ -975,6 +1009,117 @@ function persistCurrentConsumables(){
   const host = getHost();
   if (host && host.context && host.context.savedConsumablesByTech) {
     host.context.savedConsumablesByTech[techId] = toStore;
+  }
+}
+
+function checkUpdateValuesVisibility(){
+  const card = $("updateValuesCard");
+  if(!card) return;
+
+  const techId = state.technologyId;
+  const saved = lastSavedConsumablesByTech[techId];
+
+  if(!saved || !Array.isArray(saved) || saved.length === 0){
+    const hasAnyPrice = Array.isArray(state.consumables) && state.consumables.some(c => priceValue(c) > 0);
+    card.hidden = !hasAnyPrice;
+    return;
+  }
+
+  let isDifferent = false;
+  if(!Array.isArray(state.consumables) || state.consumables.length !== saved.length){
+    isDifferent = true;
+  } else {
+    for(let i = 0; i < state.consumables.length; i++){
+      const current = state.consumables[i];
+      const s = saved.find(item => item.configId && (item.configId === current.configId || item.configId === current.id)) || saved[i];
+      if(!s){
+        isDifferent = true;
+        break;
+      }
+      const curPrice = priceValue(current);
+      const curQty = Number(current.quantity) || 0;
+      const savedPrice = Number(s.price) || 0;
+      const savedQty = Number(s.quantity) || 0;
+
+      if(Math.abs(curPrice - savedPrice) > 0.0001 || Math.abs(curQty - savedQty) > 0.0001){
+        isDifferent = true;
+        break;
+      }
+    }
+  }
+
+  card.hidden = !isDifferent;
+}
+
+async function handleUpdateValues(){
+  const button = $("btnUpdateValues");
+  if(!button || button.disabled || button.classList.contains("saving")) return;
+
+  syncDOMInputsToState();
+
+  const techId = state.technologyId;
+  const hasValid = Array.isArray(state.consumables) && state.consumables.some(c => priceValue(c) > 0);
+  if(!hasValid){
+    showHabaToast("warning", "Datos incompletos", "Ingresá al menos un precio válido antes de actualizar.");
+    return;
+  }
+
+  button.classList.add("saving");
+  button.disabled = true;
+  button.textContent = "Actualizando…";
+
+  const payloadConsumables = state.consumables.map(c => {
+    const p = priceValue(c);
+    const q = Number(c.quantity);
+    return {
+      configId: c.configId || c.id || "custom",
+      name: c.name || "",
+      quantity: Number.isFinite(q) && q > 0 ? q : 1,
+      unit: c.unit || "ml",
+      price: Number.isFinite(p) && p > 0 ? p : 0,
+      sourceInsumoId: c.sourceInsumoId || resolveSourceInsumoId(c) || null
+    };
+  });
+
+  try{
+    persistCurrentConsumables();
+    lastSavedConsumablesByTech[techId] = state.consumables.map(c => ({
+      configId: c.configId || c.id || "custom",
+      price: priceValue(c),
+      quantity: Number(c.quantity) || 0
+    }));
+
+    const bridge = getHostBridge("updatePrintingConsumables");
+    let bridgeResult = null;
+    if(typeof bridge === "function"){
+      bridgeResult = await bridge({
+        technologyId: techId,
+        consumables: payloadConsumables
+      });
+    } else if(typeof window !== "undefined" && window.parent && window.parent !== window){
+      window.parent.postMessage({
+        type: "HABA_UPDATE_PRINTING_CONSUMABLES",
+        technologyId: techId,
+        consumables: payloadConsumables
+      }, "*");
+    }
+
+    if(bridgeResult && bridgeResult.ok === false){
+      throw new Error(bridgeResult.message || "Error al actualizar los valores");
+    }
+
+    const card = $("updateValuesCard");
+    if(card) card.hidden = true;
+
+    showHabaToast("success", "¡Valores actualizados!", "Los nuevos importes se guardaron y se actualizaron los insumos vinculados.");
+  }catch(err){
+    console.error("Error al actualizar valores de consumibles:", err);
+    showHabaToast("error", "Error", err.message || "No se pudieron actualizar los valores.");
+  }finally{
+    button.classList.remove("saving");
+    button.disabled = false;
+    button.textContent = "Guardar y actualizar valores";
+    checkUpdateValuesVisibility();
   }
 }
 
@@ -1443,6 +1588,12 @@ async function savePrintingInsumo(){
       const demoKey = "haba-printing-derived-insumos";
       const existing = JSON.parse(localStorage.getItem(demoKey) || "[]");
       persistCurrentConsumables();
+      lastSavedConsumablesByTech[state.technologyId] = state.consumables.map(c => ({
+        configId: c.configId || c.id || "custom",
+        price: priceValue(c),
+        quantity: Number(c.quantity) || 0
+      }));
+      checkUpdateValuesVisibility();
       closeSaveInsumoModal();
       calculatorDirty = false;
       showHabaToast("success", "¡Listo!", `“${name}” quedó guardado localmente en este dispositivo.`);
@@ -1452,6 +1603,12 @@ async function savePrintingInsumo(){
     if(result && result.ok === false) throw new Error(result.message || "No se pudo guardar el insumo.");
 
     persistCurrentConsumables();
+    lastSavedConsumablesByTech[state.technologyId] = state.consumables.map(c => ({
+      configId: c.configId || c.id || "custom",
+      price: priceValue(c),
+      quantity: Number(c.quantity) || 0
+    }));
+    checkUpdateValuesVisibility();
     if(shouldUpdateSources){
       for(const row of state.consumables){
         const p = priceValue(row);
@@ -1550,6 +1707,7 @@ function renderResults(){
   $("referenceYieldHint").textContent = custom && custom > 0
     ? `Original HABA: ${formatNumber(original)} impresiones A4 simple faz. Estás usando una base personalizada.`
     : `Base original HABA: ${formatNumber(original)} impresiones A4 simple faz.`;
+  checkUpdateValuesVisibility();
 }
 function renderAll(){
   renderTechnologyOptions();
@@ -1576,6 +1734,7 @@ function changeTechnology(newId){
   state.selectedCoverage = 5;
   state.referenceYieldOverride = null;
   renderAll();
+  checkUpdateValuesVisibility();
 }
 function addConsumable(){
   const tech = technologyConfig[state.technologyId];
@@ -1589,8 +1748,8 @@ function addConsumable(){
     referenceUnit:tech.referenceUnit
   });
   state.exampleMode = false;
-  persistCurrentConsumables();
   renderAll();
+  checkUpdateValuesVisibility();
 }
 function clearData(){
   const tech = technologyConfig[state.technologyId];
@@ -1645,7 +1804,9 @@ function clearData(){
     delete host.context.sourcesByTech[state.technologyId];
   }
 
+  lastSavedConsumablesByTech[state.technologyId] = null;
   renderAll();
+  checkUpdateValuesVisibility();
   const calc = getCalculation();
   const valid = calc.base5 !== null;
   const saveWrap = $("saveInsumoWrap");
@@ -1687,6 +1848,8 @@ function bind(){
   $("customHeight").addEventListener("input", e => { markCalculatorDirty(); const value = parseLocalizedNumber(e.target.value); if(Number.isFinite(value) && value > 0) state.customHeight = value; state.selectedCoverage = 5; renderResults(); });
   $("addBtn").addEventListener("click", () => { markCalculatorDirty(); addConsumable(); });
   $("saveInsumoBtn").addEventListener("click", openSaveInsumoModal);
+  const btnUpdate = $("btnUpdateValues");
+  if(btnUpdate) btnUpdate.addEventListener("click", handleUpdateValues);
   document.addEventListener("input", e => { if(e.target.closest("#desktopBody, #mobileList")) markCalculatorDirty(); });
   document.addEventListener("change", e => { if(e.target.closest("#desktopBody, #mobileList")) markCalculatorDirty(); });
   $("cancelSaveInsumo").addEventListener("click", closeSaveInsumoModal);
@@ -1706,8 +1869,8 @@ function bind(){
       state.consumables.splice(pendingRemoveIndex,1);
       state.exampleMode = false;
       pendingRemoveIndex = null;
-      persistCurrentConsumables();
       renderAll();
+      checkUpdateValuesVisibility();
     } else {
       clearData();
     }
@@ -1780,7 +1943,7 @@ function bind(){
       : "";
     refreshConsumableCosts();
     renderResults();
-    persistCurrentConsumables();
+    checkUpdateValuesVisibility();
   });
 
   document.addEventListener("blur", e => {
@@ -1791,7 +1954,7 @@ function bind(){
         const i = Number(e.target.dataset.index);
         if(Number.isInteger(i) && state.consumables[i]) {
           state.consumables[i].price = e.target.value;
-          persistCurrentConsumables();
+          checkUpdateValuesVisibility();
         }
       }
     }
@@ -1822,7 +1985,7 @@ function bind(){
       : "";
     refreshConsumableCosts();
     renderResults();
-    persistCurrentConsumables();
+    checkUpdateValuesVisibility();
   });
 
   document.addEventListener("keydown", e => {
@@ -1867,6 +2030,7 @@ function syncInitialConsumablesFromContext() {
         renderAll();
       }
     }
+    checkUpdateValuesVisibility();
   }
 }
 function initHabaApp() {
