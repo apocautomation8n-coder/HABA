@@ -1936,6 +1936,7 @@ export default function NuevoProductoPage() {
         onSuccess={handleSupplyCreatedInline}
         initialSupply={newSupplyInitialName ? { name: newSupplyInitialName } : null}
         zIndex="z-[100001]"
+        origin="producto"
       />
 
       {/* Toast de confirmación */}

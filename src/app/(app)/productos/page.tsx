@@ -3351,6 +3351,8 @@ export default function ProductosPage() {
         onClose={() => setIsCreateSupplyOpen(false)}
         onSuccess={handleSupplyCreatedInlineEdit}
         zIndex="z-[100001]"
+        origin="producto"
+        productId={editModalProduct?.id || null}
       />
 
       {/* Modal de Revisión Detallada de Precios por Modificación de Insumos */}

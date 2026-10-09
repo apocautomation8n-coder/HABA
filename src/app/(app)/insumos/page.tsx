@@ -527,6 +527,7 @@ export default function InsumosPage() {
         }}
         onSuccess={loadSupplies}
         initialSupply={editingSupply}
+        origin="insumos"
       />
 
       {/* Modal de Eliminación con Validación de Integridad Referencial */}

@@ -10,6 +10,7 @@ import {
   ChevronDown,
   Search,
   Check,
+  Printer,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -42,6 +43,8 @@ interface SupplyModalProps {
   onSuccess: (newSupply?: SupplyItem) => void;
   initialSupply?: SupplyItem | Partial<SupplyItem> | null;
   zIndex?: string;
+  origin?: "insumos" | "producto";
+  productId?: string | null;
 }
 
 const getCleanUnitLabel = (preset: UnitPreset): string => {
@@ -109,11 +112,15 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
   onSuccess,
   initialSupply,
   zIndex = "z-[99999]",
+  origin = "insumos",
+  productId = null,
 }) => {
   const supabase = createClient();
   useModalThemeColor(isOpen);
 
   const [mounted, setMounted] = useState(false);
+  const [isPrintingMode, setIsPrintingMode] = useState(false);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
   const [category, setCategory] = useState<"materia_prima" | "packaging">("materia_prima");
   const [name, setName] = useState("");
   const [purchaseUnit, setPurchaseUnit] = useState("kg");
@@ -141,6 +148,116 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Resetear modo impresión al cerrar
+  useEffect(() => {
+    if (!isOpen) {
+      setIsPrintingMode(false);
+    }
+  }, [isOpen]);
+
+  // Conexión del puente HABA_INTEGRATION para la calculadora de impresión
+  useEffect(() => {
+    if (!isOpen) return;
+
+    (window as any).HABA_INTEGRATION = {
+      context: {
+        origin: origin || "insumos",
+        productId: productId || null,
+        sourceInsumoIdsByConfigId: {},
+      },
+      savePrintingInsumo: async (payload: any) => {
+        try {
+          const {
+            data: { user },
+          } = await supabase.auth.getUser();
+
+          if (!user) {
+            return { ok: false, message: "Sesión no válida o usuario no autenticado." };
+          }
+
+          const parsedPrice =
+            typeof payload.replacementCost === "number"
+              ? payload.replacementCost
+              : parseFloat(payload.replacementCost) || 0;
+
+          const nowIso = new Date().toISOString();
+          const { data: newSupply, error: insertError } = await supabase
+            .from("supplies")
+            .insert({
+              user_id: user.id,
+              name: (payload.name || "Insumo de Impresión").trim(),
+              category: "materia_prima",
+              purchase_unit: "u",
+              purchase_quantity: 1,
+              current_price: parsedPrice,
+              use_unit: "u",
+              conversion_factor: 1,
+            })
+            .select("*")
+            .single();
+
+          if (insertError) throw insertError;
+
+          if (newSupply?.id) {
+            await supabase.from("supply_price_history").insert({
+              supply_id: newSupply.id,
+              price: parsedPrice,
+              changed_at: nowIso,
+            });
+
+            // Persistir metadatos completos para recálculo y alertas
+            try {
+              localStorage.setItem(
+                `haba_printing_supply_${newSupply.id}`,
+                JSON.stringify(payload)
+              );
+              const listRaw = localStorage.getItem("haba-printing-derived-insumos");
+              const list = listRaw ? JSON.parse(listRaw) : [];
+              list.push({ id: newSupply.id, ...payload });
+              localStorage.setItem("haba-printing-derived-insumos", JSON.stringify(list));
+            } catch (storageErr) {
+              console.warn("Error guardando metadatos de impresión:", storageErr);
+            }
+          }
+
+          // Si el origen es insumos, actualizar la lista en segundo plano
+          if (origin === "insumos") {
+            onSuccess(newSupply as SupplyItem);
+          }
+
+          return { ok: true, insumoId: newSupply.id };
+        } catch (err: any) {
+          console.error("Error guardando insumo de impresión:", err);
+          return { ok: false, message: err.message || "Error al guardar el insumo" };
+        }
+      },
+      onPrintingInsumoSaved: async ({ productId: _pid, insumoId, payload }: any) => {
+        // En contexto producto: cerrar calculadora y agregar de inmediato el nuevo insumo a la receta
+        const createdSupply: SupplyItem = {
+          id: insumoId,
+          name: payload.name,
+          category: "materia_prima",
+          purchase_unit: "u",
+          purchase_quantity: 1,
+          current_price: payload.replacementCost,
+          use_unit: "u",
+          conversion_factor: 1,
+        };
+        onSuccess(createdSupply);
+        setIsPrintingMode(false);
+        onClose();
+      },
+      navigateBack: async () => {
+        setIsPrintingMode(false);
+        onClose();
+      },
+    };
+
+    return () => {
+      delete (window as any).HABA_INTEGRATION;
+    };
+  }, [isOpen, origin, productId, supabase, onSuccess, onClose]);
 
   // Cerrar dropdown al hacer click fuera y resetear buscador
   useEffect(() => {
@@ -645,25 +762,47 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
       }}
     >
       <div
-        className="bg-white w-full max-w-md sm:max-w-lg rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col border border-[#EAF0E8] animate-in slide-in-from-bottom-6 sm:slide-in-from-bottom-0 duration-200 overflow-hidden max-h-[90vh] max-h-[calc(100dvh-2rem)] sm:max-h-[88vh]"
-        style={{
-          maxHeight: "min(90vh, calc(100dvh - 1.5rem))",
-        }}
+        className={`bg-white w-full ${
+          isPrintingMode
+            ? "max-w-4xl lg:max-w-5xl h-[92dvh] sm:h-[88vh]"
+            : "max-w-md sm:max-w-lg max-h-[90vh] max-h-[calc(100dvh-2rem)] sm:max-h-[88vh]"
+        } rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col border border-[#EAF0E8] animate-in slide-in-from-bottom-6 sm:slide-in-from-bottom-0 duration-200 overflow-hidden`}
+        style={
+          isPrintingMode
+            ? { height: "min(92dvh, 880px)" }
+            : { maxHeight: "min(90vh, calc(100dvh - 1.5rem))" }
+        }
         onClick={(e) => e.stopPropagation()}
       >
         {/* Cabecera fija del modal */}
         <div className="p-3.5 sm:p-4 border-b border-[#EAF0E8] flex items-center justify-between bg-white shrink-0 flex-shrink-0">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-2xl bg-[#DCF4D7] text-[#1F7A4C] flex items-center justify-center">
-              <Sparkles className="w-4 h-4" />
+              {isPrintingMode ? <Printer className="w-4 h-4" /> : <Sparkles className="w-4 h-4" />}
             </div>
             <h3 className="text-sm sm:text-base font-bold text-[#2B2B2B] font-display">
-              {initialSupply ? "Editar Insumo" : "Nuevo Insumo o Packaging"}
+              {isPrintingMode
+                ? "Calculadora de Costo de Impresión"
+                : initialSupply
+                ? "Editar Insumo"
+                : "Nuevo Insumo o Packaging"}
             </h3>
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => {
+              if (isPrintingMode && iframeRef.current?.contentWindow) {
+                try {
+                  const cw = iframeRef.current.contentWindow as any;
+                  if (typeof cw.requestExit === "function") {
+                    cw.requestExit();
+                    return;
+                  }
+                } catch {}
+              }
+              setIsPrintingMode(false);
+              onClose();
+            }}
             className="p-1.5 text-neutral-400 hover:text-neutral-600 rounded-full hover:bg-neutral-100 transition cursor-pointer"
             aria-label="Cerrar modal"
           >
@@ -671,27 +810,22 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
           </button>
         </div>
 
-        {/* Contenido scrolleable del formulario */}
-        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden font-body">
-          <div className="overflow-y-auto px-4 py-3.5 space-y-3.5 flex-1 min-h-0 overscroll-contain">
-            {error && (
-              <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-2 text-rose-700 text-xs">
-                <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                <span>{error}</span>
-              </div>
-            )}
-
-            {/* Tipo de Insumo */}
+        {/* Barra Superior "Tipo de Insumo" con 3 Opciones idénticas */}
+        {!initialSupply && (
+          <div className="px-4 py-2.5 bg-white border-b border-[#F0EFE9] shrink-0">
             <div className="space-y-1">
               <label className="text-[11px] font-semibold text-[#2B2B2B] block">
                 Tipo de Insumo
               </label>
-              <div className="flex bg-[#F6F7F2] p-1 rounded-2xl gap-1 border border-[#EAF0E8]">
+              <div className="grid grid-cols-3 gap-1.5 bg-[#F6F7F2] p-1 rounded-2xl border border-[#EAF0E8]">
                 <button
                   type="button"
-                  onClick={() => setCategory("materia_prima")}
-                  className={`flex-1 py-1.5 text-xs font-semibold rounded-xl transition ${
-                    category === "materia_prima"
+                  onClick={() => {
+                    setIsPrintingMode(false);
+                    setCategory("materia_prima");
+                  }}
+                  className={`py-1.5 px-1 sm:px-2 text-[10.5px] sm:text-xs font-semibold rounded-xl transition text-center truncate cursor-pointer ${
+                    !isPrintingMode && category === "materia_prima"
                       ? "bg-white text-[#1F7A4C] shadow-xs"
                       : "text-[#7A7A7A] hover:text-[#2B2B2B]"
                   }`}
@@ -700,36 +834,118 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
                 </button>
                 <button
                   type="button"
-                  onClick={() => setCategory("packaging")}
-                  className={`flex-1 py-1.5 text-xs font-semibold rounded-xl transition ${
-                    category === "packaging"
+                  onClick={() => {
+                    setIsPrintingMode(false);
+                    setCategory("packaging");
+                  }}
+                  className={`py-1.5 px-1 sm:px-2 text-[10.5px] sm:text-xs font-semibold rounded-xl transition text-center truncate cursor-pointer ${
+                    !isPrintingMode && category === "packaging"
                       ? "bg-white text-[#1F7A4C] shadow-xs"
                       : "text-[#7A7A7A] hover:text-[#2B2B2B]"
                   }`}
                 >
                   📦 Packaging
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setIsPrintingMode(true)}
+                  className={`py-1.5 px-1 sm:px-2 text-[10.5px] sm:text-xs font-semibold rounded-xl transition text-center truncate cursor-pointer ${
+                    isPrintingMode
+                      ? "bg-white text-[#1F7A4C] shadow-xs"
+                      : "text-[#7A7A7A] hover:text-[#2B2B2B]"
+                  }`}
+                >
+                  🖨️ Costo de Impresión
+                </button>
               </div>
             </div>
+          </div>
+        )}
 
-            {/* Nombre del Insumo */}
-            <div className="space-y-1">
-              <label className="text-[11px] font-semibold text-[#2B2B2B] block">
-                Nombre del Insumo *
-              </label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder={
-                  category === "packaging"
-                    ? "Ej: Caja 15x15, Sobre Kraft, Bolsa..."
-                    : "Ej: Cera de Soja, Harina, Resina, Tela..."
+        {isPrintingMode ? (
+          /* Vista Embebida de la Calculadora de Costo de Impresión */
+          <div className="flex-1 w-full min-h-0 bg-[#FFF8EA] overflow-hidden">
+            <iframe
+              ref={iframeRef}
+              src={`/printing-calculator/index.html?origin=${origin || "insumos"}${
+                productId ? `&productId=${encodeURIComponent(productId)}` : ""
+              }`}
+              className="w-full h-full border-0"
+              title="Calculadora de Costo de Impresión HABA"
+              onLoad={(e) => {
+                try {
+                  const cw = e.currentTarget.contentWindow;
+                  if (cw && (window as any).HABA_INTEGRATION) {
+                    (cw as any).HABA_INTEGRATION = (window as any).HABA_INTEGRATION;
+                  }
+                } catch (err) {
+                  console.warn("Iframe sync error:", err);
                 }
-                required
-                className="w-full h-9 px-3 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none transition text-[#2B2B2B]"
-              />
-            </div>
+              }}
+            />
+          </div>
+        ) : (
+          /* Contenido scrolleable del formulario tradicional */
+          <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden font-body">
+            <div className="overflow-y-auto px-4 py-3.5 space-y-3.5 flex-1 min-h-0 overscroll-contain">
+              {error && (
+                <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-2 text-rose-700 text-xs">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                  <span>{error}</span>
+                </div>
+              )}
+
+              {/* Tipo de Insumo solo en edición de insumo existente */}
+              {initialSupply && (
+                <div className="space-y-1">
+                  <label className="text-[11px] font-semibold text-[#2B2B2B] block">
+                    Tipo de Insumo
+                  </label>
+                  <div className="flex bg-[#F6F7F2] p-1 rounded-2xl gap-1 border border-[#EAF0E8]">
+                    <button
+                      type="button"
+                      onClick={() => setCategory("materia_prima")}
+                      className={`flex-1 py-1.5 text-xs font-semibold rounded-xl transition ${
+                        category === "materia_prima"
+                          ? "bg-white text-[#1F7A4C] shadow-xs"
+                          : "text-[#7A7A7A] hover:text-[#2B2B2B]"
+                      }`}
+                    >
+                      🧵 Materia Prima
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCategory("packaging")}
+                      className={`flex-1 py-1.5 text-xs font-semibold rounded-xl transition ${
+                        category === "packaging"
+                          ? "bg-white text-[#1F7A4C] shadow-xs"
+                          : "text-[#7A7A7A] hover:text-[#2B2B2B]"
+                      }`}
+                    >
+                      📦 Packaging
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Nombre del Insumo */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-semibold text-[#2B2B2B] block">
+                  Nombre del Insumo *
+                </label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder={
+                    category === "packaging"
+                      ? "Ej: Caja 15x15, Sobre Kraft, Bolsa..."
+                      : "Ej: Cera de Soja, Harina, Resina, Tela..."
+                  }
+                  required
+                  className="w-full h-9 px-3 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none transition text-[#2B2B2B]"
+                />
+              </div>
 
             {/* Fila Dimensional Dinámica (m2 / cm2) o Estándar */}
             {isSurfaceUnit ? (
@@ -947,6 +1163,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
             </button>
           </div>
         </form>
+        )}
       </div>
     </div>
   );
