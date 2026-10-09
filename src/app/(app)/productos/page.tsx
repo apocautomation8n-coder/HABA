@@ -3052,19 +3052,14 @@ export default function ProductosPage() {
                                   </span>
                                 </div>
 
-                                <div className="flex items-center gap-2 flex-shrink-0">
-                                  <span className="text-xs font-bold text-[#1F7A4C] min-w-[65px] text-right">
-                                    {formatCurrency(lineSubtotal)}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleRemoveSupplyFromRecipe(idx)}
-                                    className="p-1 text-neutral-400 hover:text-rose-500 transition ml-1 cursor-pointer"
-                                    title="Quitar insumo"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveSupplyFromRecipe(idx)}
+                                  className="p-1 text-neutral-400 hover:text-rose-500 transition ml-1 cursor-pointer flex-shrink-0"
+                                  title="Quitar insumo"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
                               </div>
 
                               {isSurface ? (
@@ -3134,7 +3129,7 @@ export default function ProductosPage() {
                                     </div>
                                   </div>
 
-                                  {/* Fila 2: Cantidad y Consumo Total */}
+                                  {/* Fila 2: Cantidad, Consumo Total y Subtotal */}
                                   <div className="flex items-center justify-between pt-1 border-t border-neutral-100 text-xs gap-2 flex-wrap sm:flex-nowrap">
                                     {/* Cantidad */}
                                     <div className="flex items-center gap-1.5">
@@ -3152,14 +3147,22 @@ export default function ProductosPage() {
                                       />
                                     </div>
 
-                                    {/* Consumo total calculado */}
-                                    <div className="flex items-center gap-1.5 ml-auto">
-                                      <span className="text-[10px] text-neutral-400 font-medium">Consumo total:</span>
-                                      <span className="text-[11px] font-bold text-neutral-700 bg-neutral-100 border border-neutral-200/60 px-2 py-0.5 rounded-lg whitespace-nowrap">
-                                        {qty > 0
-                                          ? `${qty.toLocaleString("es-AR", { maximumFractionDigits: 4 })} ${item.use_unit}`
-                                          : `0 ${item.use_unit}`}
-                                      </span>
+                                    {/* Consumo total y Subtotal a la derecha */}
+                                    <div className="flex items-center gap-2.5 ml-auto">
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="text-[10px] text-neutral-400 font-medium">Consumo total:</span>
+                                        <span className="text-[11px] font-bold text-neutral-700 bg-neutral-100 border border-neutral-200/60 px-2 py-0.5 rounded-lg whitespace-nowrap">
+                                          {qty > 0
+                                            ? `${qty.toLocaleString("es-AR", { maximumFractionDigits: 4 })} ${item.use_unit}`
+                                            : `0 ${item.use_unit}`}
+                                        </span>
+                                      </div>
+                                      <div className="text-right pl-2 border-l border-neutral-200/60">
+                                        <span className="text-[9px] text-neutral-400 block uppercase font-bold leading-none mb-0.5">Subtotal</span>
+                                        <span className="font-extrabold text-[#1F7A4C] text-xs">
+                                          {formatCurrency(lineSubtotal)}
+                                        </span>
+                                      </div>
                                     </div>
                                   </div>
                                 </div>
@@ -3180,6 +3183,13 @@ export default function ProductosPage() {
                                     />
                                     <span className="text-[10.5px] text-neutral-500 font-semibold">
                                       {item.use_unit}
+                                    </span>
+                                  </div>
+
+                                  <div className="text-right">
+                                    <span className="text-[9px] text-neutral-400 block uppercase font-bold leading-none mb-0.5">Subtotal</span>
+                                    <span className="font-extrabold text-[#1F7A4C] text-xs">
+                                      {formatCurrency(lineSubtotal)}
                                     </span>
                                   </div>
                                 </div>
