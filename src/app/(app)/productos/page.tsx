@@ -3068,12 +3068,78 @@ export default function ProductosPage() {
                               </div>
 
                               {isSurface ? (
-                                <div className="pt-2 border-t border-neutral-100 flex flex-wrap items-center justify-between gap-2">
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    {/* Piezas */}
-                                    <div className="flex items-center gap-1">
+                                <div className="pt-2 border-t border-neutral-100 space-y-2">
+                                  {/* Fila 1: Dimensiones (Ancho y Largo compartiendo la misma fila horizontal) */}
+                                  <div className="grid grid-cols-2 gap-2 w-full">
+                                    {/* Ancho */}
+                                    <div className="space-y-1">
+                                      <label className="text-[11px] font-semibold text-[#2B2B2B] block">
+                                        Ancho
+                                      </label>
+                                      <div className="flex items-center h-8 sm:h-8.5 bg-[#F6F7F2] border border-[#EAF0E8] rounded-xl focus-within:bg-white focus-within:border-[#3BB578] transition overflow-hidden">
+                                        <input
+                                          type="number"
+                                          step="any"
+                                          min="0.01"
+                                          value={item.width ?? ""}
+                                          onChange={(e) => handleUpdateEditSupplyDimensions(idx, { width: e.target.value })}
+                                          placeholder="0"
+                                          className="w-full h-full pl-2.5 pr-1 text-xs text-[#2B2B2B] bg-transparent outline-none font-semibold min-w-0"
+                                        />
+                                        <div className="relative shrink-0 flex items-center h-full">
+                                          <select
+                                            value={item.widthUnit || "cm"}
+                                            onChange={(e) => handleUpdateEditSupplyDimensions(idx, { widthUnit: e.target.value as "m" | "cm" | "mm" })}
+                                            aria-label="Unidad de ancho"
+                                            className="h-full bg-neutral-100 hover:bg-neutral-200/80 text-[#2B2B2B] text-[11px] font-bold pl-2 pr-5 border-l border-[#EAF0E8] outline-none cursor-pointer transition appearance-none"
+                                          >
+                                            <option value="cm">cm</option>
+                                            <option value="m">m</option>
+                                            <option value="mm">mm</option>
+                                          </select>
+                                          <ChevronDown className="w-2.5 h-2.5 text-neutral-400 pointer-events-none absolute right-1.5" />
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {/* Largo */}
+                                    <div className="space-y-1">
+                                      <label className="text-[11px] font-semibold text-[#2B2B2B] block">
+                                        Largo
+                                      </label>
+                                      <div className="flex items-center h-8 sm:h-8.5 bg-[#F6F7F2] border border-[#EAF0E8] rounded-xl focus-within:bg-white focus-within:border-[#3BB578] transition overflow-hidden">
+                                        <input
+                                          type="number"
+                                          step="any"
+                                          min="0.01"
+                                          value={item.length ?? ""}
+                                          onChange={(e) => handleUpdateEditSupplyDimensions(idx, { length: e.target.value })}
+                                          placeholder="0"
+                                          className="w-full h-full pl-2.5 pr-1 text-xs text-[#2B2B2B] bg-transparent outline-none font-semibold min-w-0"
+                                        />
+                                        <div className="relative shrink-0 flex items-center h-full">
+                                          <select
+                                            value={item.lengthUnit || "cm"}
+                                            onChange={(e) => handleUpdateEditSupplyDimensions(idx, { lengthUnit: e.target.value as "m" | "cm" | "mm" })}
+                                            aria-label="Unidad de largo"
+                                            className="h-full bg-neutral-100 hover:bg-neutral-200/80 text-[#2B2B2B] text-[11px] font-bold pl-2 pr-5 border-l border-[#EAF0E8] outline-none cursor-pointer transition appearance-none"
+                                          >
+                                            <option value="cm">cm</option>
+                                            <option value="m">m</option>
+                                            <option value="mm">mm</option>
+                                          </select>
+                                          <ChevronDown className="w-2.5 h-2.5 text-neutral-400 pointer-events-none absolute right-1.5" />
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Fila 2: Cantidad y Consumo Total */}
+                                  <div className="flex items-center justify-between pt-1 border-t border-neutral-100 text-xs gap-2 flex-wrap sm:flex-nowrap">
+                                    {/* Cantidad */}
+                                    <div className="flex items-center gap-1.5">
                                       <label className="text-[11px] font-semibold text-neutral-600 flex-shrink-0">
-                                        Piezas:
+                                        Cantidad:
                                       </label>
                                       <input
                                         type="number"
@@ -3082,74 +3148,19 @@ export default function ProductosPage() {
                                         value={item.pieces ?? 1}
                                         onChange={(e) => handleUpdateEditSupplyDimensions(idx, { pieces: e.target.value })}
                                         placeholder="1"
-                                        className="w-12 px-1.5 py-0.5 text-xs bg-neutral-50 border border-neutral-200 rounded-lg text-center font-bold outline-none focus:border-[#3BB578]"
+                                        className="w-14 h-7.5 sm:h-8 px-2 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-xl text-center font-bold text-[#2B2B2B] outline-none focus:bg-white focus:border-[#3BB578] transition"
                                       />
                                     </div>
 
-                                    {/* Ancho */}
-                                    <div className="flex items-center gap-1">
-                                      <label className="text-[11px] font-semibold text-neutral-600 flex-shrink-0">
-                                        Ancho:
-                                      </label>
-                                      <div className="inline-flex items-center bg-neutral-50 border border-neutral-200 rounded-lg overflow-hidden focus-within:border-[#3BB578]">
-                                        <input
-                                          type="number"
-                                          step="any"
-                                          min="0.01"
-                                          value={item.width ?? ""}
-                                          onChange={(e) => handleUpdateEditSupplyDimensions(idx, { width: e.target.value })}
-                                          placeholder="0"
-                                          className="w-14 px-1.5 py-0.5 text-xs text-center font-bold outline-none bg-transparent"
-                                        />
-                                        <select
-                                          value={item.widthUnit || "cm"}
-                                          onChange={(e) => handleUpdateEditSupplyDimensions(idx, { widthUnit: e.target.value as "m" | "cm" | "mm" })}
-                                          className="text-[10px] font-bold text-neutral-600 bg-neutral-100 px-1 py-0.5 border-l border-neutral-200 outline-none cursor-pointer"
-                                        >
-                                          <option value="cm">cm</option>
-                                          <option value="m">m</option>
-                                          <option value="mm">mm</option>
-                                        </select>
-                                      </div>
+                                    {/* Consumo total calculado */}
+                                    <div className="flex items-center gap-1.5 ml-auto">
+                                      <span className="text-[10px] text-neutral-400 font-medium">Consumo total:</span>
+                                      <span className="text-[11px] font-bold text-neutral-700 bg-neutral-100 border border-neutral-200/60 px-2 py-0.5 rounded-lg whitespace-nowrap">
+                                        {qty > 0
+                                          ? `${qty.toLocaleString("es-AR", { maximumFractionDigits: 4 })} ${item.use_unit}`
+                                          : `0 ${item.use_unit}`}
+                                      </span>
                                     </div>
-
-                                    <span className="text-neutral-300 font-bold text-xs">×</span>
-
-                                    {/* Largo */}
-                                    <div className="flex items-center gap-1">
-                                      <label className="text-[11px] font-semibold text-neutral-600 flex-shrink-0">
-                                        Largo:
-                                      </label>
-                                      <div className="inline-flex items-center bg-neutral-50 border border-neutral-200 rounded-lg overflow-hidden focus-within:border-[#3BB578]">
-                                        <input
-                                          type="number"
-                                          step="any"
-                                          min="0.01"
-                                          value={item.length ?? ""}
-                                          onChange={(e) => handleUpdateEditSupplyDimensions(idx, { length: e.target.value })}
-                                          placeholder="0"
-                                          className="w-14 px-1.5 py-0.5 text-xs text-center font-bold outline-none bg-transparent"
-                                        />
-                                        <select
-                                          value={item.lengthUnit || "cm"}
-                                          onChange={(e) => handleUpdateEditSupplyDimensions(idx, { lengthUnit: e.target.value as "m" | "cm" | "mm" })}
-                                          className="text-[10px] font-bold text-neutral-600 bg-neutral-100 px-1 py-0.5 border-l border-neutral-200 outline-none cursor-pointer"
-                                        >
-                                          <option value="cm">cm</option>
-                                          <option value="m">m</option>
-                                          <option value="mm">mm</option>
-                                        </select>
-                                      </div>
-                                    </div>
-                                  </div>
-
-                                  {/* Consumo total calculado */}
-                                  <div className="text-right">
-                                    <span className="text-[10.5px] font-semibold text-neutral-600 bg-neutral-100 px-2 py-0.5 rounded-md whitespace-nowrap">
-                                      {qty > 0
-                                        ? `${qty.toLocaleString("es-AR", { maximumFractionDigits: 4 })} ${item.use_unit}`
-                                        : `0 ${item.use_unit}`}
-                                    </span>
                                   </div>
                                 </div>
                               ) : (
@@ -3165,7 +3176,7 @@ export default function ProductosPage() {
                                       value={item.quantity === 0 ? "" : item.quantity}
                                       onChange={(e) => handleUpdateEditSupplyQty(idx, e.target.value)}
                                       placeholder="1"
-                                      className="w-16 px-2 py-1 text-xs bg-neutral-50 border border-neutral-200 rounded-lg text-center font-bold outline-none focus:border-[#3BB578]"
+                                      className="w-16 h-7.5 sm:h-8 px-2 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-xl text-center font-bold text-[#2B2B2B] outline-none focus:bg-white focus:border-[#3BB578] transition"
                                     />
                                     <span className="text-[10.5px] text-neutral-500 font-semibold">
                                       {item.use_unit}
