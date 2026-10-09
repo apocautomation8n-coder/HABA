@@ -3129,6 +3129,11 @@ export default function ProductosPage() {
                                     </div>
                                   </div>
 
+                                  {/* Aviso para insumos medidos por superficie (m2 y cm2) */}
+                                  <p className="text-[11.5px] text-gray-500 leading-relaxed -mt-0.5 mb-1 px-0.5">
+                                    Ingresá el ancho y largo considerando el espacio total de material que vas a utilizar, incluido el sobrante.
+                                  </p>
+
                                   {/* Fila 2: Cantidad, Consumo Total y Subtotal */}
                                   <div className="flex items-center justify-between pt-1 border-t border-neutral-100 text-xs gap-2 flex-wrap sm:flex-nowrap">
                                     {/* Cantidad */}
