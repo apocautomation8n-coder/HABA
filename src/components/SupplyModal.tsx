@@ -1168,6 +1168,13 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
               </div>
             )}
 
+            {/* Aviso para insumos medidos por superficie (m2 y cm2) */}
+            {isSurfaceUnit && (
+              <p className="text-[11.5px] text-gray-500 leading-relaxed -mt-1 mb-0.5 px-0.5">
+                Ingresá el ancho y largo considerando el espacio total de material que vas a utilizar, incluido el sobrante.
+              </p>
+            )}
+
             {/* Precio de Reposición y Pregunta Dinámica (para Unidades Variables) */}
             <div
               className={`grid ${
