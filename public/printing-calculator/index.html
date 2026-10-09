@@ -761,7 +761,42 @@ function getSavedConsumablesFromStorage(techId) {
   if (!techId) return null;
   const key = "haba_printing_consumables_" + techId;
 
-  // 1. Storage local en el contexto actual
+  // 1. Storage local en el contexto actual (con precios válidos)
+  try {
+    if (typeof localStorage !== "undefined") {
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0 && hasValidPrices(parsed)) return parsed;
+      }
+    }
+  } catch (e) {}
+
+  // 2. Storage en la ventana padre (evita particionamiento de almacenamiento en iframes, con precios válidos)
+  try {
+    if (typeof window !== "undefined" && window.parent && window.parent !== window && window.parent.localStorage) {
+      const rawParent = window.parent.localStorage.getItem(key);
+      if (rawParent) {
+        const parsed = JSON.parse(rawParent);
+        if (Array.isArray(parsed) && parsed.length > 0 && hasValidPrices(parsed)) return parsed;
+      }
+    }
+  } catch (e) {}
+
+  // 3. Contexto HABA en memoria
+  if (HABA_CONTEXT.savedConsumablesByTech && HABA_CONTEXT.savedConsumablesByTech[techId]) {
+    const list = HABA_CONTEXT.savedConsumablesByTech[techId];
+    if (Array.isArray(list) && list.length > 0 && hasValidPrices(list)) return list;
+  }
+
+  // 4. Contexto del host (window.parent.HABA_INTEGRATION)
+  const host = getHost();
+  if (host && host.context && host.context.savedConsumablesByTech && host.context.savedConsumablesByTech[techId]) {
+    const list = host.context.savedConsumablesByTech[techId];
+    if (Array.isArray(list) && list.length > 0 && hasValidPrices(list)) return list;
+  }
+
+  // 5. Fallback a storage si contiene consumibles aunque aún no tengan precios
   try {
     if (typeof localStorage !== "undefined") {
       const raw = localStorage.getItem(key);
@@ -771,8 +806,6 @@ function getSavedConsumablesFromStorage(techId) {
       }
     }
   } catch (e) {}
-
-  // 2. Storage en la ventana padre (evita particionamiento de almacenamiento en iframes)
   try {
     if (typeof window !== "undefined" && window.parent && window.parent !== window && window.parent.localStorage) {
       const rawParent = window.parent.localStorage.getItem(key);
@@ -782,19 +815,6 @@ function getSavedConsumablesFromStorage(techId) {
       }
     }
   } catch (e) {}
-
-  // 3. Contexto HABA en memoria
-  if (HABA_CONTEXT.savedConsumablesByTech && HABA_CONTEXT.savedConsumablesByTech[techId]) {
-    const list = HABA_CONTEXT.savedConsumablesByTech[techId];
-    if (Array.isArray(list) && list.length > 0) return list;
-  }
-
-  // 4. Contexto del host (window.parent.HABA_INTEGRATION)
-  const host = getHost();
-  if (host && host.context && host.context.savedConsumablesByTech && host.context.savedConsumablesByTech[techId]) {
-    const list = host.context.savedConsumablesByTech[techId];
-    if (Array.isArray(list) && list.length > 0) return list;
-  }
 
   return null;
 }
@@ -832,7 +852,7 @@ function getInitialConsumables(techId){
     let unit = c.unit;
     let sourceInsumoId = (saved && saved.sourceInsumoId) || (hostSupply ? hostSupply.id : (hostIds[c.id] || null));
 
-    // PRIORIDAD 1: Valores guardados de la sesión previa para esta tecnología
+    // Precargar únicamente si existen valores válidos guardados para esta tecnología en la sesión
     if(saved){
       const savedPriceNum = typeof saved.price === "number" ? saved.price : parseLocalizedNumber(saved.price);
       if(Number.isFinite(savedPriceNum) && savedPriceNum > 0){
@@ -845,17 +865,8 @@ function getInitialConsumables(techId){
       if(saved.unit){
         unit = saved.unit;
       }
-    } else if(hostSupply && Number(hostSupply.price) > 0){
-      // PRIORIDAD 2: Solo si no hay nada guardado para esta tecnología, usar catálogo base HABA
-      price = formatMoneyInput(hostSupply.price);
-      if(hostSupply.quantity && Number(hostSupply.quantity) > 0){
-        quantity = Number(hostSupply.quantity);
-      }
-      if(hostSupply.unit){
-        unit = hostSupply.unit;
-      }
     }
-    // Si no hay nada guardado ni en catálogo, el precio inicial es vacío ("") y la cantidad vacía o 1 si single
+    // Si no hay datos guardados para esta tecnología (o fueron limpiados), los inputs se dejan en blanco ("") sin rescatar datos viejos del catálogo.
 
     return {
       name: (saved && saved.name) ? saved.name : c.name,

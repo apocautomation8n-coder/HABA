@@ -561,6 +561,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
         try {
           if (typeof window !== "undefined") {
             localStorage.removeItem(`haba_printing_consumables_${e.data.technologyId}`);
+            localStorage.removeItem(`haba_printing_sources_${e.data.technologyId}`);
           }
           if (habaIntegration.context.savedConsumablesByTech) {
             delete habaIntegration.context.savedConsumablesByTech[e.data.technologyId];
