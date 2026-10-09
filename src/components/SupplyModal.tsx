@@ -344,6 +344,10 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
 
                   updatedSourceSupplies.push({ id: targetSupplyId, price: pPrice });
                 }
+                existingSupply.current_price = pPrice;
+                existingSupply.purchase_quantity =
+                  Number(line.quantityPurchased) || existingSupply.purchase_quantity || 1;
+                existingSupply.purchase_unit = line.purchaseUnit || existingSupply.purchase_unit || "ml";
                 line.sourceInsumoId = targetSupplyId;
                 if (line.localConfigId) sourceIdsMap[line.localConfigId] = targetSupplyId;
               } else {
@@ -375,10 +379,19 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
                     changed_at: nowIso,
                   });
 
+                  fullUserSupplies.push(createdSource as SupplyItem);
                   line.sourceInsumoId = createdSource.id;
                   if (line.localConfigId) sourceIdsMap[line.localConfigId] = createdSource.id;
                   updatedSourceSupplies.push({ id: createdSource.id, price: pPrice });
                 }
+              }
+            }
+
+            if (payload.technology?.id) {
+              const updatedMatched = matchSourceInsumos(fullUserSupplies, payload.technology.id);
+              sourcesByTech[payload.technology.id] = updatedMatched;
+              if (habaIntegration.context.sourcesByTech) {
+                habaIntegration.context.sourcesByTech[payload.technology.id] = updatedMatched;
               }
             }
 
@@ -463,6 +476,18 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
                 `haba_printing_consumables_${payload.technology.id}`,
                 JSON.stringify(toPersist)
               );
+              if (habaIntegration.context.savedConsumablesByTech) {
+                habaIntegration.context.savedConsumablesByTech[payload.technology.id] = toPersist;
+              }
+              if (iframeRef.current?.contentWindow) {
+                iframeRef.current.contentWindow.postMessage(
+                  {
+                    type: "HABA_SYNC_CONTEXT",
+                    context: habaIntegration.context,
+                  },
+                  "*"
+                );
+              }
             } catch {}
           }
 

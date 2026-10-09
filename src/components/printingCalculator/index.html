@@ -821,7 +821,7 @@ function getInitialConsumables(techId){
   const stored = getSavedConsumablesFromStorage(techId);
   const storedIsValid = hasValidPrices(stored);
 
-  return tech.consumables.map(c => {
+  const result = tech.consumables.map(c => {
     const hostSupply = hostSupplies[c.id];
     const saved = (storedIsValid && Array.isArray(stored))
       ? stored.find(s => (s.configId === c.id || s.id === c.id || s.localConfigId === c.id))
@@ -830,17 +830,10 @@ function getInitialConsumables(techId){
     let price = "";
     let quantity = tech.inputMode === "single" ? 1 : "";
     let unit = c.unit;
-    let sourceInsumoId = hostSupply ? hostSupply.id : (hostIds[c.id] || (saved ? saved.sourceInsumoId : null));
+    let sourceInsumoId = (saved && saved.sourceInsumoId) || (hostSupply ? hostSupply.id : (hostIds[c.id] || null));
 
-    if(hostSupply && Number(hostSupply.price) > 0){
-      price = formatMoneyInput(hostSupply.price);
-      if(hostSupply.quantity && Number(hostSupply.quantity) > 0){
-        quantity = Number(hostSupply.quantity);
-      }
-      if(hostSupply.unit){
-        unit = hostSupply.unit;
-      }
-    } else if(saved){
+    // PRIORIDAD 1: Valores guardados de la sesión previa para esta tecnología
+    if(saved){
       const savedPriceNum = typeof saved.price === "number" ? saved.price : parseLocalizedNumber(saved.price);
       if(Number.isFinite(savedPriceNum) && savedPriceNum > 0){
         price = formatMoneyInput(savedPriceNum);
@@ -852,7 +845,17 @@ function getInitialConsumables(techId){
       if(saved.unit){
         unit = saved.unit;
       }
+    } else if(hostSupply && Number(hostSupply.price) > 0){
+      // PRIORIDAD 2: Solo si no hay nada guardado para esta tecnología, usar catálogo base HABA
+      price = formatMoneyInput(hostSupply.price);
+      if(hostSupply.quantity && Number(hostSupply.quantity) > 0){
+        quantity = Number(hostSupply.quantity);
+      }
+      if(hostSupply.unit){
+        unit = hostSupply.unit;
+      }
     }
+    // Si no hay nada guardado ni en catálogo, el precio inicial es vacío ("") y la cantidad vacía o 1 si single
 
     return {
       name: (saved && saved.name) ? saved.name : c.name,
@@ -864,6 +867,49 @@ function getInitialConsumables(techId){
       referenceUnit: c.unit,
       sourceInsumoId
     };
+  });
+
+  // Restaurar consumibles personalizados guardados en la sesión si existieran
+  if(storedIsValid && Array.isArray(stored)){
+    const customItems = stored.filter(s => s.configId === "custom" || !tech.consumables.some(c => c.id === s.configId));
+    customItems.forEach(s => {
+      const pNum = typeof s.price === "number" ? s.price : parseLocalizedNumber(s.price);
+      const qNum = Number(s.quantity);
+      result.push({
+        name: s.name || "",
+        quantity: Number.isFinite(qNum) && qNum > 0 ? qNum : (tech.inputMode === "single" ? 1 : ""),
+        unit: s.unit || tech.allowedUnits[0],
+        price: Number.isFinite(pNum) && pNum > 0 ? formatMoneyInput(pNum) : "",
+        configId: s.configId || "custom",
+        referenceQuantity: s.referenceQuantity || tech.customReferenceQuantity,
+        referenceUnit: s.referenceUnit || tech.referenceUnit,
+        sourceInsumoId: s.sourceInsumoId || null
+      });
+    });
+  }
+
+  return result;
+}
+
+function syncDOMInputsToState(){
+  // Asegurar que si hay un input con foco activo, sus cambios queden reflejados de inmediato
+  const active = document.activeElement;
+  if(active && active.dataset && active.dataset.field){
+    const f = active.dataset.field;
+    const idx = Number(active.dataset.index);
+    if(f && Number.isInteger(idx) && state.consumables && state.consumables[idx]){
+      state.consumables[idx][f] = active.value;
+    }
+  }
+  // Sincronizar desde los inputs visibles del DOM para máxima seguridad
+  const selector = window.innerWidth <= 768 ? "#mobileList [data-field]" : "#desktopBody [data-field]";
+  const domFields = document.querySelectorAll(selector);
+  domFields.forEach(el => {
+    const f = el.dataset.field;
+    const idx = Number(el.dataset.index);
+    if(f && Number.isInteger(idx) && state.consumables && state.consumables[idx] && el.value !== undefined){
+      state.consumables[idx][f] = el.value;
+    }
   });
 }
 
@@ -877,7 +923,7 @@ function persistCurrentConsumables(){
     return {
       configId: c.configId || c.id || "custom",
       name: c.name || "",
-      quantity: Number.isFinite(q) && q > 0 ? q : (Number(c.quantity) || 1),
+      quantity: Number.isFinite(q) && q > 0 ? q : (Number(c.quantity) || (technologyConfig[techId]?.inputMode === "single" ? 1 : 1)),
       unit: c.unit || "ml",
       price: Number.isFinite(p) && p > 0 ? p : 0,
       sourceInsumoId: c.sourceInsumoId || resolveSourceInsumoId(c) || null
@@ -1322,6 +1368,8 @@ function showHabaToast(type, title, message){
   habaToastTimer = setTimeout(() => { toast.classList.remove("open"); }, 4200);
 }
 function openSaveInsumoModal(){
+  syncDOMInputsToState();
+  persistCurrentConsumables();
   const calc = getCalculation();
   const selected = coverageConfig.find(c => c.coverage === state.selectedCoverage) || coverageConfig[0];
   const cost = calc.base5 !== null ? calc.base5 * selected.multiplier : null;
@@ -1358,6 +1406,11 @@ async function savePrintingInsumo(){
     return;
   }
   $("saveInsumoName").setAttribute("aria-invalid", "false");
+
+  // Inmediatamente antes de invocar el guardado, sincronizar inputs del DOM y persistir el estado actual
+  syncDOMInputsToState();
+  persistCurrentConsumables();
+
   const payload = buildPrintingInsumoPayload();
   if(!payload) return;
   payload.name = name;
@@ -1795,10 +1848,9 @@ function syncInitialConsumablesFromContext() {
       Object.assign(HABA_CONTEXT.sourceInsumoIdsByConfigId, host.context.sourceInsumoIdsByConfigId);
     }
     if (host.context.savedConsumablesByTech) {
-      Object.assign(HABA_CONTEXT.savedConsumablesByTech, host.context.savedConsumablesByTech);
+      HABA_CONTEXT.savedConsumablesByTech = Object.assign(HABA_CONTEXT.savedConsumablesByTech || {}, host.context.savedConsumablesByTech);
     }
-    const hasAnyPrice = state.consumables.some(c => priceValue(c) > 0);
-    if (!hasAnyPrice) {
+    if (!calculatorDirty) {
       state.consumables = getInitialConsumables(state.technologyId);
       if (typeof renderAll === "function") {
         renderAll();
