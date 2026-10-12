@@ -33,6 +33,7 @@ import {
   getQuoteValidity,
   buildQuoteWhatsAppMessage,
   parseQuoteNotes,
+  getQuoteTheme,
 } from "@/lib/quotes";
 
 
@@ -94,6 +95,8 @@ export default function PresupuestoPreviewPage() {
           const { data: { user } } = await supabase.auth.getUser();
           if (user && user.id === quoteData.user_id) {
             const meta = user.user_metadata || {};
+            const localColor = typeof window !== "undefined" ? localStorage.getItem("haba_quote_primary_color") : null;
+            const localRubro = typeof window !== "undefined" ? localStorage.getItem("haba_business_rubro") : null;
             pData = {
               ...(pData || {}),
               business_name: pData?.business_name || meta.business_name || null,
@@ -103,6 +106,10 @@ export default function PresupuestoPreviewPage() {
               business_email: pData?.business_email || meta.business_email || null,
               instagram: pData?.instagram || meta.instagram || null,
               address: pData?.address || meta.address || null,
+              avatar_url: pData?.avatar_url || meta.avatar_url || null,
+              logo_url: pData?.avatar_url || meta.avatar_url || null,
+              business_rubro: pData?.business_rubro || meta.business_rubro || localRubro || null,
+              quote_primary_color: pData?.quote_primary_color || meta.quote_primary_color || localColor || null,
             };
           }
 
@@ -196,6 +203,10 @@ export default function PresupuestoPreviewPage() {
 
   const discountAmount =
     quote.discount_percent > 0 ? (quote.subtotal * quote.discount_percent) / 100 : 0;
+  const theme = getQuoteTheme(profile?.quote_primary_color);
+  const bName = profile?.business_name?.trim() || (profile?.full_name ? `Taller ${profile.full_name.trim()}` : "Presupuesto Comercial");
+  const logoUrl = profile?.avatar_url || profile?.logo_url || profile?.business_logo || null;
+  const rubroText = profile?.business_rubro?.trim() || profile?.rubro?.trim() || (profile?.full_name ? `Taller de ${profile.full_name.trim()}` : "");
 
   return (
     <div className="w-full flex flex-col space-y-4 pb-16">
@@ -381,52 +392,49 @@ export default function PresupuestoPreviewPage() {
         </div>
       )}
 
-      {/* Hoja del Presupuesto con Branding HABA (Estructura de Documento A4) */}
+      {/* Hoja del Presupuesto Dinámica y Personalizada (Estructura de Documento A4) */}
       <div className="quote-sheet bg-white rounded-3xl p-6 sm:p-10 border border-[#EAF0E8] shadow-sm max-w-3xl mx-auto w-full space-y-6">
-        {/* Cabecera Institucional y Branding (Puntos D y G) */}
+        {/* Cabecera Institucional del Emprendimiento (Sin marcas estáticas de HABA) */}
         <div className="quote-header flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-[#EAF0E8] pb-6">
-          <div className="flex items-start gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-[#DCF4D7] border border-[#C3EBC0] flex items-center justify-center flex-shrink-0 shadow-2xs">
-              <HabaMascot size={40} />
-            </div>
+          <div className="flex items-start gap-4">
+            {logoUrl ? (
+              <img
+                src={logoUrl}
+                alt={bName}
+                className="max-h-14 max-w-[180px] w-auto h-auto object-contain rounded-2xl border border-neutral-100 shadow-2xs flex-shrink-0"
+              />
+            ) : null}
             <div>
-              <div className="flex items-center gap-2">
-                <span className="text-xl font-black text-[#1F7A4C] tracking-tight">HABA</span>
-                <span className="text-[10px] bg-[#F0FAF4] text-[#1F7A4C] border border-[#DCF4D7] px-2 py-0.5 rounded-full font-bold">
-                  Costos & Presupuestos
-                </span>
-              </div>
-              <p className="text-xs text-neutral-600 font-medium">
-                {profile?.business_name ? (
-                  <strong className="text-neutral-800 font-bold">{profile.business_name}</strong>
-                ) : profile?.full_name ? (
-                  <span>Taller de <strong>{profile.full_name}</strong></span>
-                ) : (
-                  "Taller Artesanal & Confección"
-                )}
-              </p>
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10.5px] text-neutral-500 pt-0.5">
+              <h1 className="text-xl sm:text-2xl font-black text-neutral-800 tracking-tight leading-tight">
+                {bName}
+              </h1>
+              {rubroText && (
+                <p className="text-xs font-semibold text-neutral-500 pt-0.5">
+                  {rubroText}
+                </p>
+              )}
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-neutral-500 pt-1.5">
                 {(profile?.business_phone || profile?.phone) && (
                   <span className="flex items-center gap-1">
-                    <Phone className="w-3 h-3 text-[#3BB578]" />
+                    <Phone className="w-3 h-3 text-neutral-400" />
                     <span>{profile.business_phone || profile.phone}</span>
                   </span>
                 )}
                 {(profile?.business_email || profile?.email) && (
                   <span className="flex items-center gap-1">
-                    <Mail className="w-3 h-3 text-[#3BB578]" />
+                    <Mail className="w-3 h-3 text-neutral-400" />
                     <span>{profile.business_email || profile.email}</span>
                   </span>
                 )}
                 {profile?.instagram && (
                   <span className="flex items-center gap-1">
-                    <AtSign className="w-3 h-3 text-[#3BB578]" />
+                    <AtSign className="w-3 h-3 text-neutral-400" />
                     <span>{profile.instagram}</span>
                   </span>
                 )}
                 {profile?.address && (
                   <span className="flex items-center gap-1">
-                    <MapPin className="w-3 h-3 text-[#3BB578]" />
+                    <MapPin className="w-3 h-3 text-neutral-400" />
                     <span>{profile.address}</span>
                   </span>
                 )}
@@ -436,7 +444,14 @@ export default function PresupuestoPreviewPage() {
 
           <div className="flex flex-col sm:items-end items-start w-full sm:w-auto bg-[#F8FAF8] sm:bg-transparent p-3 sm:p-0 rounded-2xl border sm:border-0 border-[#EAF0E8]">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="inline-block text-[10px] font-black uppercase tracking-wider bg-[#DCF4D7] text-[#1F7A4C] px-2.5 py-0.5 rounded-full border border-[#C3EBC0]">
+              <span
+                className="inline-block text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full border"
+                style={{
+                  backgroundColor: theme.badgeBg,
+                  color: theme.primaryDark || theme.primary,
+                  borderColor: theme.badgeBorder,
+                }}
+              >
                 Presupuesto Oficial
               </span>
               <span className="text-base sm:text-lg font-black text-neutral-800">
@@ -459,7 +474,7 @@ export default function PresupuestoPreviewPage() {
               Preparado para:
             </span>
             <h3 className="text-sm font-bold text-neutral-800 flex items-center gap-1.5">
-              <User className="w-3.5 h-3.5 text-[#3BB578]" />
+              <User className="w-3.5 h-3.5 text-neutral-400" />
               <span>{quote.client_name}</span>
             </h3>
             {quote.client_contact && (
@@ -474,8 +489,11 @@ export default function PresupuestoPreviewPage() {
             <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 block">
               Condiciones de la propuesta:
             </span>
-            <div className="text-xs text-neutral-700 font-semibold flex items-center sm:justify-end gap-1">
-              <Clock className="w-3.5 h-3.5 text-[#3BB578]" />
+            <div
+              className="text-xs font-bold flex items-center sm:justify-end gap-1"
+              style={{ color: theme.primaryDark || theme.primary }}
+            >
+              <Clock className="w-3.5 h-3.5" />
               <span>Vigencia: {validity?.validityDays} días corridos</span>
             </div>
             <p className="text-[11px] text-neutral-500 flex items-center sm:justify-end gap-1">
@@ -486,7 +504,16 @@ export default function PresupuestoPreviewPage() {
               {validity?.isExpired ? (
                 <span className="text-[9px] bg-rose-100 text-rose-700 font-bold px-1.5 py-0.2 rounded-md">Vencido</span>
               ) : (
-                <span className="text-[9px] bg-emerald-100 text-emerald-700 font-bold px-1.5 py-0.2 rounded-md">Vigente</span>
+                <span
+                  className="text-[9px] font-bold px-1.5 py-0.2 rounded-md border"
+                  style={{
+                    backgroundColor: theme.badgeBg,
+                    color: theme.primaryDark || theme.primary,
+                    borderColor: theme.badgeBorder,
+                  }}
+                >
+                  Vigente
+                </span>
               )}
             </p>
             {quote.delivery_date && (
@@ -502,13 +529,23 @@ export default function PresupuestoPreviewPage() {
 
         {/* Tabla de Productos Cotizados */}
         <div className="quote-table-container space-y-2">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-[#1F7A4C] block">
+          <span
+            className="text-[11px] font-bold uppercase tracking-wider block"
+            style={{ color: theme.primaryDark || theme.primary }}
+          >
             Detalle de Productos & Servicios
           </span>
 
           <div className="border border-[#EAF0E8] rounded-2xl overflow-hidden shadow-2xs">
             <table className="quote-table w-full text-xs text-left border-collapse">
-              <thead className="bg-[#DCF4D7] text-[#1F7A4C] font-bold text-[11px] border-b border-[#C3EBC0]">
+              <thead
+                className="font-bold text-[11px] border-b"
+                style={{
+                  backgroundColor: theme.badgeBg,
+                  color: theme.primaryDark || theme.primary,
+                  borderColor: theme.badgeBorder,
+                }}
+              >
                 <tr>
                   <th className="py-2.5 px-3">Producto / Ítem</th>
                   <th className="py-2.5 px-2 text-center">Canal</th>
@@ -535,7 +572,10 @@ export default function PresupuestoPreviewPage() {
                       <td className="py-3 px-3 text-right text-neutral-600">
                         {formatCurrency(item.unit_price)}
                       </td>
-                      <td className="py-3 px-3 text-right font-black text-[#1F7A4C]">
+                      <td
+                        className="py-3 px-3 text-right font-black"
+                        style={{ color: theme.primaryDark || theme.primary }}
+                      >
                         {formatCurrency(item.subtotal)}
                       </td>
                     </tr>
@@ -555,10 +595,17 @@ export default function PresupuestoPreviewPage() {
         {/* Panel de Totales y Descuentos */}
         <div className="quote-totals flex flex-col sm:flex-row items-end justify-between gap-4 pt-2">
           {/* Sello de Seguridad / Garantía de Precios */}
-          <div className="w-full sm:w-auto p-3 bg-[#F0FAF4] border border-[#DCF4D7] rounded-2xl text-xs text-[#1F7A4C]">
+          <div
+            className="w-full sm:w-auto p-3 border rounded-2xl text-xs"
+            style={{
+              backgroundColor: theme.badgeBg,
+              borderColor: theme.badgeBorder,
+              color: theme.primaryDark || theme.primary,
+            }}
+          >
             <div>
               <span className="font-bold block">Precios Congelados</span>
-              <span className="text-[10px] text-neutral-500">
+              <span className="text-[10px] opacity-80 block pt-0.5">
                 Los valores quedan asegurados hasta el {validity?.formattedValidUntil} ({validity?.validityDays} días corridos desde su emisión).
               </span>
             </div>
@@ -579,19 +626,29 @@ export default function PresupuestoPreviewPage() {
             )}
 
             {shippingCost > 0 && (
-              <div className="flex justify-between text-[#1F7A4C] font-semibold px-1">
+              <div
+                className="flex justify-between font-semibold px-1"
+                style={{ color: theme.primaryDark || theme.primary }}
+              >
                 <span>Costo de Envío:</span>
                 <span>+{formatCurrency(shippingCost)}</span>
               </div>
             )}
 
-            {/* Total Final Destacado HABA */}
-            <div className="quote-total-banner bg-[#DCF4D7] border border-[#C3EBC0] p-3 rounded-2xl flex items-center justify-between text-[#1F7A4C] shadow-xs mt-1">
+            {/* Total Final Destacado con Color de Identidad */}
+            <div
+              className="quote-total-banner border p-3.5 rounded-2xl flex items-center justify-between shadow-xs mt-1"
+              style={{
+                backgroundColor: theme.totalBg,
+                borderColor: theme.badgeBorder,
+                color: theme.totalText,
+              }}
+            >
               <div>
-                <span className="text-[10px] font-extrabold uppercase tracking-wider block">
+                <span className="text-[10px] font-extrabold uppercase tracking-wider block opacity-90">
                   Total Final
                 </span>
-                <span className="text-[9px] text-[#1F7A4C]/80 block">
+                <span className="text-[9px] block opacity-80">
                   Presupuesto congelado
                 </span>
               </div>
@@ -632,10 +689,8 @@ export default function PresupuestoPreviewPage() {
             <span>
               Emitido para <strong>{quote.client_name}</strong> {quote.client_contact ? `(${quote.client_contact})` : ""}
             </span>
-            <span className="flex items-center gap-1 font-semibold text-[#1F7A4C]">
-              <span>Generado con HABA</span>
-              <span>•</span>
-              <span>Software de Costeo Artesanal</span>
+            <span className="font-semibold text-neutral-500">
+              Documento Comercial Oficial
             </span>
           </div>
         </div>

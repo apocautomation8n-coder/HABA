@@ -110,6 +110,8 @@ export async function GET(request: Request) {
       business_email: profile?.business_email || meta.business_email || null,
       instagram: profile?.instagram || meta.instagram || null,
       address: profile?.address || meta.address || null,
+      business_rubro: profile?.business_rubro || meta.business_rubro || null,
+      quote_primary_color: profile?.quote_primary_color || meta.quote_primary_color || null,
       role: isAdmin ? "admin" : profile?.role || "user",
       status: profile?.status || "active",
       plan_type: planType,
@@ -163,6 +165,8 @@ export async function PATCH(request: Request) {
       email,
       password,
       avatarUrl,
+      businessRubro,
+      quotePrimaryColor,
     } = body;
 
     const finalPhone =
@@ -174,6 +178,18 @@ export async function PATCH(request: Request) {
     const finalEmail = businessEmail !== undefined ? businessEmail?.trim() || null : undefined;
     const finalInstagram = instagram !== undefined ? instagram?.trim() || null : undefined;
     const finalAddress = address !== undefined ? address?.trim() || null : undefined;
+    const finalRubro =
+      businessRubro !== undefined
+        ? businessRubro?.trim() || null
+        : body.business_rubro !== undefined
+        ? body.business_rubro?.trim() || null
+        : undefined;
+    const finalQuoteColor =
+      quotePrimaryColor !== undefined
+        ? quotePrimaryColor?.trim() || null
+        : body.quote_primary_color !== undefined
+        ? body.quote_primary_color?.trim() || null
+        : undefined;
 
     const admin = getAdminClient();
     const updateData: Record<string, any> = {
@@ -181,6 +197,8 @@ export async function PATCH(request: Request) {
     };
     if (fullName !== undefined) updateData.full_name = fullName?.trim() || null;
     if (businessName !== undefined) updateData.business_name = businessName?.trim() || null;
+    if (finalRubro !== undefined) updateData.business_rubro = finalRubro;
+    if (finalQuoteColor !== undefined) updateData.quote_primary_color = finalQuoteColor;
 
     const authUpdate: Record<string, any> = {
       user_metadata: {
@@ -202,6 +220,12 @@ export async function PATCH(request: Request) {
     }
     if (finalAddress !== undefined) {
       authUpdate.user_metadata.address = finalAddress;
+    }
+    if (finalRubro !== undefined) {
+      authUpdate.user_metadata.business_rubro = finalRubro;
+    }
+    if (finalQuoteColor !== undefined) {
+      authUpdate.user_metadata.quote_primary_color = finalQuoteColor;
     }
 
     if (avatarUrl !== undefined) {

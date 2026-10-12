@@ -29,11 +29,13 @@ import {
   AtSign,
   Copy,
   Hash,
+  Palette,
 } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
 import { checkIsAdmin } from "@/lib/auth-helpers";
 import { formatCurrency } from "@/lib/units";
+import { QUOTE_COLOR_PALETTES, getQuoteTheme } from "@/lib/quotes";
 import {
   PlanType,
   AccountStatus,
@@ -55,6 +57,8 @@ export default function SettingsPage() {
   const [email, setEmail] = useState<string>("");
   const [fullName, setFullName] = useState<string>("");
   const [businessName, setBusinessName] = useState<string>("");
+  const [businessRubro, setBusinessRubro] = useState<string>("");
+  const [quoteColor, setQuoteColor] = useState<string>("emerald");
   const [businessPhone, setBusinessPhone] = useState<string>("");
   const [businessEmail, setBusinessEmail] = useState<string>("");
   const [instagram, setInstagram] = useState<string>("");
@@ -109,6 +113,15 @@ export default function SettingsPage() {
           if (user.user_metadata?.business_name) {
             setBusinessName(user.user_metadata.business_name);
           }
+          if (user.user_metadata?.business_rubro) {
+            setBusinessRubro(user.user_metadata.business_rubro);
+          }
+          if (user.user_metadata?.quote_primary_color) {
+            setQuoteColor(user.user_metadata.quote_primary_color);
+          } else {
+            const savedColor = typeof window !== "undefined" ? localStorage.getItem("haba_quote_primary_color") : null;
+            if (savedColor) setQuoteColor(savedColor);
+          }
           if (user.user_metadata?.business_phone || user.user_metadata?.phone) {
             setBusinessPhone(user.user_metadata.business_phone || user.user_metadata.phone);
           }
@@ -148,6 +161,8 @@ export default function SettingsPage() {
               if (data.isAdmin) setRole("admin");
               if (data.profile?.full_name) setFullName(data.profile.full_name);
               if (data.profile?.business_name) setBusinessName(data.profile.business_name);
+              if (data.profile?.business_rubro) setBusinessRubro(data.profile.business_rubro);
+              if (data.profile?.quote_primary_color) setQuoteColor(data.profile.quote_primary_color);
               if (data.profile?.business_phone || data.profile?.phone) {
                 setBusinessPhone(data.profile.business_phone || data.profile.phone);
               }
@@ -377,6 +392,8 @@ export default function SettingsPage() {
       const payload: Record<string, any> = {
         fullName: fullName.trim(),
         businessName: businessName.trim(),
+        businessRubro: businessRubro.trim(),
+        quotePrimaryColor: quoteColor,
         email: email.trim(),
         businessPhone: businessPhone.trim(),
         businessEmail: businessEmail.trim(),
@@ -394,6 +411,11 @@ export default function SettingsPage() {
       });
 
       if (res.ok) {
+        if (typeof window !== "undefined") {
+          localStorage.setItem("haba_quote_primary_color", quoteColor);
+          localStorage.setItem("haba_business_rubro", businessRubro.trim());
+          window.dispatchEvent(new CustomEvent("haba-profile-updated"));
+        }
         setSavedSuccess(true);
         setNewPassword("");
         setTimeout(() => setSavedSuccess(false), 3000);
@@ -651,6 +673,23 @@ export default function SettingsPage() {
 
           <div className="space-y-1">
             <label className="text-xs font-semibold text-neutral-700 flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-[#3BB578]" />
+              Rubro o Especialidad del Emprendimiento
+            </label>
+            <input
+              type="text"
+              value={businessRubro}
+              onChange={(e) => setBusinessRubro(e.target.value)}
+              placeholder="Ej: Cerámica Artesanal, Confección Textil, Papelería..."
+              className="w-full px-3.5 py-2.5 text-sm bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] focus:ring-2 focus:ring-[#DCF4D7] outline-none transition"
+            />
+            <p className="text-[10px] text-neutral-400">
+              Se mostrará como subtítulo en el encabezado de tus presupuestos.
+            </p>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-neutral-700 flex items-center gap-1.5">
               <User className="w-3.5 h-3.5 text-[#3BB578]" />
               Tu Nombre Completo
             </label>
@@ -733,6 +772,53 @@ export default function SettingsPage() {
                   placeholder="Ej: Palermo, CABA / Buenos Aires"
                   className="w-full px-3.5 py-2 text-sm bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] focus:ring-2 focus:ring-[#DCF4D7] outline-none transition"
                 />
+              </div>
+            </div>
+
+            {/* Selector de Color de Presupuesto */}
+            <div className="pt-3 border-t border-neutral-100 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-neutral-700 flex items-center gap-1.5">
+                  <Palette className="w-3.5 h-3.5 text-[#3BB578]" />
+                  Color Principal del Presupuesto (PDF)
+                </span>
+                <span className="text-[9.5px] bg-[#DCF4D7] text-[#1F7A4C] font-bold px-2 py-0.5 rounded-full border border-[#C3EBC0]">
+                  Identidad Visual
+                </span>
+              </div>
+              <p className="text-[10px] text-neutral-400">
+                Seleccioná el tono que representará a tu emprendimiento en los bordes, insignias y totales de tus cotizaciones.
+              </p>
+
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-1">
+                {QUOTE_COLOR_PALETTES.map((palette) => {
+                  const isSelected =
+                    quoteColor.toLowerCase() === palette.id.toLowerCase() ||
+                    quoteColor.toLowerCase() === palette.primary.toLowerCase();
+                  return (
+                    <button
+                      key={palette.id}
+                      type="button"
+                      onClick={() => setQuoteColor(palette.id)}
+                      className={`p-2.5 rounded-2xl border text-left flex flex-col gap-1.5 transition-all ${
+                        isSelected
+                          ? "border-neutral-900 bg-neutral-50 shadow-xs ring-2 ring-neutral-900/10"
+                          : "border-neutral-200 bg-white hover:bg-neutral-50"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span
+                          className="w-5 h-5 rounded-full shadow-2xs border border-white"
+                          style={{ backgroundColor: palette.primary }}
+                        />
+                        {isSelected && <Check className="w-3.5 h-3.5 text-neutral-800" />}
+                      </div>
+                      <span className="text-[10.5px] font-bold text-neutral-800 leading-tight">
+                        {palette.name}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </div>
