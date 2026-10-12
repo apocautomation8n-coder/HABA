@@ -34,6 +34,7 @@ import {
   buildQuoteWhatsAppMessage,
   parseQuoteNotes,
   getQuoteTheme,
+  generateQuotePrintHtml,
 } from "@/lib/quotes";
 
 
@@ -91,7 +92,7 @@ export default function PresupuestoPreviewPage() {
             pData = baseProfileData;
           }
 
-          // Si el usuario logueado es el mismo emisor, enriquecer con user_metadata
+          // Si el usuario logueado es el mismo emisor, enriquecer con user_metadata y API
           const { data: { user } } = await supabase.auth.getUser();
           if (user && user.id === quoteData.user_id) {
             const meta = user.user_metadata || {};
@@ -111,6 +112,23 @@ export default function PresupuestoPreviewPage() {
               business_rubro: pData?.business_rubro || meta.business_rubro || localRubro || null,
               quote_primary_color: pData?.quote_primary_color || meta.quote_primary_color || localColor || null,
             };
+
+            try {
+              const res = await fetch("/api/user/profile");
+              if (res.ok) {
+                const apiData = await res.json();
+                if (apiData?.profile) {
+                  pData = {
+                    ...pData,
+                    ...apiData.profile,
+                    avatar_url: apiData.profile.avatar_url || pData?.avatar_url,
+                    logo_url: apiData.profile.avatar_url || pData?.logo_url,
+                  };
+                }
+              }
+            } catch {
+              // fallback ignore
+            }
           }
 
           if (pData) {
@@ -171,9 +189,19 @@ export default function PresupuestoPreviewPage() {
   };
 
 
-  // Imprimir / Descargar PDF nativo
+  // Imprimir / Descargar PDF nativo idéntico a la descarga directa
   const handlePrint = () => {
-    window.print();
+    if (!quote) return;
+    const currentTheme = getQuoteTheme(profile?.quote_primary_color);
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      window.print();
+      return;
+    }
+    const html = generateQuotePrintHtml(quote, profile, validity || undefined, currentTheme);
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
   };
 
   if (loading) {

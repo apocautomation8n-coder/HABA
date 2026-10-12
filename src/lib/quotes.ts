@@ -57,14 +57,24 @@ export interface QuoteThemeColor {
 
 export const QUOTE_COLOR_PALETTES: QuoteThemeColor[] = [
   {
+    id: "corporate",
+    name: "Verde Clásico (HABA)",
+    primary: "#1F7A4C",
+    primaryDark: "#155734",
+    badgeBg: "#DCF4D7",
+    badgeBorder: "#C3EBC0",
+    totalBg: "#DCF4D7",
+    totalText: "#1F7A4C",
+  },
+  {
     id: "emerald",
     name: "Verde Esmeralda",
     primary: "#10B981",
     primaryDark: "#065F46",
     badgeBg: "#ECFDF5",
     badgeBorder: "#A7F3D0",
-    totalBg: "#DCF4D7",
-    totalText: "#1F7A4C",
+    totalBg: "#D1FAE5",
+    totalText: "#065F46",
   },
   {
     id: "blue",
@@ -74,7 +84,7 @@ export const QUOTE_COLOR_PALETTES: QuoteThemeColor[] = [
     badgeBg: "#EFF6FF",
     badgeBorder: "#BFDBFE",
     totalBg: "#DBEAFE",
-    totalText: "#1D4ED8",
+    totalText: "#1E40AF",
   },
   {
     id: "graphite",
@@ -94,7 +104,7 @@ export const QUOTE_COLOR_PALETTES: QuoteThemeColor[] = [
     badgeBg: "#FDF2F8",
     badgeBorder: "#FBCFE8",
     totalBg: "#FCE7F3",
-    totalText: "#BE185D",
+    totalText: "#9D174D",
   },
   {
     id: "terracotta",
@@ -115,6 +125,18 @@ export function getQuoteTheme(colorOrId?: string | null): QuoteThemeColor {
     (p) => p.id.toLowerCase() === normalized || p.primary.toLowerCase() === normalized
   );
   if (match) return match;
+  if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(normalized)) {
+    return {
+      id: "custom",
+      name: "Personalizado",
+      primary: colorOrId,
+      primaryDark: colorOrId,
+      badgeBg: `${colorOrId}18`,
+      badgeBorder: `${colorOrId}44`,
+      totalBg: `${colorOrId}22`,
+      totalText: colorOrId,
+    };
+  }
   return QUOTE_COLOR_PALETTES[0];
 }
 

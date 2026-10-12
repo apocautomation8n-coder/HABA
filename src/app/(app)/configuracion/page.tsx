@@ -58,7 +58,7 @@ export default function SettingsPage() {
   const [fullName, setFullName] = useState<string>("");
   const [businessName, setBusinessName] = useState<string>("");
   const [businessRubro, setBusinessRubro] = useState<string>("");
-  const [quoteColor, setQuoteColor] = useState<string>("emerald");
+  const [quoteColor, setQuoteColor] = useState<string>("corporate");
   const [businessPhone, setBusinessPhone] = useState<string>("");
   const [businessEmail, setBusinessEmail] = useState<string>("");
   const [instagram, setInstagram] = useState<string>("");
@@ -790,7 +790,7 @@ export default function SettingsPage() {
                 Seleccioná el tono que representará a tu emprendimiento en los bordes, insignias y totales de tus cotizaciones.
               </p>
 
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-1">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 pt-1">
                 {QUOTE_COLOR_PALETTES.map((palette) => {
                   const isSelected =
                     quoteColor.toLowerCase() === palette.id.toLowerCase() ||

@@ -106,6 +106,24 @@ export default function PresupuestosPage() {
           business_rubro: pData?.business_rubro || meta.business_rubro || localRubro || null,
           quote_primary_color: pData?.quote_primary_color || meta.quote_primary_color || localColor || null,
         };
+
+        try {
+          const res = await fetch("/api/user/profile");
+          if (res.ok) {
+            const apiRes = await res.json();
+            if (apiRes?.profile) {
+              pData = {
+                ...pData,
+                ...apiRes.profile,
+                avatar_url: apiRes.profile.avatar_url || pData?.avatar_url,
+                logo_url: apiRes.profile.avatar_url || pData?.logo_url,
+              };
+            }
+          }
+        } catch {
+          // ignore
+        }
+
         setUserProfile(pData);
       }
     } catch (err) {
