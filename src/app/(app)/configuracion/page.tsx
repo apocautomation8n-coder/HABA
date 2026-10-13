@@ -30,12 +30,13 @@ import {
   Copy,
   Hash,
   Palette,
+  Pipette,
 } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
 import { checkIsAdmin } from "@/lib/auth-helpers";
 import { formatCurrency } from "@/lib/units";
-import { QUOTE_COLOR_PALETTES, getQuoteTheme } from "@/lib/quotes";
+import { QUOTE_COLOR_PALETTES, getQuoteTheme, normalizeHexColor } from "@/lib/quotes";
 import {
   PlanType,
   AccountStatus,
@@ -59,6 +60,7 @@ export default function SettingsPage() {
   const [businessName, setBusinessName] = useState<string>("");
   const [businessRubro, setBusinessRubro] = useState<string>("");
   const [quoteColor, setQuoteColor] = useState<string>("corporate");
+  const [customHexInput, setCustomHexInput] = useState<string>("#1F7A4C");
   const [businessPhone, setBusinessPhone] = useState<string>("");
   const [businessEmail, setBusinessEmail] = useState<string>("");
   const [instagram, setInstagram] = useState<string>("");
@@ -118,9 +120,15 @@ export default function SettingsPage() {
           }
           if (user.user_metadata?.quote_primary_color) {
             setQuoteColor(user.user_metadata.quote_primary_color);
+            const initialHex = normalizeHexColor(user.user_metadata.quote_primary_color) || getQuoteTheme(user.user_metadata.quote_primary_color).primary;
+            setCustomHexInput(initialHex.toUpperCase());
           } else {
             const savedColor = typeof window !== "undefined" ? localStorage.getItem("haba_quote_primary_color") : null;
-            if (savedColor) setQuoteColor(savedColor);
+            if (savedColor) {
+              setQuoteColor(savedColor);
+              const initialHex = normalizeHexColor(savedColor) || getQuoteTheme(savedColor).primary;
+              setCustomHexInput(initialHex.toUpperCase());
+            }
           }
           if (user.user_metadata?.business_phone || user.user_metadata?.phone) {
             setBusinessPhone(user.user_metadata.business_phone || user.user_metadata.phone);
@@ -162,7 +170,11 @@ export default function SettingsPage() {
               if (data.profile?.full_name) setFullName(data.profile.full_name);
               if (data.profile?.business_name) setBusinessName(data.profile.business_name);
               if (data.profile?.business_rubro) setBusinessRubro(data.profile.business_rubro);
-              if (data.profile?.quote_primary_color) setQuoteColor(data.profile.quote_primary_color);
+              if (data.profile?.quote_primary_color) {
+                setQuoteColor(data.profile.quote_primary_color);
+                const initialHex = normalizeHexColor(data.profile.quote_primary_color) || getQuoteTheme(data.profile.quote_primary_color).primary;
+                setCustomHexInput(initialHex.toUpperCase());
+              }
               if (data.profile?.business_phone || data.profile?.phone) {
                 setBusinessPhone(data.profile.business_phone || data.profile.phone);
               }
@@ -377,6 +389,50 @@ export default function SettingsPage() {
     }
   };
 
+  const currentQuoteTheme = getQuoteTheme(quoteColor);
+  const activeQuoteHex = (normalizeHexColor(quoteColor) || currentQuoteTheme.primary || "#1F7A4C").toUpperCase();
+  const matchingPreset = QUOTE_COLOR_PALETTES.find(
+    (p) =>
+      quoteColor.toLowerCase() === p.id.toLowerCase() ||
+      quoteColor.toLowerCase() === p.primary.toLowerCase()
+  );
+  const isCustomQuoteActive = !matchingPreset;
+
+  const handleSelectPreset = (palette: (typeof QUOTE_COLOR_PALETTES)[number]) => {
+    setQuoteColor(palette.primary);
+    setCustomHexInput(palette.primary.toUpperCase());
+  };
+
+  const handleColorPickerChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const hex = e.target.value.toUpperCase();
+    setQuoteColor(hex);
+    setCustomHexInput(hex);
+  };
+
+  const handleHexInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let raw = e.target.value.trim();
+    if (raw.length > 0 && !raw.startsWith("#")) {
+      raw = `#${raw}`;
+    }
+    raw = raw.toUpperCase().slice(0, 7);
+    setCustomHexInput(raw);
+
+    const validHex = normalizeHexColor(raw);
+    if (validHex) {
+      setQuoteColor(validHex);
+    }
+  };
+
+  const handleHexInputBlur = () => {
+    const validHex = normalizeHexColor(customHexInput);
+    if (validHex) {
+      setQuoteColor(validHex);
+      setCustomHexInput(validHex);
+    } else {
+      setCustomHexInput(activeQuoteHex);
+    }
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
@@ -389,11 +445,12 @@ export default function SettingsPage() {
     }
 
     try {
+      const finalHex = normalizeHexColor(quoteColor) || currentQuoteTheme.primary || "#1F7A4C";
       const payload: Record<string, any> = {
         fullName: fullName.trim(),
         businessName: businessName.trim(),
         businessRubro: businessRubro.trim(),
-        quotePrimaryColor: quoteColor,
+        quotePrimaryColor: finalHex,
         email: email.trim(),
         businessPhone: businessPhone.trim(),
         businessEmail: businessEmail.trim(),
@@ -412,7 +469,7 @@ export default function SettingsPage() {
 
       if (res.ok) {
         if (typeof window !== "undefined") {
-          localStorage.setItem("haba_quote_primary_color", quoteColor);
+          localStorage.setItem("haba_quote_primary_color", finalHex);
           localStorage.setItem("haba_business_rubro", businessRubro.trim());
           window.dispatchEvent(new CustomEvent("haba-profile-updated"));
         }
@@ -776,7 +833,7 @@ export default function SettingsPage() {
             </div>
 
             {/* Selector de Color de Presupuesto */}
-            <div className="pt-3 border-t border-neutral-100 space-y-2">
+            <div className="pt-3 border-t border-neutral-100 space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-neutral-700 flex items-center gap-1.5">
                   <Palette className="w-3.5 h-3.5 text-[#3BB578]" />
@@ -787,38 +844,138 @@ export default function SettingsPage() {
                 </span>
               </div>
               <p className="text-[10px] text-neutral-400">
-                Seleccioná el tono que representará a tu emprendimiento en los bordes, insignias y totales de tus cotizaciones.
+                Seleccioná una sugerencia rápida o definí el código hexadecimal de tu propia marca para aplicarlo en los presupuestos.
               </p>
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 pt-1">
-                {QUOTE_COLOR_PALETTES.map((palette) => {
-                  const isSelected =
-                    quoteColor.toLowerCase() === palette.id.toLowerCase() ||
-                    quoteColor.toLowerCase() === palette.primary.toLowerCase();
-                  return (
-                    <button
-                      key={palette.id}
-                      type="button"
-                      onClick={() => setQuoteColor(palette.id)}
-                      className={`p-2.5 rounded-2xl border text-left flex flex-col gap-1.5 transition-all ${
-                        isSelected
-                          ? "border-neutral-900 bg-neutral-50 shadow-xs ring-2 ring-neutral-900/10"
-                          : "border-neutral-200 bg-white hover:bg-neutral-50"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span
-                          className="w-5 h-5 rounded-full shadow-2xs border border-white"
-                          style={{ backgroundColor: palette.primary }}
+              {/* Sugerencias Rápidas */}
+              <div className="space-y-1.5">
+                <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider block">
+                  Sugerencias Rápidas
+                </span>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+                  {QUOTE_COLOR_PALETTES.map((palette) => {
+                    const isSelected =
+                      !isCustomQuoteActive &&
+                      (quoteColor.toLowerCase() === palette.id.toLowerCase() ||
+                        quoteColor.toLowerCase() === palette.primary.toLowerCase());
+                    return (
+                      <button
+                        key={palette.id}
+                        type="button"
+                        onClick={() => handleSelectPreset(palette)}
+                        className={`p-2.5 rounded-2xl border text-left flex flex-col gap-1.5 transition-all ${
+                          isSelected
+                            ? "border-neutral-900 bg-neutral-50 shadow-xs ring-2 ring-neutral-900/10"
+                            : "border-neutral-200 bg-white hover:bg-neutral-50 hover:border-neutral-300"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span
+                            className="w-5 h-5 rounded-full shadow-2xs border border-white"
+                            style={{ backgroundColor: palette.primary }}
+                          />
+                          {isSelected && <Check className="w-3.5 h-3.5 text-neutral-800" />}
+                        </div>
+                        <span className="text-[10.5px] font-bold text-neutral-800 leading-tight">
+                          {palette.name}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Tarjeta de Color Personalizado Libre */}
+              <div
+                className={`p-3.5 rounded-2xl border transition-all ${
+                  isCustomQuoteActive
+                    ? "border-neutral-900 bg-neutral-50/70 shadow-xs ring-2 ring-neutral-900/10"
+                    : "border-neutral-200 bg-white hover:bg-neutral-50/50 hover:border-neutral-300"
+                }`}
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  {/* Selector interactivo y datos del color */}
+                  <div className="flex items-center gap-3 min-w-0">
+                    {/* Botón interactivo con picker nativo integrado */}
+                    <div className="relative group flex-shrink-0">
+                      <div
+                        className="w-11 h-11 rounded-2xl border-2 border-white shadow-sm flex items-center justify-center transition-transform group-hover:scale-105 cursor-pointer relative overflow-hidden"
+                        style={{ backgroundColor: activeQuoteHex }}
+                        title="Hacé clic para abrir el selector de colores interactivo"
+                      >
+                        <Pipette className="w-4 h-4 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.7)] pointer-events-none" />
+                        <input
+                          type="color"
+                          value={activeQuoteHex}
+                          onChange={handleColorPickerChange}
+                          className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
+                          aria-label="Elegir color personalizado en selector interactivo"
                         />
-                        {isSelected && <Check className="w-3.5 h-3.5 text-neutral-800" />}
                       </div>
-                      <span className="text-[10.5px] font-bold text-neutral-800 leading-tight">
-                        {palette.name}
+                    </div>
+
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-bold text-neutral-800">
+                          Color Personalizado Libre
+                        </span>
+                        {isCustomQuoteActive ? (
+                          <span className="text-[9.5px] font-extrabold text-neutral-900 bg-white border border-neutral-300 px-2 py-0.5 rounded-full flex items-center gap-1 shadow-2xs">
+                            <Check className="w-3 h-3 text-[#3BB578]" />
+                            <span>Activo</span>
+                          </span>
+                        ) : (
+                          <span className="text-[9.5px] text-neutral-400 font-medium">
+                            (Elegí en el selector o escribí tu HEX)
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[10.5px] text-neutral-500 pt-0.5">
+                        Hacé clic en el círculo de color para abrir el selector interactivo o pegá tu código exacto de marca.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Input de Código HEX y Muestra en Vivo */}
+                  <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap">
+                    {/* Input manual de HEX */}
+                    <div className="relative flex items-center">
+                      <span className="absolute left-3 text-neutral-400 font-mono text-xs select-none">
+                        #
                       </span>
-                    </button>
-                  );
-                })}
+                      <input
+                        type="text"
+                        value={customHexInput.startsWith("#") ? customHexInput.slice(1) : customHexInput}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/[^0-9a-fA-F]/g, "").slice(0, 6);
+                          handleHexInputChange({ target: { value: `#${val}` } } as any);
+                        }}
+                        onBlur={handleHexInputBlur}
+                        placeholder="7C3AED"
+                        maxLength={6}
+                        className="w-28 pl-7 pr-2.5 py-2 bg-white border border-neutral-200 rounded-xl text-xs font-mono font-bold text-neutral-800 uppercase focus:border-neutral-900 focus:ring-2 focus:ring-neutral-900/10 outline-none shadow-2xs transition"
+                        title="Ingresá el código HEX de 6 caracteres (ej. 7C3AED)"
+                      />
+                    </div>
+
+                    {/* Previsualización en Vivo de la Insignia */}
+                    <div
+                      className="px-3 py-2 rounded-xl border flex items-center gap-1.5 text-[11px] font-bold shadow-2xs transition-all flex-shrink-0"
+                      style={{
+                        backgroundColor: currentQuoteTheme.badgeBg,
+                        borderColor: currentQuoteTheme.badgeBorder,
+                        color: currentQuoteTheme.primaryDark || currentQuoteTheme.primary,
+                      }}
+                      title="Así se visualizarán las insignias y totales en tu presupuesto"
+                    >
+                      <span
+                        className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: activeQuoteHex }}
+                      />
+                      <span>Vista Previa</span>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

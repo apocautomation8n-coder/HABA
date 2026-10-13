@@ -118,24 +118,63 @@ export const QUOTE_COLOR_PALETTES: QuoteThemeColor[] = [
   },
 ];
 
+function parseHexToRgb(hex: string): [number, number, number] | null {
+  let h = hex.replace("#", "").trim();
+  if (h.length === 3) {
+    h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+  }
+  if (h.length !== 6) return null;
+  const num = parseInt(h, 16);
+  if (isNaN(num)) return null;
+  return [(num >> 16) & 255, (num >> 8) & 255, num & 255];
+}
+
+function adjustHexBrightness(hex: string, factor: number): string {
+  const rgb = parseHexToRgb(hex);
+  if (!rgb) return hex;
+  const [r, g, b] = rgb.map((c) => Math.min(255, Math.max(0, Math.round(c * factor))));
+  return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1).toUpperCase()}`;
+}
+
+export function normalizeHexColor(input?: string | null): string | null {
+  if (!input) return null;
+  let val = input.trim();
+  if (val.startsWith("#")) val = val.slice(1);
+  if (/^[0-9a-fA-F]{3}$/.test(val)) {
+    val = `${val[0]}${val[0]}${val[1]}${val[1]}${val[2]}${val[2]}`;
+  }
+  if (/^[0-9a-fA-F]{6}$/.test(val)) {
+    return `#${val.toUpperCase()}`;
+  }
+  return null;
+}
+
 export function getQuoteTheme(colorOrId?: string | null): QuoteThemeColor {
   if (!colorOrId) return QUOTE_COLOR_PALETTES[0];
-  const normalized = colorOrId.trim().toLowerCase();
+  const trimmed = colorOrId.trim();
+  const normalized = trimmed.toLowerCase();
   const match = QUOTE_COLOR_PALETTES.find(
     (p) => p.id.toLowerCase() === normalized || p.primary.toLowerCase() === normalized
   );
   if (match) return match;
-  if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(normalized)) {
-    return {
-      id: "custom",
-      name: "Personalizado",
-      primary: colorOrId,
-      primaryDark: colorOrId,
-      badgeBg: `${colorOrId}18`,
-      badgeBorder: `${colorOrId}44`,
-      totalBg: `${colorOrId}22`,
-      totalText: colorOrId,
-    };
+
+  const validHex = normalizeHexColor(trimmed);
+  if (validHex) {
+    const rgb = parseHexToRgb(validHex);
+    if (rgb) {
+      const [r, g, b] = rgb;
+      const primaryDark = adjustHexBrightness(validHex, 0.72);
+      return {
+        id: "custom",
+        name: "Personalizado",
+        primary: validHex,
+        primaryDark: primaryDark,
+        badgeBg: `rgba(${r}, ${g}, ${b}, 0.08)`,
+        badgeBorder: `rgba(${r}, ${g}, ${b}, 0.25)`,
+        totalBg: `rgba(${r}, ${g}, ${b}, 0.12)`,
+        totalText: primaryDark,
+      };
+    }
   }
   return QUOTE_COLOR_PALETTES[0];
 }
