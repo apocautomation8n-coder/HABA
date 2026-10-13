@@ -391,7 +391,7 @@ export function buildQuoteWhatsAppMessage(
 
   // Datos de contacto del emprendimiento
   const contactLines: string[] = [];
-  const bName = profile?.business_name || (profile?.full_name ? `Taller ${profile.full_name}` : "");
+  const bName = profile?.business_name || profile?.full_name || "";
   if (bName) contactLines.push(`🌸 *${bName}*`);
   if (profile?.business_phone || profile?.phone) {
     contactLines.push(`📞 WhatsApp: ${profile.business_phone || profile.phone}`);
@@ -446,9 +446,8 @@ export function generateQuotePrintHtml(
   const theme = themeColor || getQuoteTheme(profile?.quote_primary_color);
   const { cleanNotes, shippingCost } = parseQuoteNotes(quote.notes);
 
-  const bName = profile?.business_name?.trim() || (profile?.full_name ? `Taller ${profile.full_name.trim()}` : "Presupuesto Comercial");
+  const bName = profile?.business_name?.trim() || profile?.full_name?.trim() || "Presupuesto Comercial";
   const logoUrl = profile?.avatar_url || profile?.logo_url || profile?.business_logo || null;
-  const rubroText = profile?.business_rubro?.trim() || profile?.rubro?.trim() || (profile?.full_name ? `Taller de ${profile.full_name.trim()}` : "");
 
   const phone = profile?.business_phone || profile?.phone;
   const email = profile?.business_email || profile?.email;
@@ -476,10 +475,7 @@ export function generateQuotePrintHtml(
     .map(
       (item) => `
       <tr>
-        <td style="padding: 6px 10px; border-bottom: 1px solid #f0f0f0; font-weight: 700; color: #1f2937;">${escapeHtml(item.product_name)}</td>
-        <td style="padding: 6px 8px; border-bottom: 1px solid #f0f0f0; text-align: center; color: #6b7280; font-size: 10px;">
-          <span style="background: #f3f4f6; padding: 2px 6px; border-radius: 999px;">${escapeHtml(item.channel_name || "General")}</span>
-        </td>
+        <td style="padding: 6px 10px; border-bottom: 1px solid #f0f0f0; font-weight: 700; color: #1f2937; text-align: left;">${escapeHtml(item.product_name)}</td>
         <td style="padding: 6px 8px; border-bottom: 1px solid #f0f0f0; text-align: center; font-weight: 800; color: #374151;">${escapeHtml(item.quantity)}</td>
         <td style="padding: 6px 10px; border-bottom: 1px solid #f0f0f0; text-align: right; color: #4b5563;">${formatCurrency(item.unit_price)}</td>
         <td style="padding: 6px 10px; border-bottom: 1px solid #f0f0f0; text-align: right; font-weight: 900; color: ${theme.primaryDark || theme.primary};">${formatCurrency(item.subtotal)}</td>
@@ -693,12 +689,10 @@ export function generateQuotePrintHtml(
                   <img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(bName)}" style="max-height: 56px; max-width: 180px; width: auto; height: auto; object-fit: contain; border-radius: 8px;" />
                   <div>
                     <h1 class="brand-title">${escapeHtml(bName)}</h1>
-                    ${rubroText ? `<p class="brand-sub">${escapeHtml(rubroText)}</p>` : ""}
                   </div>
                 </div>`
               : `<div>
                   <h1 class="brand-title" style="font-size: 24px;">${escapeHtml(bName)}</h1>
-                  ${rubroText ? `<p class="brand-sub">${escapeHtml(rubroText)}</p>` : ""}
                 </div>`
           }
           <div style="font-size: 10px; color: #4b5563; margin-top: 6px; display: flex; flex-wrap: wrap; gap: 10px;">
@@ -736,15 +730,14 @@ export function generateQuotePrintHtml(
       <table>
         <thead>
           <tr>
-            <th>Producto / Ítem</th>
-            <th style="text-align: center; width: 80px;">Canal</th>
-            <th style="text-align: center; width: 60px;">Cant.</th>
-            <th style="text-align: right; width: 95px;">Precio Unit.</th>
-            <th style="text-align: right; width: 105px;">Subtotal</th>
+            <th style="text-align: left; width: 55%;">Producto / Ítem</th>
+            <th style="text-align: center; width: 70px;">Cant.</th>
+            <th style="text-align: right; width: 120px;">Precio Unit.</th>
+            <th style="text-align: right; width: 130px;">Subtotal</th>
           </tr>
         </thead>
         <tbody>
-          ${itemsRows || `<tr><td colspan="5" style="text-align: center; color: #9ca3af; padding: 14px;">Sin ítems registrados</td></tr>`}
+          ${itemsRows || `<tr><td colspan="4" style="text-align: center; color: #9ca3af; padding: 14px;">Sin ítems registrados</td></tr>`}
         </tbody>
       </table>
 

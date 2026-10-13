@@ -232,9 +232,8 @@ export default function PresupuestoPreviewPage() {
   const discountAmount =
     quote.discount_percent > 0 ? (quote.subtotal * quote.discount_percent) / 100 : 0;
   const theme = getQuoteTheme(profile?.quote_primary_color);
-  const bName = profile?.business_name?.trim() || (profile?.full_name ? `Taller ${profile.full_name.trim()}` : "Presupuesto Comercial");
+  const bName = profile?.business_name?.trim() || profile?.full_name?.trim() || "Presupuesto Comercial";
   const logoUrl = profile?.avatar_url || profile?.logo_url || profile?.business_logo || null;
-  const rubroText = profile?.business_rubro?.trim() || profile?.rubro?.trim() || (profile?.full_name ? `Taller de ${profile.full_name.trim()}` : "");
 
   return (
     <div className="w-full flex flex-col space-y-4 pb-16">
@@ -436,11 +435,6 @@ export default function PresupuestoPreviewPage() {
               <h1 className="text-xl sm:text-2xl font-black text-neutral-800 tracking-tight leading-tight">
                 {bName}
               </h1>
-              {rubroText && (
-                <p className="text-xs font-semibold text-neutral-500 pt-0.5">
-                  {rubroText}
-                </p>
-              )}
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-neutral-500 pt-1.5">
                 {(profile?.business_phone || profile?.phone) && (
                   <span className="flex items-center gap-1">
@@ -575,26 +569,20 @@ export default function PresupuestoPreviewPage() {
                 }}
               >
                 <tr>
-                  <th className="py-2.5 px-3">Producto / Ítem</th>
-                  <th className="py-2.5 px-2 text-center">Canal</th>
-                  <th className="py-2.5 px-2 text-center">Cant.</th>
-                  <th className="py-2.5 px-3 text-right">Precio Unit.</th>
-                  <th className="py-2.5 px-3 text-right">Subtotal</th>
+                  <th className="py-2.5 px-3 text-left w-[55%] sm:w-[60%]">Producto / Ítem</th>
+                  <th className="py-2.5 px-3 text-center w-16 sm:w-20">Cant.</th>
+                  <th className="py-2.5 px-3 text-right w-28 sm:w-36">Precio Unit.</th>
+                  <th className="py-2.5 px-3 text-right w-28 sm:w-36">Subtotal</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100 bg-white">
                 {quote.quote_items && quote.quote_items.length > 0 ? (
                   quote.quote_items.map((item, index) => (
                     <tr key={item.id || index} className="hover:bg-neutral-50/50 transition">
-                      <td className="py-3 px-3 font-bold text-neutral-800">
+                      <td className="py-3 px-3 font-bold text-neutral-800 text-left">
                         {item.product_name}
                       </td>
-                      <td className="py-3 px-2 text-center text-neutral-500 text-[11px]">
-                        <span className="bg-neutral-100 px-2 py-0.5 rounded-full">
-                          {item.channel_name || "General"}
-                        </span>
-                      </td>
-                      <td className="py-3 px-2 text-center font-black text-neutral-700">
+                      <td className="py-3 px-3 text-center font-black text-neutral-700">
                         {item.quantity}
                       </td>
                       <td className="py-3 px-3 text-right text-neutral-600">
@@ -610,7 +598,7 @@ export default function PresupuestoPreviewPage() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={5} className="py-6 text-center text-neutral-400 italic">
+                    <td colSpan={4} className="py-6 text-center text-neutral-400 italic">
                       Sin ítems cargados
                     </td>
                   </tr>
