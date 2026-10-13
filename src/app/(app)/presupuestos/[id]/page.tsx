@@ -35,6 +35,7 @@ import {
   parseQuoteNotes,
   getQuoteTheme,
   generateQuotePrintHtml,
+  isValidBusinessLogo,
 } from "@/lib/quotes";
 
 
@@ -233,7 +234,8 @@ export default function PresupuestoPreviewPage() {
     quote.discount_percent > 0 ? (quote.subtotal * quote.discount_percent) / 100 : 0;
   const theme = getQuoteTheme(profile?.quote_primary_color);
   const bName = profile?.business_name?.trim() || profile?.full_name?.trim() || "Presupuesto Comercial";
-  const logoUrl = profile?.avatar_url || profile?.logo_url || profile?.business_logo || null;
+  const candidateLogo = profile?.logo_url || profile?.business_logo || profile?.avatar_url || null;
+  const logoUrl = isValidBusinessLogo(candidateLogo) ? candidateLogo.trim() : null;
 
   return (
     <div className="w-full flex flex-col space-y-4 pb-16">

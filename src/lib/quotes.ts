@@ -433,6 +433,29 @@ function escapeHtml(text?: string | number | null): string {
 }
 
 /**
+ * Valida si la URL corresponde a un logo comercial real cargado por el usuario
+ * (excluyendo logos, mascotas o recursos estáticos por defecto de HABA).
+ */
+export function isValidBusinessLogo(url?: string | null): url is string {
+  if (!url || typeof url !== "string") return false;
+  const trimmed = url.trim();
+  if (!trimmed) return false;
+  const lower = trimmed.toLowerCase();
+  if (
+    lower.includes("logohaba") ||
+    lower.includes("haba-mascot") ||
+    lower.includes("haba-avatar") ||
+    lower === "/logo.png" ||
+    lower === "/icon.png" ||
+    lower === "null" ||
+    lower === "undefined"
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/**
  * Genera el documento HTML completo para impresión nativa / PDF A4
  * con diseño profesional idéntico a la Vista Previa y branding del emprendimiento.
  */
@@ -447,7 +470,8 @@ export function generateQuotePrintHtml(
   const { cleanNotes, shippingCost } = parseQuoteNotes(quote.notes);
 
   const bName = profile?.business_name?.trim() || profile?.full_name?.trim() || "Presupuesto Comercial";
-  const logoUrl = profile?.avatar_url || profile?.logo_url || profile?.business_logo || null;
+  const rawLogo = profile?.logo_url || profile?.business_logo || profile?.avatar_url || null;
+  const logoUrl = isValidBusinessLogo(rawLogo) ? rawLogo!.trim() : null;
 
   const phone = profile?.business_phone || profile?.phone;
   const email = profile?.business_email || profile?.email;

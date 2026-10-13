@@ -23,6 +23,7 @@ import {
   Hash,
 } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
+import { isRealUserAvatar } from "@/components/ProfileAvatar";
 import { createClient } from "@/lib/supabase/client";
 import { checkIsAdmin } from "@/lib/auth-helpers";
 import { useModalThemeColor } from "@/hooks/useModalThemeColor";
@@ -698,9 +699,9 @@ export default function AdminPage() {
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex items-start gap-3">
                     {/* Avatar / Logo */}
-                    {u.avatar_url ? (
+                    {u.avatar_url && isRealUserAvatar(u.avatar_url) ? (
                       <img
-                        src={u.avatar_url}
+                        src={u.avatar_url.trim()}
                         alt={u.full_name || u.email}
                         className="w-10 h-10 rounded-2xl object-cover border border-[#EAF0E8] flex-shrink-0"
                       />

@@ -13,7 +13,7 @@ import {
   Settings,
   ShieldCheck,
 } from "lucide-react";
-import { HabaMascot } from "@/components/HabaMascot";
+import { isRealUserAvatar } from "@/components/ProfileAvatar";
 import { createClient } from "@/lib/supabase/client";
 import { NotificationsModal } from "@/components/NotificationsModal";
 import { checkIsAdmin } from "@/lib/auth-helpers";
@@ -118,9 +118,9 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
     <>
       <header className="w-full flex items-center justify-between pb-3 pt-1 border-b border-[#EAF0E8] mb-4 gap-4">
         <Link href="/dashboard" className="flex items-center gap-2.5 flex-shrink-0 group">
-          {avatarUrl ? (
+          {avatarUrl && isRealUserAvatar(avatarUrl) ? (
             <img
-              src={avatarUrl}
+              src={avatarUrl.trim()}
               alt="Logo"
               className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl object-cover border border-[#C3EBC0] flex-shrink-0"
             />

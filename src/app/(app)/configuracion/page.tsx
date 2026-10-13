@@ -32,6 +32,7 @@ import {
   Palette,
   Pipette,
 } from "lucide-react";
+import { ProfileAvatar, isRealUserAvatar } from "@/components/ProfileAvatar";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
 import { checkIsAdmin } from "@/lib/auth-helpers";
@@ -507,17 +508,12 @@ export default function SettingsPage() {
       {/* Header Perfil con Foto de Perfil o Logo */}
       <div className="flex items-center gap-4 bg-white p-5 rounded-3xl border border-[#EAF0E8] shadow-sm">
         <div className="relative group flex-shrink-0">
-          {avatarUrl ? (
-            <img
-              src={avatarUrl}
-              alt="Logo o Foto"
-              className="w-16 h-16 rounded-2xl object-cover border-2 border-[#3BB578] shadow-xs"
-            />
-          ) : (
-            <div className="w-16 h-16 rounded-2xl bg-[#DCF4D7] border-2 border-[#C3EBC0] flex items-center justify-center text-[#1F7A4C] font-bold text-xl shadow-xs">
-              <HabaMascot size={46} />
-            </div>
-          )}
+          <ProfileAvatar
+            url={avatarUrl}
+            alt={fullName || businessName || "Foto de perfil o logo"}
+            className="w-16 h-16 rounded-2xl"
+            iconSize={32}
+          />
 
           {/* Botón interactivo de cambiar foto */}
           <label
@@ -546,7 +542,7 @@ export default function SettingsPage() {
             <h2 className="text-base font-bold text-neutral-800 truncate font-display">
               {fullName || businessName || "Mi Perfil"}
             </h2>
-            {avatarUrl && (
+            {avatarUrl && isRealUserAvatar(avatarUrl) && (
               <button
                 type="button"
                 onClick={handleRemoveAvatar}
