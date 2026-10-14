@@ -61,6 +61,12 @@ import {
 } from "@/lib/products";
 import { matchesSearch } from "@/lib/search";
 import { SupplyModal, SupplyItem } from "@/components/SupplyModal";
+import {
+  isUnitSupply,
+  isUnitSupplyWithDimensions,
+  calculateUnitFractionQuantity,
+  getFriendlyFractionLabel,
+} from "@/lib/supplies";
 import { CategorySelector } from "@/components/CategorySelector";
 import { PriceReviewModal } from "@/components/products/PriceReviewModal";
 import {
@@ -107,6 +113,9 @@ export interface ProductSupplyItem {
     purchase_unit?: string;
     purchase_quantity?: number;
     conversion_factor?: number;
+    unit_width?: number | null;
+    unit_length?: number | null;
+    unit_dimension_unit?: string | null;
   } | null;
 }
 
@@ -149,6 +158,9 @@ export interface CatalogSupply {
   purchase_unit?: string;
   purchase_quantity?: number;
   conversion_factor?: number;
+  unit_width?: number | null;
+  unit_length?: number | null;
+  unit_dimension_unit?: string | null;
 }
 
 export interface EditSupplyLine {
@@ -162,6 +174,9 @@ export interface EditSupplyLine {
   purchase_unit?: string;
   purchase_quantity?: number;
   conversion_factor?: number;
+  unit_width?: number | null;
+  unit_length?: number | null;
+  unit_dimension_unit?: string | null;
   pieces?: number | string;
   width?: number | string;
   widthUnit?: "m" | "cm" | "mm";
@@ -309,6 +324,9 @@ export default function ProductosPage() {
                 purchase_unit,
                 purchase_quantity,
                 conversion_factor,
+                unit_width,
+                unit_length,
+                unit_dimension_unit,
                 updated_at
               )
             ),
@@ -328,7 +346,7 @@ export default function ProductosPage() {
           .order("created_at", { ascending: false }),
         supabase
           .from("supplies")
-          .select("id, name, category, current_price, use_unit, purchase_unit, purchase_quantity, conversion_factor, updated_at")
+          .select("id, name, category, current_price, use_unit, purchase_unit, purchase_quantity, conversion_factor, unit_width, unit_length, unit_dimension_unit, updated_at")
           .order("name", { ascending: true }),
         supabase
           .from("supply_price_history")
@@ -370,6 +388,9 @@ export default function ProductosPage() {
                 purchase_unit,
                 purchase_quantity,
                 conversion_factor,
+                unit_width,
+                unit_length,
+                unit_dimension_unit,
                 updated_at
               )
             )
@@ -651,7 +672,7 @@ export default function ProductosPage() {
     setEditWorkMinutes(product.work_time_minutes || 0);
     setEditYield(meta.yield || 1);
 
-    // Cargar insumos actuales de la receta con dimensiones de superficie si existen
+    // Cargar insumos actuales de la receta con dimensiones de superficie o unidad si existen
     const initialSupplies: EditSupplyLine[] = (product.product_supplies || []).map((ps) => {
       const s = ps.supplies;
       const unitCost = s
@@ -659,6 +680,7 @@ export default function ProductosPage() {
         : 0;
       const supplyId = ps.supply_id || s?.id || "";
       const isSurface = isSurfaceSupply({ use_unit: s?.use_unit, purchase_unit: s?.purchase_unit });
+      const hasUnitDims = isUnitSupplyWithDimensions(s);
       const dim = meta.supplyDimensions?.[supplyId];
 
       return {
@@ -672,11 +694,14 @@ export default function ProductosPage() {
         purchase_unit: s?.purchase_unit,
         purchase_quantity: s?.purchase_quantity,
         conversion_factor: s?.conversion_factor,
-        pieces: dim ? dim.pieces : isSurface ? 1 : undefined,
-        width: dim ? dim.width : isSurface ? "" : undefined,
-        widthUnit: dim ? dim.widthUnit : isSurface ? "cm" : undefined,
-        length: dim ? dim.length : isSurface ? "" : undefined,
-        lengthUnit: dim ? dim.lengthUnit : isSurface ? "cm" : undefined,
+        unit_width: s?.unit_width,
+        unit_length: s?.unit_length,
+        unit_dimension_unit: s?.unit_dimension_unit,
+        pieces: dim ? dim.pieces : (isSurface || hasUnitDims) ? 1 : undefined,
+        width: dim ? dim.width : (isSurface || hasUnitDims) ? "" : undefined,
+        widthUnit: dim ? dim.widthUnit : (hasUnitDims && (s?.unit_dimension_unit as "m" | "cm" | "mm")) || "cm",
+        length: dim ? dim.length : (isSurface || hasUnitDims) ? "" : undefined,
+        lengthUnit: dim ? dim.lengthUnit : (hasUnitDims && (s?.unit_dimension_unit as "m" | "cm" | "mm")) || "cm",
       };
     });
     setEditSupplies(initialSupplies);
@@ -737,6 +762,8 @@ export default function ProductosPage() {
       supply.conversion_factor || 1
     );
     const isSurface = isSurfaceSupply(supply);
+    const hasUnitDims = isUnitSupplyWithDimensions(supply);
+    const defaultDimUnit = (hasUnitDims && (supply.unit_dimension_unit as "m" | "cm" | "mm")) || "cm";
     setEditSupplies((prev) => [
       ...prev,
       {
@@ -744,16 +771,19 @@ export default function ProductosPage() {
         name: supply.name,
         use_unit: supply.use_unit || "u",
         unit_cost: unitCost,
-        quantity: isSurface ? 0 : 1,
+        quantity: (isSurface || hasUnitDims) ? 0 : 1,
         current_price: supply.current_price,
         purchase_unit: supply.purchase_unit,
         purchase_quantity: supply.purchase_quantity,
         conversion_factor: supply.conversion_factor,
-        pieces: isSurface ? 1 : undefined,
-        width: isSurface ? "" : undefined,
-        widthUnit: isSurface ? "cm" : undefined,
-        length: isSurface ? "" : undefined,
-        lengthUnit: isSurface ? "cm" : undefined,
+        unit_width: supply.unit_width,
+        unit_length: supply.unit_length,
+        unit_dimension_unit: supply.unit_dimension_unit,
+        pieces: (isSurface || hasUnitDims) ? 1 : undefined,
+        width: (isSurface || hasUnitDims) ? "" : undefined,
+        widthUnit: defaultDimUnit,
+        length: (isSurface || hasUnitDims) ? "" : undefined,
+        lengthUnit: defaultDimUnit,
       },
     ]);
     setSelectedSupplyToAdd("");
@@ -772,6 +802,9 @@ export default function ProductosPage() {
         purchase_unit: createdSupply.purchase_unit,
         purchase_quantity: createdSupply.purchase_quantity,
         conversion_factor: createdSupply.conversion_factor,
+        unit_width: createdSupply.unit_width,
+        unit_length: createdSupply.unit_length,
+        unit_dimension_unit: createdSupply.unit_dimension_unit,
       };
       setAllSupplies((prev) =>
         [catalogItem, ...prev.filter((s) => s.id !== catalogItem.id)].sort((a, b) =>
@@ -784,6 +817,8 @@ export default function ProductosPage() {
         createdSupply.conversion_factor || 1
       );
       const isSurface = isSurfaceSupply(createdSupply);
+      const hasUnitDims = isUnitSupplyWithDimensions(createdSupply);
+      const defaultDimUnit = (hasUnitDims && (createdSupply.unit_dimension_unit as "m" | "cm" | "mm")) || "cm";
       setEditSupplies((prev) => [
         ...prev,
         {
@@ -791,16 +826,19 @@ export default function ProductosPage() {
           name: createdSupply.name,
           use_unit: createdSupply.use_unit || "u",
           unit_cost: unitCost,
-          quantity: isSurface ? 0 : 1,
+          quantity: (isSurface || hasUnitDims) ? 0 : 1,
           current_price: createdSupply.current_price,
           purchase_unit: createdSupply.purchase_unit,
           purchase_quantity: createdSupply.purchase_quantity,
           conversion_factor: createdSupply.conversion_factor,
-          pieces: isSurface ? 1 : undefined,
-          width: isSurface ? "" : undefined,
-          widthUnit: isSurface ? "cm" : undefined,
-          length: isSurface ? "" : undefined,
-          lengthUnit: isSurface ? "cm" : undefined,
+          unit_width: createdSupply.unit_width,
+          unit_length: createdSupply.unit_length,
+          unit_dimension_unit: createdSupply.unit_dimension_unit,
+          pieces: (isSurface || hasUnitDims) ? 1 : undefined,
+          width: (isSurface || hasUnitDims) ? "" : undefined,
+          widthUnit: defaultDimUnit,
+          length: (isSurface || hasUnitDims) ? "" : undefined,
+          lengthUnit: defaultDimUnit,
         },
       ]);
       setSuccessToast(`¡Insumo "${createdSupply.name}" creado y agregado al producto!`);
@@ -822,7 +860,7 @@ export default function ProductosPage() {
     });
   };
 
-  // Actualizar dimensiones de insumo de superficie en edición
+  // Actualizar dimensiones de insumo de superficie o unidad con medidas en edición
   const handleUpdateEditSupplyDimensions = (
     index: number,
     patch: Partial<{
@@ -843,10 +881,24 @@ export default function ProductosPage() {
       const l = typeof merged.length === "number" ? merged.length : parseFloat(String(merged.length)) || 0;
       const wU = merged.widthUnit || "cm";
       const lU = merged.lengthUnit || "cm";
-      const targetUnit = getSurfaceTargetUnit(merged);
+      const hasUnitDims = isUnitSupplyWithDimensions(merged);
 
       if (w > 0 && l > 0) {
-        merged.quantity = calculateSurfaceRecipeQuantity(p, w, wU, l, lU, targetUnit);
+        if (hasUnitDims) {
+          merged.quantity = calculateUnitFractionQuantity({
+            pieces: p,
+            width: w,
+            widthUnit: wU,
+            length: l,
+            lengthUnit: lU,
+            unitWidth: merged.unit_width!,
+            unitLength: merged.unit_length!,
+            unitDimensionUnit: merged.unit_dimension_unit || "cm",
+          });
+        } else {
+          const targetUnit = getSurfaceTargetUnit(merged);
+          merged.quantity = calculateSurfaceRecipeQuantity(p, w, wU, l, lU, targetUnit);
+        }
       } else if (typeof current.quantity === "number" && current.quantity > 0 && (!merged.width || !merged.length)) {
         // Conservar la cantidad previa si aún no se completaron ambas dimensiones
         merged.quantity = current.quantity;
@@ -951,7 +1003,7 @@ export default function ProductosPage() {
       return;
     }
 
-    // Asegurar que insumos de superficie recalculen su cantidad si tienen medidas completas
+    // Asegurar que insumos de superficie o por unidad con medidas recalculen su cantidad si tienen medidas completas
     for (const s of editSupplies) {
       if (isSurfaceSupply(s)) {
         const p = typeof s.pieces === "number" ? s.pieces : parseFloat(String(s.pieces)) || 1;
@@ -959,6 +1011,22 @@ export default function ProductosPage() {
         const l = typeof s.length === "number" ? s.length : parseFloat(String(s.length)) || 0;
         if (w > 0 && l > 0) {
           s.quantity = calculateSurfaceRecipeQuantity(p, w, s.widthUnit || "cm", l, s.lengthUnit || "cm", getSurfaceTargetUnit(s));
+        }
+      } else if (isUnitSupplyWithDimensions(s)) {
+        const p = typeof s.pieces === "number" ? s.pieces : parseFloat(String(s.pieces)) || 1;
+        const w = typeof s.width === "number" ? s.width : parseFloat(String(s.width)) || 0;
+        const l = typeof s.length === "number" ? s.length : parseFloat(String(s.length)) || 0;
+        if (w > 0 && l > 0) {
+          s.quantity = calculateUnitFractionQuantity({
+            pieces: p,
+            width: w,
+            widthUnit: s.widthUnit || "cm",
+            length: l,
+            lengthUnit: s.lengthUnit || "cm",
+            unitWidth: s.unit_width!,
+            unitLength: s.unit_length!,
+            unitDimensionUnit: s.unit_dimension_unit || "cm",
+          });
         }
       }
     }
@@ -997,10 +1065,12 @@ export default function ProductosPage() {
         }
       }
 
-      // Serializar dimensiones estructuradas de insumos de superficie
+      // Serializar dimensiones estructuradas de insumos de superficie o unidad con medidas
       const supplyDimensions: Record<string, SupplyDimensionMeta> = {};
       for (const s of editSupplies) {
-        if (s.supply_id && isSurfaceSupply(s)) {
+        const isSurface = s.supply_id && isSurfaceSupply(s);
+        const hasUnitDims = s.supply_id && isUnitSupplyWithDimensions(s);
+        if (s.supply_id && (isSurface || hasUnitDims)) {
           const p = typeof s.pieces === "number" ? s.pieces : parseFloat(String(s.pieces)) || 1;
           const w = typeof s.width === "number" ? s.width : parseFloat(String(s.width)) || 0;
           const l = typeof s.length === "number" ? s.length : parseFloat(String(s.length)) || 0;
@@ -2520,7 +2590,16 @@ export default function ProductosPage() {
                                       }
                                       return null;
                                     })()}
-                                    {item.quantity} {supply?.use_unit || "u"} • {formatCurrency(unitCost)} /{supply?.use_unit || "u"}
+                                    {item.quantity} {supply?.use_unit || "u"}
+                                    {(() => {
+                                      if (isUnitSupply(supply)) {
+                                        const frac = getFriendlyFractionLabel(item.quantity, supply?.use_unit || "u");
+                                        if (frac) {
+                                          return <span className="text-neutral-500 font-semibold ml-1">({frac})</span>;
+                                        }
+                                      }
+                                      return null;
+                                    })()} • {formatCurrency(unitCost)} /{supply?.use_unit || "u"}
                                     {isModified && modInfo && (
                                       <span
                                         className={`font-semibold ml-1 ${
@@ -2995,8 +3074,11 @@ export default function ProductosPage() {
                       <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
                         {editSupplies.map((item, idx) => {
                           const isSurface = isSurfaceSupply(item);
+                          const hasUnitDims = isUnitSupplyWithDimensions(item);
+                          const isUnit = isUnitSupply(item);
                           const qty = typeof item.quantity === "number" ? item.quantity : parseFloat(String(item.quantity)) || 0;
                           const lineSubtotal = item.unit_cost * qty;
+                          const friendlyFrac = isUnit ? getFriendlyFractionLabel(item.quantity, item.use_unit) : null;
                           const modInfo = editModalModifiedSupplies.find(
                             (m) => m.supplyId === item.supply_id
                           );
@@ -3062,7 +3144,7 @@ export default function ProductosPage() {
                                 </button>
                               </div>
 
-                              {isSurface ? (
+                              {isSurface || hasUnitDims ? (
                                 <div className="pt-2 border-t border-neutral-100 space-y-2">
                                   {/* Fila 1: Dimensiones (Ancho y Largo compartiendo la misma fila horizontal) */}
                                   <div className="grid grid-cols-2 gap-2 w-full">
@@ -3129,17 +3211,23 @@ export default function ProductosPage() {
                                     </div>
                                   </div>
 
-                                  {/* Aviso para insumos medidos por superficie (m2 y cm2) */}
-                                  <p className="text-[11.5px] text-gray-500 leading-relaxed -mt-0.5 mb-1 px-0.5">
-                                    Ingresá el ancho y largo considerando el espacio total de material que vas a utilizar, incluido el sobrante.
-                                  </p>
+                                  {/* Aviso de corte o de superficie */}
+                                  {hasUnitDims ? (
+                                    <p className="text-[11px] text-gray-500 leading-relaxed -mt-0.5 mb-1 px-0.5">
+                                      Base: unidad de {item.unit_width} × {item.unit_length} {item.unit_dimension_unit || "cm"}. Ingresá las medidas de corte por pieza.
+                                    </p>
+                                  ) : (
+                                    <p className="text-[11.5px] text-gray-500 leading-relaxed -mt-0.5 mb-1 px-0.5">
+                                      Ingresá el ancho y largo considerando el espacio total de material que vas a utilizar, incluido el sobrante.
+                                    </p>
+                                  )}
 
                                   {/* Fila 2: Cantidad, Consumo Total y Subtotal */}
                                   <div className="flex items-center justify-between pt-1 border-t border-neutral-100 text-xs gap-2 flex-wrap sm:flex-nowrap">
-                                    {/* Cantidad */}
+                                    {/* Cantidad de piezas */}
                                     <div className="flex items-center gap-1.5">
                                       <label className="text-[11px] font-semibold text-neutral-600 flex-shrink-0">
-                                        Cantidad:
+                                        Piezas:
                                       </label>
                                       <input
                                         type="number"
@@ -3153,14 +3241,19 @@ export default function ProductosPage() {
                                     </div>
 
                                     {/* Consumo total y Subtotal a la derecha */}
-                                    <div className="flex items-center gap-2.5 ml-auto">
-                                      <div className="flex items-center gap-1.5">
+                                    <div className="flex items-center gap-2 ml-auto flex-wrap sm:flex-nowrap justify-end">
+                                      <div className="flex items-center gap-1.5 flex-wrap justify-end">
                                         <span className="text-[10px] text-neutral-400 font-medium">Consumo total:</span>
                                         <span className="text-[11px] font-bold text-neutral-700 bg-neutral-100 border border-neutral-200/60 px-2 py-0.5 rounded-lg whitespace-nowrap">
                                           {qty > 0
                                             ? `${qty.toLocaleString("es-AR", { maximumFractionDigits: 4 })} ${item.use_unit}`
                                             : `0 ${item.use_unit}`}
                                         </span>
+                                        {friendlyFrac && (
+                                          <span className="text-[10.5px] font-semibold text-[#1F7A4C] bg-[#DCF4D7]/70 border border-[#C3EBC0] px-1.5 py-0.5 rounded-md whitespace-nowrap">
+                                            {friendlyFrac}
+                                          </span>
+                                        )}
                                       </div>
                                       <div className="text-right pl-2 border-l border-neutral-200/60">
                                         <span className="text-[9px] text-neutral-400 block uppercase font-bold leading-none mb-0.5">Subtotal</span>
@@ -3172,8 +3265,8 @@ export default function ProductosPage() {
                                   </div>
                                 </div>
                               ) : (
-                                <div className="pt-2 border-t border-neutral-100 flex items-center justify-between gap-2">
-                                  <div className="flex items-center gap-1.5">
+                                <div className="pt-2 border-t border-neutral-100 flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
                                     <label className="text-[11px] font-semibold text-neutral-600 flex-shrink-0">
                                       Cantidad:
                                     </label>
@@ -3189,6 +3282,11 @@ export default function ProductosPage() {
                                     <span className="text-[10.5px] text-neutral-500 font-semibold">
                                       {item.use_unit}
                                     </span>
+                                    {friendlyFrac && (
+                                      <span className="text-[10.5px] font-semibold text-neutral-600 bg-neutral-100 border border-neutral-200/70 px-2 py-0.5 rounded-lg whitespace-nowrap">
+                                        {friendlyFrac}
+                                      </span>
+                                    )}
                                   </div>
 
                                   <div className="text-right">

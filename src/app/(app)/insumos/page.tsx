@@ -441,6 +441,11 @@ export default function InsumosPage() {
                         <span className="text-[10px] text-neutral-400 whitespace-nowrap">
                           {supply.purchase_quantity} {supply.purchase_unit}
                         </span>
+                        {supply.unit_width && supply.unit_length && (
+                          <span className="text-[10px] bg-neutral-100 text-neutral-600 px-1.5 py-0.5 rounded-md font-medium whitespace-nowrap">
+                            📐 {supply.unit_width} × {supply.unit_length} {supply.unit_dimension_unit || "cm"}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>

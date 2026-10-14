@@ -11,6 +11,7 @@ import {
   Search,
   Check,
   Printer,
+  Ruler,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -26,6 +27,9 @@ import { formDraftStorage } from "@/lib/formStorage";
 import {
   isDuplicateSupplyName,
   checkSupplyNameExists,
+  SupplyItem,
+  UnitDimensionUnit,
+  isUnitSupply,
 } from "@/lib/supplies";
 import {
   matchSourceInsumos,
@@ -33,18 +37,7 @@ import {
   getDefaultSourceSupplyName,
 } from "@/lib/printingCalculations";
 
-export interface SupplyItem {
-  id?: string;
-  name: string;
-  category: "materia_prima" | "packaging" | "otro";
-  purchase_unit: string;
-  purchase_quantity: number;
-  current_price: number;
-  use_unit: string;
-  conversion_factor: number;
-  created_at?: string;
-  updated_at?: string;
-}
+export type { SupplyItem, UnitDimensionUnit };
 
 interface SupplyModalProps {
   isOpen: boolean;
@@ -144,6 +137,11 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
   const [dimWidthUnit, setDimWidthUnit] = useState<"m" | "cm" | "mm">("cm");
   const [dimLength, setDimLength] = useState<number | string>("");
   const [dimLengthUnit, setDimLengthUnit] = useState<"m" | "cm" | "mm">("m");
+
+  // Medidas opcionales para insumos por unidad (ej. planchas de goma, acrílico, placas)
+  const [unitWidth, setUnitWidth] = useState<number | string>("");
+  const [unitLength, setUnitLength] = useState<number | string>("");
+  const [unitDimensionUnit, setUnitDimensionUnit] = useState<UnitDimensionUnit>("cm");
 
   const [currentPrice, setCurrentPrice] = useState<number | string>("");
   const [useUnit, setUseUnit] = useState("g");
@@ -817,9 +815,13 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
     };
   }, [isOpen]);
 
-  // Normalización y detección de unidades de superficie (m2 y cm2)
+  // Normalización y detección de unidades de superficie (m2 y cm2) y unidad
   const normPurchase = useMemo(() => normalizeUnit(purchaseUnit), [purchaseUnit]);
   const isSurfaceUnit = normPurchase === "m2" || normPurchase === "cm2";
+  const isUnitPurchase = useMemo(
+    () => isUnitSupply({ purchase_unit: purchaseUnit, use_unit: useUnit }),
+    [purchaseUnit, useUnit]
+  );
 
   // Cálculo de superficie automático: Ancho x Largo -> m2 o cm2
   useEffect(() => {
@@ -864,6 +866,9 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
       setDimWidthUnit("cm");
       setDimLength("");
       setDimLengthUnit("m");
+      setUnitWidth(initialSupply.unit_width ?? "");
+      setUnitLength(initialSupply.unit_length ?? "");
+      setUnitDimensionUnit((initialSupply.unit_dimension_unit as UnitDimensionUnit) || "cm");
 
       const matched = findMatchingPreset(initialSupply.purchase_unit, initialSupply.use_unit);
       if (matched) {
@@ -879,7 +884,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
       try {
         const draft = formDraftStorage.get<any>("haba_draft_supply_modal");
         if (draft) {
-          if (draft.name || draft.currentPrice || draft.dimWidth || draft.dimLength) {
+          if (draft.name || draft.currentPrice || draft.dimWidth || draft.dimLength || draft.unitWidth || draft.unitLength) {
             setName(draft.name || "");
             setCategory(draft.category || "materia_prima");
             setPurchaseUnit(draft.purchaseUnit || "kg");
@@ -892,6 +897,9 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
             if (draft.dimWidthUnit) setDimWidthUnit(draft.dimWidthUnit);
             if (draft.dimLength !== undefined) setDimLength(draft.dimLength);
             if (draft.dimLengthUnit) setDimLengthUnit(draft.dimLengthUnit);
+            if (draft.unitWidth !== undefined) setUnitWidth(draft.unitWidth);
+            if (draft.unitLength !== undefined) setUnitLength(draft.unitLength);
+            if (draft.unitDimensionUnit) setUnitDimensionUnit(draft.unitDimensionUnit);
             restored = true;
           }
         }
@@ -912,6 +920,9 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
         setDimWidthUnit("cm");
         setDimLength("");
         setDimLengthUnit("m");
+        setUnitWidth("");
+        setUnitLength("");
+        setUnitDimensionUnit("cm");
       }
       setError(null);
     }
@@ -921,7 +932,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
   useEffect(() => {
     if (!isOpen || initialSupply) return;
     try {
-      if (name.trim() || currentPrice || dimWidth || dimLength) {
+      if (name.trim() || currentPrice || dimWidth || dimLength || unitWidth || unitLength) {
         formDraftStorage.set("haba_draft_supply_modal", {
           name,
           category,
@@ -935,6 +946,9 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
           dimWidthUnit,
           dimLength,
           dimLengthUnit,
+          unitWidth,
+          unitLength,
+          unitDimensionUnit,
         });
       }
     } catch {
@@ -955,6 +969,9 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
     dimWidthUnit,
     dimLength,
     dimLengthUnit,
+    unitWidth,
+    unitLength,
+    unitDimensionUnit,
   ]);
 
   // Preset activo actual
@@ -1123,6 +1140,17 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
           }
         }
 
+        const parsedUnitWidth =
+          isUnitPurchase && unitWidth !== "" && !isNaN(Number(unitWidth)) && Number(unitWidth) > 0
+            ? Number(unitWidth)
+            : null;
+        const parsedUnitLength =
+          isUnitPurchase && unitLength !== "" && !isNaN(Number(unitLength)) && Number(unitLength) > 0
+            ? Number(unitLength)
+            : null;
+        const parsedUnitDimUnit =
+          parsedUnitWidth && parsedUnitLength ? (unitDimensionUnit || "cm") : null;
+
         const { error: updateError } = await supabase
           .from("supplies")
           .update({
@@ -1133,6 +1161,9 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
             current_price: parsedPrice,
             use_unit: useUnit.trim(),
             conversion_factor: parsedConversion,
+            unit_width: parsedUnitWidth,
+            unit_length: parsedUnitLength,
+            unit_dimension_unit: parsedUnitDimUnit,
             updated_at: nowIso,
           })
           .eq("id", initialSupply.id);
@@ -1140,6 +1171,17 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
         if (updateError) throw updateError;
       } else {
         const nowIso = new Date().toISOString();
+        const parsedUnitWidth =
+          isUnitPurchase && unitWidth !== "" && !isNaN(Number(unitWidth)) && Number(unitWidth) > 0
+            ? Number(unitWidth)
+            : null;
+        const parsedUnitLength =
+          isUnitPurchase && unitLength !== "" && !isNaN(Number(unitLength)) && Number(unitLength) > 0
+            ? Number(unitLength)
+            : null;
+        const parsedUnitDimUnit =
+          parsedUnitWidth && parsedUnitLength ? (unitDimensionUnit || "cm") : null;
+
         const { data: newSupply, error: insertError } = await supabase
           .from("supplies")
           .insert({
@@ -1151,6 +1193,9 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
             current_price: parsedPrice,
             use_unit: useUnit.trim(),
             conversion_factor: parsedConversion,
+            unit_width: parsedUnitWidth,
+            unit_length: parsedUnitLength,
+            unit_dimension_unit: parsedUnitDimUnit,
           })
           .select("*")
           .single();
@@ -1172,7 +1217,29 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
         return;
       }
 
-      onSuccess(initialSupply as SupplyItem);
+      const updatedItem: SupplyItem = {
+        ...initialSupply,
+        name: name.trim(),
+        category,
+        purchase_unit: purchaseUnit.trim(),
+        purchase_quantity: parsedQuantity,
+        current_price: parsedPrice,
+        use_unit: useUnit.trim(),
+        conversion_factor: parsedConversion,
+        unit_width:
+          isUnitPurchase && unitWidth !== "" && Number(unitWidth) > 0 ? Number(unitWidth) : null,
+        unit_length:
+          isUnitPurchase && unitLength !== "" && Number(unitLength) > 0 ? Number(unitLength) : null,
+        unit_dimension_unit:
+          isUnitPurchase &&
+          unitWidth !== "" &&
+          unitLength !== "" &&
+          Number(unitWidth) > 0 &&
+          Number(unitLength) > 0
+            ? unitDimensionUnit || "cm"
+            : null,
+      };
+      onSuccess(updatedItem);
       onClose();
     } catch (err: any) {
       console.error("Error saving supply:", err);
@@ -1618,6 +1685,71 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
                 </div>
 
                 {renderUnitDropdown()}
+              </div>
+            )}
+
+            {/* Medidas opcionales para insumos por unidad (ej. planchas de goma, acrílico, placas) */}
+            {isUnitPurchase && (
+              <div className="bg-[#F8FAF7] border border-[#E4EBE2] p-3 rounded-2xl space-y-2 animate-in fade-in duration-200">
+                <div className="flex items-center gap-1.5">
+                  <Ruler className="w-3.5 h-3.5 text-[#3BB578]" />
+                  <span className="text-[11px] font-bold text-[#2B2B2B]">
+                    Medidas de la unidad (opcional)
+                  </span>
+                  <span className="text-[10px] text-[#7A7A7A] ml-auto">
+                    Planchas, placas, etc.
+                  </span>
+                </div>
+                <p className="text-[10.5px] text-[#555] leading-snug">
+                  Definí el ancho y largo si vas a fraccionar este insumo por corte de piezas en tus recetas.
+                </p>
+                <div className="grid grid-cols-3 gap-2 pt-1">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-semibold text-[#555] block">
+                      Ancho
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0.001"
+                      value={unitWidth}
+                      onChange={(e) => setUnitWidth(e.target.value)}
+                      placeholder="Ej: 30"
+                      className="w-full h-8 px-2.5 text-xs font-semibold text-[#2B2B2B] bg-white border border-[#DDE4DA] rounded-xl focus:border-[#3BB578] outline-none transition"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-semibold text-[#555] block">
+                      Largo
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0.001"
+                      value={unitLength}
+                      onChange={(e) => setUnitLength(e.target.value)}
+                      placeholder="Ej: 40"
+                      className="w-full h-8 px-2.5 text-xs font-semibold text-[#2B2B2B] bg-white border border-[#DDE4DA] rounded-xl focus:border-[#3BB578] outline-none transition"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-semibold text-[#555] block">
+                      Unidad
+                    </label>
+                    <div className="relative h-8">
+                      <select
+                        value={unitDimensionUnit}
+                        onChange={(e) => setUnitDimensionUnit(e.target.value as UnitDimensionUnit)}
+                        className="w-full h-full px-2.5 pr-6 text-xs font-bold text-[#2B2B2B] bg-white border border-[#DDE4DA] rounded-xl focus:border-[#3BB578] outline-none transition appearance-none cursor-pointer"
+                      >
+                        <option value="cm">cm</option>
+                        <option value="mm">mm</option>
+                        <option value="m">m</option>
+                      </select>
+                      <ChevronDown className="w-3 h-3 text-neutral-400 pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" />
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
 

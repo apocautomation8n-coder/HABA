@@ -54,6 +54,12 @@ import {
 } from "@/lib/products";
 import { matchesSearch } from "@/lib/search";
 import { formDraftStorage } from "@/lib/formStorage";
+import {
+  isUnitSupply,
+  isUnitSupplyWithDimensions,
+  calculateUnitFractionQuantity,
+  getFriendlyFractionLabel,
+} from "@/lib/supplies";
 
 interface SelectedSupply {
   supply: SupplyItem;
@@ -391,7 +397,9 @@ export default function NuevoProductoPage() {
   const handleAddSupply = (supply: SupplyItem) => {
     if (selectedSupplies.some((s) => s.supply.id === supply.id)) return;
     const isSurface = isSurfaceSupply(supply);
-    if (isSurface) {
+    const hasUnitDims = isUnitSupplyWithDimensions(supply);
+    if (isSurface || hasUnitDims) {
+      const defaultDimUnit = (hasUnitDims && (supply.unit_dimension_unit as "m" | "cm" | "mm")) || "cm";
       setSelectedSupplies((prev) => [
         ...prev,
         {
@@ -399,9 +407,9 @@ export default function NuevoProductoPage() {
           quantity: 0,
           pieces: 1,
           width: "",
-          widthUnit: "cm",
+          widthUnit: defaultDimUnit,
           length: "",
-          lengthUnit: "cm",
+          lengthUnit: defaultDimUnit,
         },
       ]);
     } else {
@@ -433,7 +441,7 @@ export default function NuevoProductoPage() {
     });
   };
 
-  // Cambiar dimensiones de insumo de superficie
+  // Cambiar dimensiones de insumo de superficie o insumo por unidad con medidas
   const handleUpdateSupplyDimensions = (
     index: number,
     patch: Partial<{
@@ -454,10 +462,24 @@ export default function NuevoProductoPage() {
       const l = typeof merged.length === "number" ? merged.length : parseFloat(String(merged.length)) || 0;
       const wU = merged.widthUnit || "cm";
       const lU = merged.lengthUnit || "cm";
-      const targetUnit = getSurfaceTargetUnit(merged.supply);
+      const hasUnitDims = isUnitSupplyWithDimensions(merged.supply);
 
       if (w > 0 && l > 0) {
-        merged.quantity = calculateSurfaceRecipeQuantity(p, w, wU, l, lU, targetUnit);
+        if (hasUnitDims) {
+          merged.quantity = calculateUnitFractionQuantity({
+            pieces: p,
+            width: w,
+            widthUnit: wU,
+            length: l,
+            lengthUnit: lU,
+            unitWidth: merged.supply.unit_width!,
+            unitLength: merged.supply.unit_length!,
+            unitDimensionUnit: merged.supply.unit_dimension_unit || "cm",
+          });
+        } else {
+          const targetUnit = getSurfaceTargetUnit(merged.supply);
+          merged.quantity = calculateSurfaceRecipeQuantity(p, w, wU, l, lU, targetUnit);
+        }
       } else if (typeof current.quantity === "number" && current.quantity > 0 && (!merged.width || !merged.length)) {
         // Conservar la cantidad previa si aún no se completaron ambas dimensiones
         merged.quantity = current.quantity;
@@ -594,7 +616,7 @@ export default function NuevoProductoPage() {
       return;
     }
 
-    // Asegurar que insumos de superficie recalculen su cantidad si tienen medidas completas
+    // Asegurar que insumos de superficie o por unidad con medidas recalculen su cantidad si tienen medidas completas
     for (const s of selectedSupplies) {
       if (s.supply && isSurfaceSupply(s.supply)) {
         const p = typeof s.pieces === "number" ? s.pieces : parseFloat(String(s.pieces)) || 1;
@@ -602,6 +624,22 @@ export default function NuevoProductoPage() {
         const l = typeof s.length === "number" ? s.length : parseFloat(String(s.length)) || 0;
         if (w > 0 && l > 0) {
           s.quantity = calculateSurfaceRecipeQuantity(p, w, s.widthUnit || "cm", l, s.lengthUnit || "cm", getSurfaceTargetUnit(s.supply));
+        }
+      } else if (s.supply && isUnitSupplyWithDimensions(s.supply)) {
+        const p = typeof s.pieces === "number" ? s.pieces : parseFloat(String(s.pieces)) || 1;
+        const w = typeof s.width === "number" ? s.width : parseFloat(String(s.width)) || 0;
+        const l = typeof s.length === "number" ? s.length : parseFloat(String(s.length)) || 0;
+        if (w > 0 && l > 0) {
+          s.quantity = calculateUnitFractionQuantity({
+            pieces: p,
+            width: w,
+            widthUnit: s.widthUnit || "cm",
+            length: l,
+            lengthUnit: s.lengthUnit || "cm",
+            unitWidth: s.supply.unit_width!,
+            unitLength: s.supply.unit_length!,
+            unitDimensionUnit: s.supply.unit_dimension_unit || "cm",
+          });
         }
       }
     }
@@ -632,10 +670,12 @@ export default function NuevoProductoPage() {
         return;
       }
 
-      // Serializar dimensiones estructuradas de insumos de superficie
+      // Serializar dimensiones estructuradas de insumos de superficie o unidad con medidas
       const supplyDimensions: Record<string, SupplyDimensionMeta> = {};
       for (const s of selectedSupplies) {
-        if (s.supply?.id && isSurfaceSupply(s.supply)) {
+        const isSurface = s.supply?.id && isSurfaceSupply(s.supply);
+        const hasUnitDims = s.supply?.id && isUnitSupplyWithDimensions(s.supply);
+        if (s.supply?.id && (isSurface || hasUnitDims)) {
           const p = typeof s.pieces === "number" ? s.pieces : parseFloat(String(s.pieces)) || 1;
           const w = typeof s.width === "number" ? s.width : parseFloat(String(s.width)) || 0;
           const l = typeof s.length === "number" ? s.length : parseFloat(String(s.length)) || 0;
@@ -1065,6 +1105,8 @@ export default function NuevoProductoPage() {
                 <div className="space-y-2.5">
                   {selectedSupplies.map((item, idx) => {
                     const isSurface = isSurfaceSupply(item.supply);
+                    const hasUnitDims = isUnitSupplyWithDimensions(item.supply);
+                    const isUnit = isUnitSupply(item.supply);
                     const unitCost = calculateUnitCost(
                       item.supply.current_price,
                       item.supply.purchase_quantity,
@@ -1072,6 +1114,7 @@ export default function NuevoProductoPage() {
                     );
                     const itemQty = typeof item.quantity === "number" ? item.quantity : parseFloat(String(item.quantity)) || 0;
                     const subtotal = unitCost * itemQty;
+                    const friendlyFrac = isUnit ? getFriendlyFractionLabel(item.quantity, item.supply.use_unit) : null;
 
                     return (
                       <div
@@ -1097,7 +1140,7 @@ export default function NuevoProductoPage() {
                           </button>
                         </div>
 
-                        {isSurface ? (
+                        {isSurface || hasUnitDims ? (
                           <div className="pt-2 border-t border-neutral-200/50 space-y-2">
                             {/* Fila 1: Dimensiones (Ancho y Largo compartiendo la misma fila horizontal) */}
                             <div className="grid grid-cols-2 gap-2 w-full">
@@ -1164,17 +1207,23 @@ export default function NuevoProductoPage() {
                               </div>
                             </div>
 
-                            {/* Aviso para insumos medidos por superficie (m2 y cm2) */}
-                            <p className="text-[11.5px] text-gray-500 leading-relaxed -mt-0.5 mb-1 px-0.5">
-                              Ingresá el ancho y largo considerando el espacio total de material que vas a utilizar, incluido el sobrante.
-                            </p>
+                            {/* Aviso de corte o de superficie */}
+                            {hasUnitDims ? (
+                              <p className="text-[11px] text-gray-500 leading-relaxed -mt-0.5 mb-1 px-0.5">
+                                Base: unidad de {item.supply.unit_width} × {item.supply.unit_length} {item.supply.unit_dimension_unit || "cm"}. Ingresá las medidas de corte por pieza.
+                              </p>
+                            ) : (
+                              <p className="text-[11.5px] text-gray-500 leading-relaxed -mt-0.5 mb-1 px-0.5">
+                                Ingresá el ancho y largo considerando el espacio total de material que vas a utilizar, incluido el sobrante.
+                              </p>
+                            )}
 
                             {/* Fila 2: Cantidad, Consumo Total y Subtotal */}
                             <div className="flex items-center justify-between pt-1 border-t border-neutral-100 text-xs gap-2 flex-wrap sm:flex-nowrap">
-                              {/* Cantidad */}
+                              {/* Cantidad de piezas */}
                               <div className="flex items-center gap-1.5">
                                 <label className="text-[11px] font-semibold text-neutral-600 flex-shrink-0">
-                                  Cantidad:
+                                  Piezas:
                                 </label>
                                 <input
                                   type="number"
@@ -1188,14 +1237,19 @@ export default function NuevoProductoPage() {
                               </div>
 
                               {/* Consumo total y Subtotal a la derecha */}
-                              <div className="flex items-center gap-2.5 ml-auto">
-                                <div className="flex items-center gap-1.5">
+                              <div className="flex items-center gap-2 ml-auto flex-wrap sm:flex-nowrap justify-end">
+                                <div className="flex items-center gap-1.5 flex-wrap justify-end">
                                   <span className="text-[10px] text-neutral-400 font-medium">Consumo total:</span>
                                   <span className="text-[11px] font-bold text-neutral-700 bg-neutral-100 border border-neutral-200/60 px-2 py-0.5 rounded-lg whitespace-nowrap">
                                     {itemQty > 0
                                       ? `${itemQty.toLocaleString("es-AR", { maximumFractionDigits: 4 })} ${item.supply.use_unit}`
                                       : `0 ${item.supply.use_unit}`}
                                   </span>
+                                  {friendlyFrac && (
+                                    <span className="text-[10.5px] font-semibold text-[#1F7A4C] bg-[#DCF4D7]/70 border border-[#C3EBC0] px-1.5 py-0.5 rounded-md whitespace-nowrap">
+                                      {friendlyFrac}
+                                    </span>
+                                  )}
                                 </div>
                                 <div className="text-right pl-2 border-l border-neutral-200/60">
                                   <span className="text-[9px] text-neutral-400 block uppercase font-bold leading-none mb-0.5">Subtotal</span>
@@ -1207,8 +1261,8 @@ export default function NuevoProductoPage() {
                             </div>
                           </div>
                         ) : (
-                          <div className="flex items-center justify-between pt-2 border-t border-neutral-200/50 gap-3">
-                            <div className="flex items-center gap-2">
+                          <div className="flex items-center justify-between pt-2 border-t border-neutral-200/50 gap-3 flex-wrap sm:flex-nowrap">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <label className="text-[11px] font-semibold text-neutral-600 flex-shrink-0">
                                 Cantidad:
                               </label>
@@ -1226,6 +1280,11 @@ export default function NuevoProductoPage() {
                                   {item.supply.use_unit}
                                 </span>
                               </div>
+                              {friendlyFrac && (
+                                <span className="text-[10.5px] font-semibold text-neutral-600 bg-neutral-100 border border-neutral-200/70 px-2 py-0.5 rounded-lg whitespace-nowrap">
+                                  {friendlyFrac}
+                                </span>
+                              )}
                             </div>
 
                             <div className="text-right">

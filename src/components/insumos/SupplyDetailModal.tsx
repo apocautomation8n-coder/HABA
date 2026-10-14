@@ -141,6 +141,14 @@ export const SupplyDetailModal: React.FC<SupplyDetailModalProps> = ({
                 1 {supply.purchase_unit} = {supply.conversion_factor} {supply.use_unit}
               </span>
             </div>
+            {supply.unit_width && supply.unit_length && (
+              <div className="flex justify-between py-1 border-b border-neutral-200/50">
+                <span className="text-neutral-600">Medidas de la Unidad:</span>
+                <span className="font-bold text-neutral-800">
+                  {supply.unit_width} × {supply.unit_length} {supply.unit_dimension_unit || "cm"}
+                </span>
+              </div>
+            )}
             <div className="flex justify-between py-1">
               <span className="text-neutral-600">Rendimiento Total:</span>
               <span className="font-extrabold text-[#1F7A4C]">
