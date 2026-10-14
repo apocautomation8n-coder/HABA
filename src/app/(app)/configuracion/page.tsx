@@ -34,6 +34,8 @@ import {
 } from "lucide-react";
 import { ProfileAvatar, isRealUserAvatar } from "@/components/ProfileAvatar";
 import { HabaMascot } from "@/components/HabaMascot";
+import { WhatsAppIcon } from "@/components/WhatsAppIcon";
+import { buildProfileSupportWhatsAppUrl } from "@/lib/support";
 import { createClient } from "@/lib/supabase/client";
 import { checkIsAdmin } from "@/lib/auth-helpers";
 import { formatCurrency } from "@/lib/units";
@@ -93,6 +95,13 @@ export default function SettingsPage() {
   const [savingLabor, setSavingLabor] = useState<boolean>(false);
   const [laborSavedSuccess, setLaborSavedSuccess] = useState<boolean>(false);
   const [laborError, setLaborError] = useState<string | null>(null);
+
+  // Enlace dinámico de WhatsApp para soporte HABA (null si NEXT_PUBLIC_SUPPORT_WHATSAPP no está configurada)
+  const supportWhatsAppUrl = buildProfileSupportWhatsAppUrl({
+    accountNumber,
+    businessName,
+    fullName,
+  });
 
   useEffect(() => {
     async function loadUser() {
@@ -656,6 +665,45 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
+
+      {/* Tarjeta Destacada: Contactar a soporte HABA */}
+      {supportWhatsAppUrl && (
+        <div className="bg-gradient-to-br from-[#F6FBF7] via-white to-[#EEF8F1] p-5 rounded-3xl border border-[#CDEBD3] shadow-sm space-y-3.5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-[#25D366]/15 text-[#128C7E] flex items-center justify-center flex-shrink-0 shadow-xs">
+                <WhatsAppIcon className="w-5 h-5 text-[#25D366]" />
+              </div>
+              <div>
+                <h3 className="text-[11px] font-bold uppercase tracking-wider text-[#1F7A4C]">
+                  Soporte y Asistencia
+                </h3>
+                <p className="text-sm font-bold text-neutral-800">
+                  ¿Necesitás ayuda con tu cuenta?
+                </p>
+              </div>
+            </div>
+            <span className="text-[10px] font-bold bg-[#DCF4D7] text-[#1F7A4C] px-2.5 py-0.5 rounded-full border border-[#C3EBC0]">
+              Canal Directo
+            </span>
+          </div>
+
+          <p className="text-xs text-neutral-600 leading-relaxed">
+            Escribile directamente a Gio para resolver consultas sobre el uso de HABA, dudas con tu suscripción o solicitar la baja de tu cuenta.
+          </p>
+
+          <a
+            href={supportWhatsAppUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            id="btn-soporte-whatsapp-perfil"
+            className="w-full py-3 px-4 bg-[#25D366] hover:bg-[#20BD5A] active:scale-[0.99] text-white font-bold rounded-2xl text-xs transition flex items-center justify-center gap-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#25D366]/40"
+          >
+            <WhatsAppIcon className="w-4 h-4 text-white" />
+            <span>Contactar a soporte HABA</span>
+          </a>
+        </div>
+      )}
 
       {/* Formulario de Emprendimiento */}
       <div className="bg-white p-5 rounded-3xl border border-[#EAF0E8] shadow-sm">

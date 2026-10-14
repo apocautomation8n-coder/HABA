@@ -4,8 +4,10 @@ import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Mail, Lock, Eye, EyeOff, AlertCircle, Sparkles } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
+import { WhatsAppIcon } from "@/components/WhatsAppIcon";
 import { createClient } from "@/lib/supabase/client";
 import { checkIsAdmin } from "@/lib/auth-helpers";
+import { buildLoginSupportWhatsAppUrl } from "@/lib/support";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -17,6 +19,9 @@ export default function LoginPage() {
   const [rememberMe, setRememberMe] = useState(true);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Enlace dinámico de WhatsApp para soporte HABA en caso de problemas de acceso o cuenta suspendida
+  const supportWhatsAppUrl = buildLoginSupportWhatsAppUrl({ email });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -98,9 +103,25 @@ export default function LoginPage() {
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Mensaje de Error */}
           {errorMessage && (
-            <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl flex items-start gap-2 text-rose-700 text-xs">
-              <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-              <span>{errorMessage}</span>
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl space-y-2 text-rose-700 text-xs">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0 text-rose-600" />
+                <span className="leading-snug">{errorMessage}</span>
+              </div>
+              {supportWhatsAppUrl && (
+                <div className="pt-2 border-t border-rose-200/60 flex items-center justify-between">
+                  <span className="text-[11px] text-rose-600">¿Problemas con tu acceso?</span>
+                  <a
+                    href={supportWhatsAppUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 font-bold text-[#1F7A4C] hover:text-[#165a38] hover:underline"
+                  >
+                    <WhatsAppIcon className="w-3.5 h-3.5 text-[#25D366]" />
+                    <span>Contactar a soporte HABA</span>
+                  </a>
+                </div>
+              )}
             </div>
           )}
 
@@ -166,15 +187,26 @@ export default function LoginPage() {
               />
               <span>Recordarme</span>
             </label>
-            <button
-              type="button"
-              onClick={() =>
-                alert("Contactate con Gio de Amaoto Craft para restablecer tu acceso.")
-              }
-              className="text-[#3BB578] hover:underline font-medium"
-            >
-              ¿Olvidaste tu contraseña?
-            </button>
+            {supportWhatsAppUrl ? (
+              <a
+                href={supportWhatsAppUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[#3BB578] hover:underline font-medium"
+              >
+                ¿Olvidaste tu contraseña?
+              </a>
+            ) : (
+              <button
+                type="button"
+                onClick={() =>
+                  alert("Contactate con Gio de Amaoto Craft para restablecer tu acceso.")
+                }
+                className="text-[#3BB578] hover:underline font-medium"
+              >
+                ¿Olvidaste tu contraseña?
+              </button>
+            )}
           </div>
 
           {/* Botón Principal */}
@@ -222,6 +254,25 @@ export default function LoginPage() {
             Las altas se activan con tu suscripción a Amaoto Craft
           </p>
         </div>
+
+        {/* Contacto Soporte HABA si hay problemas de acceso o cuenta suspendida */}
+        {supportWhatsAppUrl && (
+          <div className="mt-4 pt-3.5 border-t border-neutral-100 flex flex-col items-center gap-2 text-center">
+            <p className="text-xs text-neutral-500">
+              ¿Problemas para ingresar o tu cuenta está suspendida?
+            </p>
+            <a
+              href={supportWhatsAppUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              id="btn-soporte-whatsapp-login"
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-[#DCF4D7] text-[#1F7A4C] hover:bg-[#C3EBC0] text-xs font-bold transition active:scale-95 shadow-2xs"
+            >
+              <WhatsAppIcon className="w-3.5 h-3.5 text-[#25D366]" />
+              <span>Contactar a soporte HABA</span>
+            </a>
+          </div>
+        )}
       </div>
 
       {/* Footer mascota tip */}
