@@ -8,6 +8,7 @@ export async function updateSession(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname;
   const isAuthPage = pathname.startsWith("/login");
+  const isPublicPage = pathname.startsWith("/terminos");
   const isPublicStatic =
     pathname.startsWith("/_next") ||
     pathname.startsWith("/api") ||
@@ -15,7 +16,7 @@ export async function updateSession(request: NextRequest) {
     pathname === "/favicon.ico";
 
   // Si es un recurso estático o API, no interferir con la sesión
-  if (isPublicStatic) {
+  if (isPublicStatic || isPublicPage) {
     return supabaseResponse;
   }
 

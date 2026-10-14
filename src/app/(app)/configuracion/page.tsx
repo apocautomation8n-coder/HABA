@@ -36,6 +36,7 @@ import { ProfileAvatar, isRealUserAvatar } from "@/components/ProfileAvatar";
 import { HabaMascot } from "@/components/HabaMascot";
 import { WhatsAppIcon } from "@/components/WhatsAppIcon";
 import { buildProfileSupportWhatsAppUrl } from "@/lib/support";
+import { isTermsEnabled } from "@/lib/terms";
 import { createClient } from "@/lib/supabase/client";
 import { checkIsAdmin } from "@/lib/auth-helpers";
 import { formatCurrency } from "@/lib/units";
@@ -703,6 +704,18 @@ export default function SettingsPage() {
             <span>Contactar a soporte HABA</span>
           </a>
         </div>
+      )}
+
+      {isTermsEnabled() && (
+        <a
+          href="/terminos"
+          target="_blank"
+          rel="noopener noreferrer"
+          id="link-terminos-perfil"
+          className="block text-center text-xs font-semibold text-[#1F7A4C] underline underline-offset-2 hover:text-[#3BB578]"
+        >
+          Ver bases y condiciones
+        </a>
       )}
 
       {/* Formulario de Emprendimiento */}

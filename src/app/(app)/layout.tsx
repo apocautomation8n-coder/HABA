@@ -1,6 +1,7 @@
 import React from "react";
 import { AppHeader } from "@/components/AppHeader";
 import { BottomNav } from "@/components/BottomNav";
+import { TermsGate } from "@/components/TermsGate";
 
 export default function AppLayout({
   children,
@@ -12,6 +13,7 @@ export default function AppLayout({
       <AppHeader />
       <div className="flex-1 w-full">{children}</div>
       <BottomNav />
+      <TermsGate />
     </div>
   );
 }

@@ -8,6 +8,7 @@ import { WhatsAppIcon } from "@/components/WhatsAppIcon";
 import { createClient } from "@/lib/supabase/client";
 import { checkIsAdmin } from "@/lib/auth-helpers";
 import { buildLoginSupportWhatsAppUrl } from "@/lib/support";
+import { isTermsEnabled } from "@/lib/terms";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -279,6 +280,17 @@ export default function LoginPage() {
       <div className="mt-6 text-center text-xs text-neutral-400">
         Vos contame qué hacés. Haba hace las cuentas. 🌱
       </div>
+
+      {isTermsEnabled() && (
+        <a
+          href="/terminos"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-2 text-[11px] text-neutral-400 underline underline-offset-2 hover:text-[#1F7A4C]"
+        >
+          Bases y condiciones
+        </a>
+      )}
     </div>
   );
 }
