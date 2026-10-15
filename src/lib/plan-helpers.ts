@@ -203,3 +203,48 @@ export function buildInitialUserMetadata(options?: {
     ...(options?.termsAcceptedAt ? { terms_accepted_at: options.termsAcceptedAt } : {}),
   };
 }
+
+/**
+ * Determina si un plan se encuentra vencido según su fecha de fin y estado de cuenta (T6).
+ */
+export function isPlanExpired(
+  endDateStr: string | null | undefined,
+  accountStatus?: AccountStatus | string | null
+): boolean {
+  if (accountStatus === "suspended" || accountStatus === "deactivated") {
+    return true;
+  }
+  if (!endDateStr) {
+    return false;
+  }
+  const statusInfo = getPlanStatusInfo(endDateStr);
+  return statusInfo.status === "vencido";
+}
+
+/**
+ * Determina si faltan N días o menos para el vencimiento del plan (pre-vencimiento preventivo T6).
+ * Por defecto thresholdDays = 3 (3 días o menos).
+ */
+export function isPlanExpiringSoon(
+  endDateStr: string | null | undefined,
+  thresholdDays: number = 3
+): { isExpiringSoon: boolean; remainingDays: number } {
+  if (!endDateStr) {
+    return { isExpiringSoon: false, remainingDays: 0 };
+  }
+  const statusInfo = getPlanStatusInfo(endDateStr);
+  if (statusInfo.status === "vencido") {
+    return { isExpiringSoon: false, remainingDays: statusInfo.remainingDays };
+  }
+  const isExpiringSoon =
+    statusInfo.remainingDays >= 0 && statusInfo.remainingDays <= thresholdDays;
+  return { isExpiringSoon, remainingDays: statusInfo.remainingDays };
+}
+
+/**
+ * Obtiene el link de suscripción / pago configurado para Mercado Pago (T6).
+ */
+export function getSubscriptionUrl(): string {
+  return process.env.NEXT_PUBLIC_MP_SUBSCRIPTION_URL || "";
+}
+

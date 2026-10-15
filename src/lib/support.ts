@@ -99,3 +99,30 @@ export function buildSupportWhatsAppUrl(options?: {
   return buildLoginSupportWhatsAppUrl({ email: options?.email });
 }
 
+/**
+ * Genera el enlace de WhatsApp para usuarias con plan vencido (T6)
+ * Incluye número de cuenta, nombre de emprendimiento y solicitud de reactivación.
+ */
+export function buildPlanExpiredSupportWhatsAppUrl(data?: SupportProfileData & { email?: string | null }): string | null {
+  const phone = getSupportWhatsAppNumber();
+  if (!phone) return null;
+
+  const accountNum = data?.accountNumber?.trim();
+  const name = data?.businessName?.trim() || data?.fullName?.trim();
+  let idText = "";
+  if (accountNum && name) {
+    idText = `la cuenta #${accountNum} (${name})`;
+  } else if (accountNum) {
+    idText = `la cuenta #${accountNum}`;
+  } else if (name) {
+    idText = `mi cuenta (${name})`;
+  } else {
+    idText = "mi cuenta";
+  }
+
+  const emailPart = data?.email?.trim() ? ` Correo: ${data.email.trim()}.` : "";
+  const message = `¡Hola Gio! Mi período de prueba en HABA finalizó (${idText}).${emailPart} Me gustaría reactivar mi cuenta para continuar usándola.`;
+  return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+}
+
+

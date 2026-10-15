@@ -56,6 +56,8 @@ interface UserProfile {
   phone?: string;
   is_new?: boolean;
   registration_source?: string;
+  mp_status?: string | null;
+  mp_preapproval_id?: string | null;
 }
 
 type QuickFilter = "todos" | "activos" | "proximos" | "vencidos" | "desactivados";
@@ -765,6 +767,20 @@ export default function AdminPage() {
                         {u.role === "admin" && (
                           <span className="text-[10px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">
                             Admin
+                          </span>
+                        )}
+
+                        {/* Badge Mercado Pago (Opción B) */}
+                        {u.mp_status && (
+                          <span
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                              u.mp_status === "authorized"
+                                ? "bg-cyan-50 text-cyan-800 border-cyan-200"
+                                : "bg-neutral-100 text-neutral-600 border-neutral-200"
+                            }`}
+                            title={u.mp_preapproval_id ? `ID MP: ${u.mp_preapproval_id}` : undefined}
+                          >
+                            MP: {u.mp_status === "authorized" ? "Activa" : u.mp_status}
                           </span>
                         )}
                       </div>

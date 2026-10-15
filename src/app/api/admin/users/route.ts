@@ -133,6 +133,8 @@ export async function GET(request: Request) {
         avatar_url: avatarUrl,
         is_new: isNew,
         registration_source: meta.registration_source || "admin",
+        mp_status: meta.mp_status || null,
+        mp_preapproval_id: meta.mp_preapproval_id || null,
       };
     });
 
@@ -169,6 +171,8 @@ export async function GET(request: Request) {
         avatar_url: meta.avatar_url || null,
         is_new: true,
         registration_source: meta.registration_source || "public",
+        mp_status: meta.mp_status || null,
+        mp_preapproval_id: meta.mp_preapproval_id || null,
       });
     }
 
