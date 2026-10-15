@@ -151,3 +151,55 @@ export function formatDateDisplay(dateStr: string | null | undefined): string {
     return dateStr;
   }
 }
+
+export interface InitialUserMetadata {
+  plan_type: PlanType;
+  plan_start_date: string;
+  plan_end_date: string;
+  account_status: AccountStatus;
+  is_new: boolean;
+  registration_source: "public" | "admin";
+  terms_version?: string | null;
+  terms_accepted_at?: string | null;
+}
+
+/**
+ * Genera la metadata inicial para la creación de un nuevo usuario en HABA (T5).
+ * Reutilizada tanto en el alta manual desde /admin como en el registro público /registro.
+ * Asigna por defecto:
+ * - plan_type = "prueba"
+ * - plan_start_date = hoy (ISO YYYY-MM-DD)
+ * - plan_end_date = 15 días posteriores
+ * - account_status = "active"
+ * - is_new = true
+ */
+export function buildInitialUserMetadata(options?: {
+  planType?: PlanType;
+  planStartDate?: string;
+  planEndDate?: string;
+  accountStatus?: AccountStatus;
+  isNew?: boolean;
+  registrationSource?: "public" | "admin";
+  termsVersion?: string | null;
+  termsAcceptedAt?: string | null;
+}): InitialUserMetadata {
+  const planType: PlanType = options?.planType || "prueba";
+  const startDate =
+    options?.planStartDate?.trim() || new Date().toISOString().split("T")[0];
+  const endDate =
+    options?.planEndDate?.trim() || calculatePlanEndDate(startDate, planType);
+  const accountStatus: AccountStatus = options?.accountStatus || "active";
+  const isNew = options?.isNew !== undefined ? options.isNew : true;
+  const registrationSource = options?.registrationSource || "public";
+
+  return {
+    plan_type: planType,
+    plan_start_date: startDate,
+    plan_end_date: endDate,
+    account_status: accountStatus,
+    is_new: isNew,
+    registration_source: registrationSource,
+    ...(options?.termsVersion ? { terms_version: options.termsVersion } : {}),
+    ...(options?.termsAcceptedAt ? { terms_accepted_at: options.termsAcceptedAt } : {}),
+  };
+}

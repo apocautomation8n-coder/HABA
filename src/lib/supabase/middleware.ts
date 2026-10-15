@@ -7,7 +7,7 @@ export async function updateSession(request: NextRequest) {
   });
 
   const pathname = request.nextUrl.pathname;
-  const isAuthPage = pathname.startsWith("/login");
+  const isAuthPage = pathname.startsWith("/login") || pathname.startsWith("/registro");
   const isPublicPage = pathname.startsWith("/terminos");
   const isPublicStatic =
     pathname.startsWith("/_next") ||

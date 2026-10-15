@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Mail, Lock, Eye, EyeOff, AlertCircle, Sparkles } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { WhatsAppIcon } from "@/components/WhatsAppIcon";
@@ -245,14 +246,24 @@ export default function LoginPage() {
           </button>
         </form>
 
-        {/* Info suscripción / Gio */}
-        <div className="mt-6 pt-4 border-t border-neutral-100 text-center">
-          <p className="text-xs text-neutral-500">
-            ¿Primera vez en HABA?
+        {/* Registro Autogestionado */}
+        <div className="mt-5 pt-4 border-t border-neutral-100 text-center">
+          <p className="text-xs text-neutral-600">
+            ¿No tenés cuenta?{" "}
+            <Link
+              href="/registro"
+              className="text-[#1F7A4C] hover:text-[#185E3B] font-bold underline underline-offset-2 transition"
+            >
+              Registrate acá
+            </Link>
           </p>
-          <p className="text-xs text-[#3BB578] font-semibold mt-0.5 flex items-center justify-center gap-1">
+        </div>
+
+        {/* Info suscripción / Gio */}
+        <div className="mt-3 text-center">
+          <p className="text-[11px] text-[#3BB578] font-medium flex items-center justify-center gap-1">
             <Sparkles className="w-3.5 h-3.5" />
-            Las altas se activan con tu suscripción a Amaoto Craft
+            Accedé a 15 días de prueba gratis con todas las funciones
           </p>
         </div>
 

@@ -43,7 +43,7 @@ export async function GET(request: Request) {
       .from("profiles")
       .select("*")
       .eq("id", user.id)
-      .single();
+      .maybeSingle();
 
     const isAdmin =
       user.email?.toLowerCase() === "admin@admin.com" ||

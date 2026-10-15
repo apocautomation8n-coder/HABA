@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { checkIsAdmin } from "@/lib/auth-helpers";
-import { calculatePlanEndDate, PlanType } from "@/lib/plan-helpers";
+import { calculatePlanEndDate, PlanType, buildInitialUserMetadata } from "@/lib/plan-helpers";
 import { formatAccountNumber, parseAccountNumber, getNextAccountNumberFromList } from "@/lib/account";
 
 function getAdminClient() {
@@ -117,6 +117,12 @@ export async function GET(request: Request) {
         }
       }
 
+      const isNew =
+        meta.is_new !== undefined
+          ? Boolean(meta.is_new)
+          : (new Date().getTime() - new Date(p.created_at || authUser?.created_at || 0).getTime()) <
+            7 * 24 * 60 * 60 * 1000;
+
       return {
         ...p,
         account_number: accountNumber,
@@ -125,8 +131,46 @@ export async function GET(request: Request) {
         plan_end_date: planEndDate,
         account_status: accountStatus,
         avatar_url: avatarUrl,
+        is_new: isNew,
+        registration_source: meta.registration_source || "admin",
       };
     });
+
+    // Asegurar que usuarios registrados recientemente que aún no sincronicen fila en profiles se listen
+    const profileIdSet = new Set((profiles || []).map((p) => p.id));
+    const missingFromProfiles = (authData?.users || []).filter((u) => !profileIdSet.has(u.id));
+
+    for (const u of missingFromProfiles) {
+      const meta = u.user_metadata || {};
+      const planType: PlanType = meta.plan_type || "prueba";
+      const planStartDate =
+        meta.plan_start_date ||
+        u.created_at?.split("T")[0] ||
+        new Date().toISOString().split("T")[0];
+      const planEndDate =
+        meta.plan_end_date || calculatePlanEndDate(planStartDate, planType);
+      const accountStatus = meta.account_status || "active";
+      const accountNumber = meta.account_number || idToSeqMap.get(u.id) || "01";
+
+      users.push({
+        id: u.id,
+        email: u.email || "",
+        full_name: meta.full_name || null,
+        business_name: meta.business_name || null,
+        phone: meta.phone || null,
+        account_number: accountNumber,
+        role: "user",
+        status: "active",
+        created_at: u.created_at,
+        plan_type: planType,
+        plan_start_date: planStartDate,
+        plan_end_date: planEndDate,
+        account_status: accountStatus,
+        avatar_url: meta.avatar_url || null,
+        is_new: true,
+        registration_source: meta.registration_source || "public",
+      });
+    }
 
     return NextResponse.json({ users });
   } catch (err: any) {
@@ -201,6 +245,15 @@ export async function POST(request: Request) {
     }
 
     // 1. Crear usuario en Auth con confirmación automática, metadata de plan y account_number único
+    const initialPlanMeta = buildInitialUserMetadata({
+      planType: planType as PlanType,
+      planStartDate: startDate,
+      planEndDate: endDate,
+      accountStatus: accountStatus,
+      isNew: true,
+      registrationSource: "admin",
+    });
+
     const { data: authData, error: authError } =
       await supabaseAdmin.auth.admin.createUser({
         email: email.trim().toLowerCase(),
@@ -210,10 +263,7 @@ export async function POST(request: Request) {
           account_number: nextAccountNumber,
           full_name: fullName?.trim() || null,
           business_name: businessName?.trim() || null,
-          plan_type: planType,
-          plan_start_date: startDate,
-          plan_end_date: endDate,
-          account_status: accountStatus,
+          ...initialPlanMeta,
         },
       });
 

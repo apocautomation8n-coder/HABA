@@ -21,6 +21,7 @@ import {
   Store,
   Filter,
   Hash,
+  Sparkles,
 } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { isRealUserAvatar } from "@/components/ProfileAvatar";
@@ -52,6 +53,9 @@ interface UserProfile {
   plan_end_date?: string;
   account_status?: AccountStatus;
   avatar_url?: string | null;
+  phone?: string;
+  is_new?: boolean;
+  registration_source?: string;
 }
 
 type QuickFilter = "todos" | "activos" | "proximos" | "vencidos" | "desactivados";
@@ -722,6 +726,14 @@ export default function AdminPage() {
                           <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-800 border border-neutral-200 flex items-center gap-1">
                             <Hash className="w-3 h-3 text-[#3BB578]" />
                             {u.account_number}
+                          </span>
+                        )}
+
+                        {/* Badge NUEVA (Altas recientes o registro autogestionado) */}
+                        {u.is_new && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1 shadow-2xs">
+                            <Sparkles className="w-3 h-3 text-emerald-600" />
+                            <span>Nueva</span>
                           </span>
                         )}
 
