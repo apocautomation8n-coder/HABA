@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import { X, Trash2, AlertCircle, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { formatCurrency } from "@/lib/units";
+import { useFormatPrefs } from "@/hooks/useFormatPrefs";
 import { FixedExpense } from "./ExpenseModal";
 
 interface DeleteExpenseModalProps {
@@ -20,6 +20,7 @@ export const DeleteExpenseModal: React.FC<DeleteExpenseModalProps> = ({
   onSuccess,
 }) => {
   const supabase = createClient();
+  const { formatMoney } = useFormatPrefs();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -86,7 +87,7 @@ export const DeleteExpenseModal: React.FC<DeleteExpenseModalProps> = ({
                 {expense.name}
               </span>
               <span className="text-[10px] text-neutral-400 capitalize">
-                {expense.periodicity} ({formatCurrency(expense.amount)})
+                {expense.periodicity} ({formatMoney(expense.amount)})
               </span>
             </div>
             <div className="text-right">
@@ -94,7 +95,7 @@ export const DeleteExpenseModal: React.FC<DeleteExpenseModalProps> = ({
                 Impacto mensual
               </span>
               <span className="text-xs font-black text-[#1F7A4C]">
-                -{formatCurrency(expense.monthly_equivalent)}
+                -{formatMoney(expense.monthly_equivalent)}
               </span>
             </div>
           </div>

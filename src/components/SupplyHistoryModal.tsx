@@ -13,7 +13,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { formatCurrency } from "@/lib/units";
+import { useFormatPrefs } from "@/hooks/useFormatPrefs";
 import { SupplyItem } from "@/components/SupplyModal";
 import { PriceHistoryChart } from "@/components/insumos/PriceHistoryChart";
 import { HabaMascot } from "@/components/HabaMascot";
@@ -39,6 +39,7 @@ export const SupplyHistoryModal: React.FC<SupplyHistoryModalProps> = ({
   onPriceUpdated,
 }) => {
   const supabase = createClient();
+  const { formatMoney, parseNumber, numberLocale, currency } = useFormatPrefs();
   const [history, setHistory] = useState<PriceHistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDescOrder, setIsDescOrder] = useState<boolean>(true);
@@ -163,7 +164,7 @@ export const SupplyHistoryModal: React.FC<SupplyHistoryModalProps> = ({
   const handleSaveNewPrice = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!supply?.id) return;
-    const priceNum = parseFloat(newPrice);
+    const priceNum = parseNumber(newPrice);
     if (isNaN(priceNum) || priceNum <= 0) return;
 
     try {
@@ -287,7 +288,7 @@ export const SupplyHistoryModal: React.FC<SupplyHistoryModalProps> = ({
               </span>
               <div className="flex items-baseline gap-1 mt-1">
                 <span className="text-xl font-black text-[#1F7A4C]">
-                  {formatCurrency(supply.current_price)}
+                  {formatMoney(supply.current_price)}
                 </span>
                 <span className="text-xs font-semibold text-[#7A7A7A]">
                   / {supply.purchase_unit}
@@ -321,7 +322,7 @@ export const SupplyHistoryModal: React.FC<SupplyHistoryModalProps> = ({
                 </span>
               </div>
               <p className="text-[10px] text-[#7A7A7A] mt-1">
-                Rango: {formatCurrency(metrics.minPrice)} - {formatCurrency(metrics.maxPrice)}
+                Rango: {formatMoney(metrics.minPrice)} - {formatMoney(metrics.maxPrice)}
               </p>
             </div>
           </div>
@@ -391,7 +392,7 @@ export const SupplyHistoryModal: React.FC<SupplyHistoryModalProps> = ({
                       <div>
                         <div className="flex items-center gap-2">
                           <span className="text-xs font-bold text-[#2B2B2B]">
-                            {formatCurrency(item.price)}
+                            {formatMoney(item.price)}
                           </span>
                           <span className="text-[11px] text-[#7A7A7A] font-medium">
                             / {supply.purchase_unit}
@@ -405,7 +406,7 @@ export const SupplyHistoryModal: React.FC<SupplyHistoryModalProps> = ({
                         </div>
 
                         <p className="text-[11px] text-[#7A7A7A] mt-0.5">
-                          {new Date(item.date).toLocaleDateString("es-AR", {
+                          {new Date(item.date).toLocaleDateString(numberLocale, {
                             day: "numeric",
                             month: "short",
                             year: "numeric",
@@ -423,8 +424,8 @@ export const SupplyHistoryModal: React.FC<SupplyHistoryModalProps> = ({
                         >
                           <span>
                             {item.diffAmount > 0
-                              ? `+${formatCurrency(item.diffAmount)}`
-                              : formatCurrency(item.diffAmount)}
+                              ? `+${formatMoney(item.diffAmount)}`
+                              : formatMoney(item.diffAmount)}
                           </span>
                           <span className="text-[9px] opacity-80">
                             ({item.diffPct > 0 ? `+${item.diffPct}%` : `${item.diffPct}%`})
@@ -475,7 +476,7 @@ export const SupplyHistoryModal: React.FC<SupplyHistoryModalProps> = ({
                 <div className="grid grid-cols-2 gap-2.5">
                   <div className="space-y-1">
                     <label className="text-[11px] font-semibold text-[#7A7A7A] block">
-                      Precio (\$ ARS) *
+                      Precio ({currency}) *
                     </label>
                     <input
                       type="number"

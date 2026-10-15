@@ -35,7 +35,8 @@ import {
 } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
-import { formatCurrency, calculateUnitCost } from "@/lib/units";
+import { calculateUnitCost } from "@/lib/units";
+import { useFormatPrefs } from "@/hooks/useFormatPrefs";
 import { SupplyModal, SupplyItem } from "@/components/SupplyModal";
 import { CategorySelector } from "@/components/CategorySelector";
 import {
@@ -83,6 +84,7 @@ type ChannelPrice = ChannelPriceItem;
 export default function NuevoProductoPage() {
   const router = useRouter();
   const supabase = createClient();
+  const { formatMoney, formatNumber, parseNumber, numberLocale } = useFormatPrefs();
 
   const [currentStep, setCurrentStep] = useState<number>(1);
   const [loading, setLoading] = useState(false);
@@ -367,12 +369,12 @@ export default function NuevoProductoPage() {
           const marginNum =
             typeof ch.profit_margin_percent === "number"
               ? ch.profit_margin_percent
-              : parseFloat(String(ch.profit_margin_percent));
+              : parseNumber(String(ch.profit_margin_percent));
 
           const priceNum =
             typeof ch.selling_price === "number"
               ? ch.selling_price
-              : parseFloat(String(ch.selling_price));
+              : parseNumber(String(ch.selling_price));
 
           if (ch.isPriceManuallyOverridden && !isNaN(priceNum) && priceNum > 0) {
             const rawMargin = ((priceNum - safeCost) / safeCost) * 100;
@@ -457,9 +459,9 @@ export default function NuevoProductoPage() {
       const current = updated[index];
       const merged = { ...current, ...patch };
 
-      const p = typeof merged.pieces === "number" ? merged.pieces : parseFloat(String(merged.pieces)) || 1;
-      const w = typeof merged.width === "number" ? merged.width : parseFloat(String(merged.width)) || 0;
-      const l = typeof merged.length === "number" ? merged.length : parseFloat(String(merged.length)) || 0;
+      const p = typeof merged.pieces === "number" ? merged.pieces : parseNumber(String(merged.pieces)) || 1;
+      const w = typeof merged.width === "number" ? merged.width : parseNumber(String(merged.width)) || 0;
+      const l = typeof merged.length === "number" ? merged.length : parseNumber(String(merged.length)) || 0;
       const wU = merged.widthUnit || "cm";
       const lU = merged.lengthUnit || "cm";
       const hasUnitDims = isUnitSupplyWithDimensions(merged.supply);
@@ -901,13 +903,13 @@ export default function NuevoProductoPage() {
               Costo Unitario en Vivo
             </span>
             <span className="text-xs text-[#1F7A4C]">
-              Mat: {formatCurrency(directCost)} | Productivo: {formatCurrency(laborCost)}
+              Mat: {formatMoney(directCost)} | Productivo: {formatMoney(laborCost)}
             </span>
           </div>
         </div>
         <div className="text-right">
           <span className="text-lg font-black text-[#1F7A4C]">
-            {formatCurrency(totalCost)}
+            {formatMoney(totalCost)}
           </span>
           <span className="text-[9px] block text-[#1F7A4C]">Costo total por unidad</span>
         </div>
@@ -1112,9 +1114,9 @@ export default function NuevoProductoPage() {
                       item.supply.purchase_quantity,
                       item.supply.conversion_factor
                     );
-                    const itemQty = typeof item.quantity === "number" ? item.quantity : parseFloat(String(item.quantity)) || 0;
+                    const itemQty = typeof item.quantity === "number" ? item.quantity : parseNumber(String(item.quantity));
                     const subtotal = unitCost * itemQty;
-                    const friendlyFrac = isUnit ? getFriendlyFractionLabel(item.quantity, item.supply.use_unit) : null;
+                    const friendlyFrac = isUnit ? getFriendlyFractionLabel(item.quantity, item.supply.use_unit, numberLocale) : null;
 
                     return (
                       <div
@@ -1127,7 +1129,7 @@ export default function NuevoProductoPage() {
                               {item.supply.name}
                             </span>
                             <span className="text-[10px] block text-neutral-400">
-                              Costo reposición: {formatCurrency(unitCost)} / {item.supply.use_unit}
+                              Costo reposición: {formatMoney(unitCost)} / {item.supply.use_unit}
                             </span>
                           </div>
                           <button
@@ -1242,7 +1244,7 @@ export default function NuevoProductoPage() {
                                   <span className="text-[10px] text-neutral-400 font-medium">Consumo total:</span>
                                   <span className="text-[11px] font-bold text-neutral-700 bg-neutral-100 border border-neutral-200/60 px-2 py-0.5 rounded-lg whitespace-nowrap">
                                     {itemQty > 0
-                                      ? `${itemQty.toLocaleString("es-AR", { maximumFractionDigits: 4 })} ${item.supply.use_unit}`
+                                      ? `${itemQty.toLocaleString(numberLocale, { maximumFractionDigits: 4 })} ${item.supply.use_unit}`
                                       : `0 ${item.supply.use_unit}`}
                                   </span>
                                   {friendlyFrac && (
@@ -1254,7 +1256,7 @@ export default function NuevoProductoPage() {
                                 <div className="text-right pl-2 border-l border-neutral-200/60">
                                   <span className="text-[9px] text-neutral-400 block uppercase font-bold leading-none mb-0.5">Subtotal</span>
                                   <span className="font-extrabold text-[#1F7A4C] text-xs">
-                                    {formatCurrency(subtotal)}
+                                    {formatMoney(subtotal)}
                                   </span>
                                 </div>
                               </div>
@@ -1290,7 +1292,7 @@ export default function NuevoProductoPage() {
                             <div className="text-right">
                               <span className="text-[9px] text-neutral-400 block uppercase font-bold leading-none mb-0.5">Subtotal</span>
                               <span className="font-extrabold text-[#1F7A4C] text-xs">
-                                {formatCurrency(subtotal)}
+                                {formatMoney(subtotal)}
                               </span>
                             </div>
                           </div>
@@ -1359,7 +1361,7 @@ export default function NuevoProductoPage() {
                                 {item.component.name}
                               </span>
                               <span className="text-[10px] text-neutral-500">
-                                Costo base unitario: <strong>{formatCurrency(unitCost)}</strong> / u
+                                Costo base unitario: <strong>{formatMoney(unitCost)}</strong> / u
                               </span>
                             </div>
                           </div>
@@ -1397,7 +1399,7 @@ export default function NuevoProductoPage() {
                           <div className="text-right space-y-0.5">
                             <span className="text-[10px] text-neutral-400 block">Subtotal al costo:</span>
                             <span className="text-xs font-bold text-[#1F7A4C]">
-                              {formatCurrency(subtotal)}
+                              {formatMoney(subtotal)}
                             </span>
                           </div>
                         </div>
@@ -1518,13 +1520,13 @@ export default function NuevoProductoPage() {
                 </span>
                 <span className="text-[11px] font-mono text-[#1F7A4C]/90 block truncate">
                   {(Number(workTimeMinutes) || 0) > 0
-                    ? `${workTimeMinutes} min × ${formatCurrency(laborMinuteRate)}/min`
+                    ? `${workTimeMinutes} min × ${formatMoney(laborMinuteRate)}/min`
                     : "0 min (sin tiempo productivo asignado)"}
                 </span>
               </div>
               <div className="text-right flex-shrink-0">
                 <span className="text-base sm:text-lg font-black text-[#1F7A4C]">
-                  {formatCurrency(laborCost)}
+                  {formatMoney(laborCost)}
                 </span>
               </div>
             </div>
@@ -1565,16 +1567,16 @@ export default function NuevoProductoPage() {
                   1️⃣ <strong>Tu costo por minuto:</strong> Se calcula dividiendo tu <strong>Objetivo Mensual</strong> (Sueldo Pretendido + Gastos Operativos) entre las <strong>horas de taller</strong> que trabajás por mes:
                 </p>
                 <div className="bg-white p-2 rounded-xl border border-[#DCF4D7] font-mono text-[10.5px] text-[#1F7A4C]">
-                  Objetivo Mensual ÷ (Días × Horas diarias × 60) = <strong>{formatCurrency(laborMinuteRate)}/minuto</strong>
+                  Objetivo Mensual ÷ (Días × Horas diarias × 60) = <strong>{formatMoney(laborMinuteRate)}/minuto</strong>
                 </div>
                 <p>
                   2️⃣ <strong>Para este producto:</strong> Multiplicamos los minutos de elaboración por tu valor por minuto:
                 </p>
                 <div className="bg-white p-2 rounded-xl border border-[#DCF4D7] font-mono text-[10.5px] text-[#1F7A4C]">
                   {(Number(workTimeMinutes) || 0) > 0
-                    ? `${workTimeMinutes} min × ${formatCurrency(laborMinuteRate)}/min = `
+                    ? `${workTimeMinutes} min × ${formatMoney(laborMinuteRate)}/min = `
                     : "0 min × tarifa = "}
-                  <strong>{formatCurrency(laborCost)}</strong>
+                  <strong>{formatMoney(laborCost)}</strong>
                 </div>
               </div>
             </div>
@@ -1841,7 +1843,7 @@ export default function NuevoProductoPage() {
                       </div>
                       <div className="text-right">
                         <span className="text-xs font-bold text-[#1F7A4C]">
-                          {formatCurrency(unitCost)}
+                          {formatMoney(unitCost)}
                         </span>
                         <span className="text-[9px] block text-neutral-400">
                           por {sup.use_unit}
@@ -1973,7 +1975,7 @@ export default function NuevoProductoPage() {
                       </div>
                       <div className="text-right">
                         <span className="text-xs font-bold text-[#1F7A4C]">
-                          {formatCurrency(baseCost)}
+                          {formatMoney(baseCost)}
                         </span>
                         <span className="text-[9px] block text-neutral-400 font-medium">
                           costo base / u

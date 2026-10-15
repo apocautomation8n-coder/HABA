@@ -112,6 +112,14 @@ export async function GET(request: Request) {
       address: profile?.address || meta.address || null,
       business_rubro: profile?.business_rubro || meta.business_rubro || null,
       quote_primary_color: profile?.quote_primary_color || meta.quote_primary_color || null,
+      currency: profile?.currency || meta.currency || "ARS",
+      number_locale: profile?.number_locale || meta.number_locale || "es-AR",
+      decimals:
+        typeof profile?.decimals === "number"
+          ? profile.decimals
+          : typeof meta.decimals === "number"
+          ? meta.decimals
+          : 2,
       role: isAdmin ? "admin" : profile?.role || "user",
       status: profile?.status || "active",
       plan_type: planType,
@@ -167,6 +175,9 @@ export async function PATCH(request: Request) {
       avatarUrl,
       businessRubro,
       quotePrimaryColor,
+      currency,
+      numberLocale,
+      decimals,
     } = body;
 
     const finalPhone =
@@ -190,6 +201,24 @@ export async function PATCH(request: Request) {
         : body.quote_primary_color !== undefined
         ? body.quote_primary_color?.trim() || null
         : undefined;
+    const finalCurrency =
+      currency !== undefined
+        ? currency?.trim().toUpperCase()
+        : body.currency !== undefined
+        ? body.currency?.trim().toUpperCase()
+        : undefined;
+    const finalNumberLocale =
+      numberLocale !== undefined
+        ? numberLocale?.trim()
+        : body.number_locale !== undefined
+        ? body.number_locale?.trim()
+        : undefined;
+    const finalDecimals =
+      decimals !== undefined
+        ? Number(decimals)
+        : body.decimals !== undefined
+        ? Number(body.decimals)
+        : undefined;
 
     const admin = getAdminClient();
     const updateData: Record<string, any> = {
@@ -199,6 +228,9 @@ export async function PATCH(request: Request) {
     if (businessName !== undefined) updateData.business_name = businessName?.trim() || null;
     if (finalRubro !== undefined) updateData.business_rubro = finalRubro;
     if (finalQuoteColor !== undefined) updateData.quote_primary_color = finalQuoteColor;
+    if (finalCurrency !== undefined) updateData.currency = finalCurrency;
+    if (finalNumberLocale !== undefined) updateData.number_locale = finalNumberLocale;
+    if (finalDecimals !== undefined) updateData.decimals = finalDecimals;
 
     const authUpdate: Record<string, any> = {
       user_metadata: {
@@ -226,6 +258,16 @@ export async function PATCH(request: Request) {
     }
     if (finalQuoteColor !== undefined) {
       authUpdate.user_metadata.quote_primary_color = finalQuoteColor;
+    }
+    if (finalCurrency !== undefined) {
+      authUpdate.user_metadata.currency = finalCurrency;
+    }
+    if (finalNumberLocale !== undefined) {
+      authUpdate.user_metadata.number_locale = finalNumberLocale;
+      authUpdate.user_metadata.numberLocale = finalNumberLocale;
+    }
+    if (finalDecimals !== undefined) {
+      authUpdate.user_metadata.decimals = finalDecimals;
     }
 
     if (avatarUrl !== undefined) {

@@ -18,7 +18,8 @@ import {
 } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
-import { formatCurrency, calculateUnitCost } from "@/lib/units";
+import { calculateUnitCost } from "@/lib/units";
+import { useFormatPrefs } from "@/hooks/useFormatPrefs";
 import { SupplyModal, SupplyItem } from "@/components/SupplyModal";
 import { PriceHistoryDrawer } from "@/components/insumos/PriceHistoryDrawer";
 import { DeleteSupplyModal } from "@/components/insumos/DeleteSupplyModal";
@@ -28,6 +29,7 @@ import { matchesSearch } from "@/lib/search";
 
 export default function InsumosPage() {
   const supabase = createClient();
+  const { formatMoney, currency } = useFormatPrefs();
 
   const [supplies, setSupplies] = useState<SupplyItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -492,10 +494,10 @@ export default function InsumosPage() {
                 >
                   <div>
                     <span className="text-[10px] text-neutral-400 block font-medium">
-                      Precio de Reposición (ARS)
+                      Precio de Reposición ({currency})
                     </span>
                     <span className="text-xs font-bold text-neutral-700">
-                      {formatCurrency(supply.current_price)}
+                      {formatMoney(supply.current_price)}
                     </span>
                   </div>
 
@@ -505,7 +507,7 @@ export default function InsumosPage() {
                         Costo por {supply.use_unit}
                       </span>
                       <span className="text-sm font-black text-[#1F7A4C]">
-                        {formatCurrency(unitCost)}
+                        {formatMoney(unitCost)}
                         <span className="text-[10px] font-normal text-neutral-400">
                           /{supply.use_unit}
                         </span>

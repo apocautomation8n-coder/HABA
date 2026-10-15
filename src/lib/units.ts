@@ -316,11 +316,27 @@ export function calculateUnitCost(
   return currentPrice / totalUseUnits;
 }
 
-export function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat("es-AR", {
-    style: "currency",
-    currency: "ARS",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(amount);
+export {
+  formatMoney,
+  formatNumber,
+  parseNumber,
+  roundQuoteTotal,
+  DEFAULT_FORMAT_PREFS,
+  COUNTRY_PRESETS,
+} from "./formatPrefs";
+export type { FormatPrefs, FormatNumberOptions, CountryPreset } from "./formatPrefs";
+
+import { formatMoney, FormatPrefs } from "./formatPrefs";
+
+/**
+ * Formatea un monto como moneda.
+ * Por compatibilidad histórica acepta solo (amount) y formatea según ARS / es-AR / 2,
+ * o acepta opcionalmente las preferencias de la usuaria.
+ */
+export function formatCurrency(
+  amount: number,
+  prefs?: Partial<FormatPrefs>
+): string {
+  return formatMoney(amount, prefs);
 }
+

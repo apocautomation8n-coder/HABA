@@ -13,7 +13,7 @@ import {
   Globe,
   RotateCcw,
 } from "lucide-react";
-import { formatCurrency } from "@/lib/units";
+import { useFormatPrefs } from "@/hooks/useFormatPrefs";
 
 export interface ChannelPriceItem {
   id?: string;
@@ -111,6 +111,7 @@ export function ProductPricingChannels({
   title = "Precios por Canal de Venta",
   className = "",
 }: ProductPricingChannelsProps) {
+  const { formatMoney, parseNumber } = useFormatPrefs();
   const [isAddingChannel, setIsAddingChannel] = useState(false);
   const [newChannelName, setNewChannelName] = useState("");
   const [newChannelMargin, setNewChannelMargin] = useState<number | string>(100);
@@ -125,12 +126,12 @@ export function ProductPricingChannels({
       const marginNum =
         typeof ch.profit_margin_percent === "number"
           ? ch.profit_margin_percent
-          : parseFloat(String(ch.profit_margin_percent));
+          : parseNumber(String(ch.profit_margin_percent));
 
       const priceNum =
         typeof ch.selling_price === "number"
           ? ch.selling_price
-          : parseFloat(String(ch.selling_price));
+          : parseNumber(String(ch.selling_price));
 
       const isManual = Boolean(ch.isPriceManuallyOverridden);
 
@@ -178,7 +179,7 @@ export function ProductPricingChannels({
       return;
     }
 
-    const marginNum = typeof marginVal === "number" ? marginVal : parseFloat(String(marginVal));
+    const marginNum = typeof marginVal === "number" ? marginVal : parseNumber(String(marginVal));
     if (isNaN(marginNum)) {
       updated[index] = {
         ...updated[index],
@@ -217,7 +218,7 @@ export function ProductPricingChannels({
       return;
     }
 
-    const priceNum = typeof priceVal === "number" ? priceVal : parseFloat(String(priceVal));
+    const priceNum = typeof priceVal === "number" ? priceVal : parseNumber(String(priceVal));
     if (isNaN(priceNum)) {
       updated[index] = {
         ...updated[index],
@@ -494,18 +495,18 @@ export function ProductPricingChannels({
                 {/* Desglose compacto: Costo + Ganancia = Total */}
                 <div className="pt-2 border-t border-neutral-100 flex items-center justify-between text-[10.5px] text-neutral-500 font-medium">
                   <span>
-                    Costo: <strong className="text-neutral-700">{formatCurrency(unitCost)}</strong>
+                    Costo: <strong className="text-neutral-700">{formatMoney(unitCost)}</strong>
                   </span>
                   <span>+</span>
                   <span>
                     Ganancia:{" "}
                     <strong className={profitAmount > 0 ? "text-[#1F7A4C]" : profitAmount < 0 ? "text-rose-600" : "text-neutral-500"}>
-                      {isExplicitEmpty || channelSellingPrice <= 0 ? "$ 0,00" : formatCurrency(profitAmount)}
+                      {isExplicitEmpty || channelSellingPrice <= 0 ? formatMoney(0) : formatMoney(profitAmount)}
                     </strong>
                   </span>
                   <span>=</span>
                   <span>
-                    Total: <strong className="text-neutral-900 font-bold">{isExplicitEmpty || channelSellingPrice <= 0 ? "$ 0,00" : formatCurrency(channelSellingPrice)}</strong>
+                    Total: <strong className="text-neutral-900 font-bold">{isExplicitEmpty || channelSellingPrice <= 0 ? formatMoney(0) : formatMoney(channelSellingPrice)}</strong>
                   </span>
                 </div>
               </div>

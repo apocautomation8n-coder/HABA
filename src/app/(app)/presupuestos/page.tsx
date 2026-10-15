@@ -26,7 +26,7 @@ import {
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
 import { matchesSearch } from "@/lib/search";
-import { formatCurrency } from "@/lib/units";
+import { useFormatPrefs } from "@/hooks/useFormatPrefs";
 import {
   Quote,
   QuoteItem,
@@ -40,6 +40,7 @@ import {
 
 export default function PresupuestosPage() {
   const supabase = createClient();
+  const { formatMoney } = useFormatPrefs();
 
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -76,7 +77,7 @@ export default function PresupuestosPage() {
         try {
           const { data: profileData } = await supabase
             .from("profiles")
-            .select("business_name, full_name, email, phone, business_phone, business_email, instagram, address")
+            .select("business_name, full_name, email, phone, business_phone, business_email, instagram, address, currency, number_locale, decimals")
             .eq("id", user.id)
             .maybeSingle();
           pData = profileData;
@@ -332,7 +333,7 @@ export default function PresupuestosPage() {
 
                   <div className="text-right">
                     <span className="text-base font-black text-[#1F7A4C] block">
-                      {formatCurrency(quote.total)}
+                      {formatMoney(quote.total)}
                     </span>
                     <span className="text-[10px] text-neutral-400 block">
                       {quote.quote_items?.length || 0} ítems
@@ -454,11 +455,11 @@ export default function PresupuestosPage() {
                               {item.quantity}x {item.product_name}
                             </span>
                             <span className="text-[10px] text-neutral-400">
-                              Canal: {item.channel_name} | Unit: {formatCurrency(item.unit_price)}
+                              Canal: {item.channel_name} | Unit: {formatMoney(item.unit_price)}
                             </span>
                           </div>
                           <span className="font-extrabold text-[#1F7A4C]">
-                            {formatCurrency(item.subtotal)}
+                            {formatMoney(item.subtotal)}
                           </span>
                         </div>
                       ))}

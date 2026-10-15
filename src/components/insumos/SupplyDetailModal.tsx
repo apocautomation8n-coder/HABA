@@ -4,7 +4,8 @@ import React from "react";
 import { createPortal } from "react-dom";
 import { X, Edit2, TrendingUp, Sparkles, Package, Layers, Calculator } from "lucide-react";
 import { SupplyItem } from "@/components/SupplyModal";
-import { formatCurrency, calculateUnitCost } from "@/lib/units";
+import { calculateUnitCost } from "@/lib/units";
+import { useFormatPrefs } from "@/hooks/useFormatPrefs";
 
 interface SupplyDetailModalProps {
   isOpen: boolean;
@@ -21,6 +22,7 @@ export const SupplyDetailModal: React.FC<SupplyDetailModalProps> = ({
   onEdit,
   onOpenHistory,
 }) => {
+  const { formatMoney } = useFormatPrefs();
   if (!isOpen || !supply) return null;
 
   const unitCost = calculateUnitCost(
@@ -100,7 +102,7 @@ export const SupplyDetailModal: React.FC<SupplyDetailModalProps> = ({
                 Costo por {supply.use_unit}
               </span>
               <span className="text-lg font-black text-[#1F7A4C]">
-                {formatCurrency(unitCost)}
+                {formatMoney(unitCost)}
               </span>
               <span className="text-[9px] text-[#1F7A4C]/80 block mt-0.5">
                 Usado en tus recetas
@@ -112,7 +114,7 @@ export const SupplyDetailModal: React.FC<SupplyDetailModalProps> = ({
                 Precio de Reposición
               </span>
               <span className="text-lg font-black text-neutral-800">
-                {formatCurrency(supply.current_price)}
+                {formatMoney(supply.current_price)}
               </span>
               <span className="text-[9px] text-neutral-400 block mt-0.5">
                 Por bulto o compra
@@ -162,12 +164,12 @@ export const SupplyDetailModal: React.FC<SupplyDetailModalProps> = ({
             <Sparkles className="w-4 h-4 text-[#1F7A4C] flex-shrink-0 mt-0.5" />
             <p className="text-[11px] leading-snug text-[#2B2B2B]">
               Comprás <strong>{supply.purchase_quantity} {supply.purchase_unit}</strong> a{" "}
-              <strong>{formatCurrency(supply.current_price)}</strong>. Te rinde{" "}
+              <strong>{formatMoney(supply.current_price)}</strong>. Te rinde{" "}
               <strong>
                 {totalUseUnits} {supply.use_unit}
               </strong>
               , por lo que cada <strong>{supply.use_unit}</strong> te cuesta{" "}
-              <strong>{formatCurrency(unitCost)}</strong>.
+              <strong>{formatMoney(unitCost)}</strong>.
             </p>
           </div>
         </div>

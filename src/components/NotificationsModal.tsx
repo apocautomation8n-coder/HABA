@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { Bell, X, AlertTriangle, TrendingUp, CheckCircle, Sparkles, Smartphone } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { formatCurrency } from "@/lib/units";
+import { useFormatPrefs } from "@/hooks/useFormatPrefs";
 
 interface NotificationItem {
   id: string;
@@ -26,6 +26,7 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
   onCountChange,
 }) => {
   const supabase = createClient();
+  const { formatMoney } = useFormatPrefs();
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>("default");
@@ -68,7 +69,7 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
             id: `product-cost-${p.id}`,
             type: "price_increase",
             title: `Revisar costos: ${p.name}`,
-            description: `Los insumos de este producto subieron de costo (de ${formatCurrency(p.direct_cost)} a ${formatCurrency(p.currentMaterialsCost)}). Tocá para recalcular.`,
+            description: `Los insumos de este producto subieron de costo (de ${formatMoney(p.direct_cost)} a ${formatMoney(p.currentMaterialsCost)}). Tocá para recalcular.`,
             date: new Date().toISOString(),
             isRead: false,
           });
@@ -84,7 +85,7 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
                 id: `price-${hist.supply_id}-${hist.changed_at || (hist as any).date}`,
                 type: "price_increase",
                 title: `Aumento en: ${currentSupply.name}`,
-                description: `Subió ${formatCurrency(diff)} (Nuevo precio: ${formatCurrency(currentSupply.current_price)}). Revisá el costo de tus productos.`,
+                description: `Subió ${formatMoney(diff)} (Nuevo precio: ${formatMoney(currentSupply.current_price)}). Revisá el costo de tus productos.`,
                 date: hist.changed_at || (hist as any).date || new Date().toISOString(),
                 isRead: false,
               });
@@ -107,7 +108,7 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
                   id: `stale-${supply.id}`,
                   type: "stock_alert",
                   title: `Revisá: ${supply.name}`,
-                  description: `Hace ${daysAgo} días que no actualizás el precio (último: ${formatCurrency(supply.current_price)}). ¿Sigue vigente?`,
+                  description: `Hace ${daysAgo} días que no actualizás el precio (último: ${formatMoney(supply.current_price)}). ¿Sigue vigente?`,
                   date: supply.updated_at,
                   isRead: false,
                 });

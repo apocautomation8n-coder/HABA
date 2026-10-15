@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -31,6 +31,7 @@ import {
   Hash,
   Palette,
   Pipette,
+  Globe,
 } from "lucide-react";
 import { ProfileAvatar, isRealUserAvatar } from "@/components/ProfileAvatar";
 import { HabaMascot } from "@/components/HabaMascot";
@@ -39,7 +40,8 @@ import { buildProfileSupportWhatsAppUrl } from "@/lib/support";
 import { isTermsEnabled } from "@/lib/terms";
 import { createClient } from "@/lib/supabase/client";
 import { checkIsAdmin } from "@/lib/auth-helpers";
-import { formatCurrency } from "@/lib/units";
+import { COUNTRY_PRESETS } from "@/lib/units";
+import { useFormatPrefs } from "@/hooks/useFormatPrefs";
 import { QUOTE_COLOR_PALETTES, getQuoteTheme, normalizeHexColor } from "@/lib/quotes";
 import {
   PlanType,
@@ -87,6 +89,12 @@ export default function SettingsPage() {
   const [accountStatus, setAccountStatus] = useState<AccountStatus>("active");
   const [accountNumber, setAccountNumber] = useState<string>("");
   const [copiedAccountNum, setCopiedAccountNum] = useState<boolean>(false);
+
+  // Preferencias de formato y moneda (T4)
+  const { formatMoney, formatNumber, parseNumber, setFormatPrefs: updateGlobalFormatPrefs } = useFormatPrefs();
+  const [currency, setCurrency] = useState<string>("ARS");
+  const [numberLocale, setNumberLocale] = useState<string>("es-AR");
+  const [decimals, setDecimals] = useState<number>(2);
 
   // Mano de Obra y Sueldo Pretendido (Punto 4)
   const [salary, setSalary] = useState<number | string>("");
@@ -172,12 +180,25 @@ export default function SettingsPage() {
             setAccountNumber(user.user_metadata.account_number);
           }
 
+          if (user.user_metadata?.currency) {
+            setCurrency(user.user_metadata.currency);
+          }
+          if (user.user_metadata?.number_locale || user.user_metadata?.numberLocale) {
+            setNumberLocale(user.user_metadata.number_locale || user.user_metadata.numberLocale);
+          }
+          if (typeof user.user_metadata?.decimals === "number") {
+            setDecimals(user.user_metadata.decimals);
+          }
+
           // Cargar perfil desde API segura (bypasea RLS recursivo)
           try {
             const res = await fetch("/api/user/profile");
             if (res.ok) {
               const data = await res.json();
               if (data.isAdmin) setRole("admin");
+              if (data.profile?.currency) setCurrency(data.profile.currency);
+              if (data.profile?.number_locale) setNumberLocale(data.profile.number_locale);
+              if (typeof data.profile?.decimals === "number") setDecimals(data.profile.decimals);
               if (data.profile?.full_name) setFullName(data.profile.full_name);
               if (data.profile?.business_name) setBusinessName(data.profile.business_name);
               if (data.profile?.business_rubro) setBusinessRubro(data.profile.business_rubro);
@@ -263,19 +284,36 @@ export default function SettingsPage() {
     if (savedDays) setPriceReviewDays(parseInt(savedDays, 10) || 15);
   }, [supabase]);
 
-  // Formateo con puntos de miles para valores monetarios enteros (ej: 1000000 -> "1.000.000")
+  const selectedCountry = useMemo(() => {
+    const match = COUNTRY_PRESETS.find(
+      (c) =>
+        c.currency.toUpperCase() === currency.toUpperCase() &&
+        c.numberLocale.toLowerCase() === numberLocale.toLowerCase() &&
+        c.decimals === decimals
+    );
+    return match ? match.countryCode : "custom";
+  }, [currency, numberLocale, decimals]);
+
+  const handleCountryChange = (code: string) => {
+    if (code === "custom") return;
+    const match = COUNTRY_PRESETS.find((c) => c.countryCode === code);
+    if (match) {
+      setCurrency(match.currency);
+      setNumberLocale(match.numberLocale);
+      setDecimals(match.decimals);
+    }
+  };
+
+  // Formateo con puntos o comas de miles para valores monetarios enteros
   const formatThousands = (val: number | string) => {
     if (val === "" || val === null || val === undefined) return "";
     const clean = String(val).replace(/\D/g, "");
     if (!clean) return "";
-    return parseInt(clean, 10).toLocaleString("es-AR");
+    return formatNumber(parseInt(clean, 10), { decimals: 0, locale: numberLocale });
   };
 
   // Cálculos de Objetivo Mensual y Valor Hora/Minuto
-  const parsedSalary =
-    typeof salary === "number"
-      ? salary
-      : parseFloat(String(salary).replace(/\./g, "").replace(/,/g, ".")) || 0;
+  const parsedSalary = parseNumber(salary, { numberLocale });
   const numDays = typeof daysPerMonth === "number" ? daysPerMonth : parseFloat(String(daysPerMonth)) || 0;
   const numHours = typeof hoursPerDay === "number" ? hoursPerDay : parseFloat(String(hoursPerDay)) || 0;
   const totalHoursPerMonth = numDays * numHours;
@@ -467,6 +505,9 @@ export default function SettingsPage() {
         businessEmail: businessEmail.trim(),
         instagram: instagram.trim(),
         address: address.trim(),
+        currency: currency.trim().toUpperCase(),
+        numberLocale: numberLocale.trim(),
+        decimals: Number(decimals),
       };
       if (newPassword.trim()) {
         payload.password = newPassword.trim();
@@ -479,10 +520,24 @@ export default function SettingsPage() {
       });
 
       if (res.ok) {
+        updateGlobalFormatPrefs({
+          currency: currency.trim().toUpperCase(),
+          numberLocale: numberLocale.trim(),
+          decimals: Number(decimals),
+        });
         if (typeof window !== "undefined") {
           localStorage.setItem("haba_quote_primary_color", finalHex);
           localStorage.setItem("haba_business_rubro", businessRubro.trim());
+          localStorage.setItem(
+            "haba_format_prefs",
+            JSON.stringify({
+              currency: currency.trim().toUpperCase(),
+              numberLocale: numberLocale.trim(),
+              decimals: Number(decimals),
+            })
+          );
           window.dispatchEvent(new CustomEvent("haba-profile-updated"));
+          window.dispatchEvent(new CustomEvent("haba-format-prefs-updated"));
         }
         setSavedSuccess(true);
         setNewPassword("");
@@ -1035,6 +1090,101 @@ export default function SettingsPage() {
                 </div>
               </div>
             </div>
+
+            {/* Sección Moneda y Formato Numérico por Usuaria (T4) */}
+            <div className="pt-3 border-t border-neutral-100 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-neutral-700 flex items-center gap-1.5">
+                  <Globe className="w-3.5 h-3.5 text-[#3BB578]" />
+                  Moneda y Formato Numérico
+                </span>
+                <span className="text-[9.5px] bg-[#DCF4D7] text-[#1F7A4C] font-bold px-2 py-0.5 rounded-full border border-[#C3EBC0]">
+                  Internacional
+                </span>
+              </div>
+              <p className="text-[10px] text-neutral-400">
+                Elegí tu país para precargar moneda, separadores y decimales. Podés personalizar cada valor.
+              </p>
+
+              {/* Selector de País */}
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-neutral-700">
+                  País / Región de Referencia
+                </label>
+                <select
+                  value={selectedCountry}
+                  onChange={(e) => handleCountryChange(e.target.value)}
+                  className="w-full px-3.5 py-2 text-sm bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] focus:ring-2 focus:ring-[#DCF4D7] outline-none transition font-medium text-neutral-800"
+                >
+                  {COUNTRY_PRESETS.map((c) => (
+                    <option key={c.countryCode} value={c.countryCode}>
+                      {c.flag} {c.countryName} ({c.currency} · {c.example})
+                    </option>
+                  ))}
+                  <option value="custom">🌐 Otro / Personalizado</option>
+                </select>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-0.5">
+                {/* Moneda */}
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-neutral-700">
+                    Código de Moneda
+                  </label>
+                  <input
+                    type="text"
+                    value={currency}
+                    onChange={(e) => setCurrency(e.target.value.toUpperCase())}
+                    placeholder="ARS, MXN, CLP, USD"
+                    className="w-full px-3.5 py-2 text-sm bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] focus:ring-2 focus:ring-[#DCF4D7] outline-none transition uppercase font-mono font-bold text-neutral-800"
+                  />
+                </div>
+
+                {/* Locale Numérico */}
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-neutral-700">
+                    Separador Numérico
+                  </label>
+                  <select
+                    value={numberLocale}
+                    onChange={(e) => setNumberLocale(e.target.value)}
+                    className="w-full px-3.5 py-2 text-sm bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] focus:ring-2 focus:ring-[#DCF4D7] outline-none transition text-neutral-800"
+                  >
+                    <option value="es-AR">es-AR (Coma: 1.234,50)</option>
+                    <option value="es-MX">es-MX (Punto: 1,234.50)</option>
+                    <option value="es-CL">es-CL (Punto miles: 1.235)</option>
+                    <option value="en-US">en-US (Punto: 1,234.50)</option>
+                    <option value="es-CO">es-CO (Punto miles: 1.235)</option>
+                    <option value="es-UY">es-UY (Coma: 1.234,50)</option>
+                    <option value="es-ES">es-ES (Coma: 1.234,50)</option>
+                    <option value="es-PE">es-PE (Punto: 1,234.50)</option>
+                  </select>
+                </div>
+
+                {/* Decimales */}
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-neutral-700">
+                    Decimales en Precios
+                  </label>
+                  <select
+                    value={decimals}
+                    onChange={(e) => setDecimals(Number(e.target.value))}
+                    className="w-full px-3.5 py-2 text-sm bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] focus:ring-2 focus:ring-[#DCF4D7] outline-none transition font-semibold text-neutral-800"
+                  >
+                    <option value={2}>2 decimales (estándar)</option>
+                    <option value={0}>Sin decimales (ej. Chile)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Muestra en vivo */}
+              <div className="p-3 bg-neutral-50 border border-neutral-200 rounded-2xl flex items-center justify-between text-xs">
+                <span className="text-neutral-500 font-medium">Previsualización del formato:</span>
+                <span className="font-bold text-[#1F7A4C] text-sm bg-white px-3 py-1 rounded-xl border border-neutral-200 shadow-2xs font-mono">
+                  {formatMoney(1234.5, { currency, numberLocale, decimals })}
+                </span>
+              </div>
+            </div>
           </div>
 
           <div className="space-y-1">
@@ -1201,20 +1351,20 @@ export default function SettingsPage() {
           {/* Tarjeta de Resumen en Tiempo Real */}
           <div className="bg-[#DCF4D7]/70 border border-[#C3EBC0] rounded-2xl p-3.5 space-y-2 text-xs text-[#1F7A4C]">
             <div className="flex items-center justify-between text-[11px]">
-              <span>Gastos Fijos ({formatCurrency(fixedExpensesTotal)}) + Sueldo ({formatCurrency(parsedSalary)}):</span>
+              <span>Gastos Fijos ({formatMoney(fixedExpensesTotal)}) + Sueldo ({formatMoney(parsedSalary)}):</span>
             </div>
             <div className="flex items-center justify-between font-bold pt-1 border-t border-[#C3EBC0]">
               <span>Objetivo Mensual Unificado:</span>
-              <span className="text-sm font-black text-[#1F7A4C]">{formatCurrency(objetivoMensual)}</span>
+              <span className="text-sm font-black text-[#1F7A4C]">{formatMoney(objetivoMensual)}</span>
             </div>
             <div className="grid grid-cols-2 gap-2 pt-1 border-t border-[#C3EBC0] text-center">
               <div className="bg-white/80 p-2 rounded-xl border border-[#C3EBC0]/60">
                 <span className="text-[9.5px] text-neutral-500 block font-semibold">Valor por Hora</span>
-                <span className="text-xs font-bold text-[#1F7A4C]">{formatCurrency(calculatedHourlyRate)}/h</span>
+                <span className="text-xs font-bold text-[#1F7A4C]">{formatMoney(calculatedHourlyRate)}/h</span>
               </div>
               <div className="bg-white/80 p-2 rounded-xl border border-[#C3EBC0]/60">
                 <span className="text-[9.5px] text-neutral-500 block font-semibold">Valor por Minuto</span>
-                <span className="text-xs font-bold text-[#1F7A4C]">{formatCurrency(calculatedMinuteRate)}/min</span>
+                <span className="text-xs font-bold text-[#1F7A4C]">{formatMoney(calculatedMinuteRate)}/min</span>
               </div>
             </div>
           </div>

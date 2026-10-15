@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
-import { formatCurrency } from "@/lib/units";
+import { formatMoney, FormatPrefs } from "@/lib/units";
 import {
   Quote,
   QuoteItem,
@@ -80,7 +80,7 @@ export default function PresupuestoPreviewPage() {
           try {
             const { data: fullProfileData } = await supabase
               .from("profiles")
-              .select("business_name, full_name, email, phone, business_phone, business_email, instagram, address")
+              .select("business_name, full_name, email, phone, business_phone, business_email, instagram, address, currency, number_locale, decimals")
               .eq("id", quoteData.user_id)
               .maybeSingle();
             pData = fullProfileData;
@@ -157,6 +157,23 @@ export default function PresupuestoPreviewPage() {
     return getQuoteValidity(quote);
   }, [quote]);
 
+  const formatPrefs: FormatPrefs = React.useMemo(() => ({
+    currency: profile?.currency || "ARS",
+    numberLocale: profile?.number_locale || profile?.numberLocale || "es-AR",
+    decimals: typeof profile?.decimals === "number" ? profile.decimals : 2,
+  }), [profile]);
+
+  const discountAmount = React.useMemo(() => {
+    if (!quote) return 0;
+    return (quote.subtotal * (quote.discount_percent || 0)) / 100;
+  }, [quote]);
+
+  const displaySubtotal = quote && formatPrefs.decimals === 0 ? Math.round(quote.subtotal) : quote?.subtotal || 0;
+  const displayDiscount = formatPrefs.decimals === 0 ? Math.round(discountAmount) : discountAmount;
+  const displayShipping = formatPrefs.decimals === 0 ? Math.round(shippingCost) : shippingCost;
+  const displayTotal = quote && formatPrefs.decimals === 0 ? Math.round(quote.total) : quote?.total || 0;
+
+
   // Compartir por WhatsApp / Web Share API
   const handleShareWhatsApp = async () => {
     if (!quote) return;
@@ -230,8 +247,6 @@ export default function PresupuestoPreviewPage() {
     );
   }
 
-  const discountAmount =
-    quote.discount_percent > 0 ? (quote.subtotal * quote.discount_percent) / 100 : 0;
   const theme = getQuoteTheme(profile?.quote_primary_color);
   const bName = profile?.business_name?.trim() || profile?.full_name?.trim() || "Presupuesto Comercial";
   const candidateLogo = profile?.logo_url || profile?.business_logo || profile?.avatar_url || null;
@@ -588,13 +603,13 @@ export default function PresupuestoPreviewPage() {
                         {item.quantity}
                       </td>
                       <td className="py-3 px-3 text-right text-neutral-600">
-                        {formatCurrency(item.unit_price)}
+                        {formatMoney(item.unit_price, formatPrefs)}
                       </td>
                       <td
                         className="py-3 px-3 text-right font-black"
                         style={{ color: theme.primaryDark || theme.primary }}
                       >
-                        {formatCurrency(item.subtotal)}
+                        {formatMoney(item.subtotal, formatPrefs)}
                       </td>
                     </tr>
                   ))
@@ -633,13 +648,13 @@ export default function PresupuestoPreviewPage() {
           <div className="w-full sm:w-72 space-y-1.5 text-xs">
             <div className="flex justify-between text-neutral-600 px-1">
               <span>Subtotal:</span>
-              <span className="font-semibold">{formatCurrency(quote.subtotal)}</span>
+              <span className="font-semibold">{formatMoney(displaySubtotal, formatPrefs)}</span>
             </div>
 
             {quote.discount_percent > 0 && (
               <div className="flex justify-between text-rose-600 font-semibold px-1">
                 <span>Descuento ({quote.discount_percent}%):</span>
-                <span>-{formatCurrency(discountAmount)}</span>
+                <span>-{formatMoney(displayDiscount, formatPrefs)}</span>
               </div>
             )}
 
@@ -649,7 +664,7 @@ export default function PresupuestoPreviewPage() {
                 style={{ color: theme.primaryDark || theme.primary }}
               >
                 <span>Costo de Envío:</span>
-                <span>+{formatCurrency(shippingCost)}</span>
+                <span>+{formatMoney(displayShipping, formatPrefs)}</span>
               </div>
             )}
 
@@ -671,7 +686,7 @@ export default function PresupuestoPreviewPage() {
                 </span>
               </div>
               <span className="text-xl font-black">
-                {formatCurrency(quote.total)}
+                {formatMoney(displayTotal, formatPrefs)}
               </span>
             </div>
             {shippingCost > 0 && (

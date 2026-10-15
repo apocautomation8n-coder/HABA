@@ -12,7 +12,7 @@ import {
   DollarSign,
   Info,
 } from "lucide-react";
-import { formatCurrency } from "@/lib/units";
+import { useFormatPrefs } from "@/hooks/useFormatPrefs";
 import { ModifiedSupplyInfo } from "@/lib/products";
 import { sortProductPrices } from "@/components/products/ProductPricingChannels";
 
@@ -33,6 +33,7 @@ export const PriceReviewModal: React.FC<PriceReviewModalProps> = ({
   onDismissAlert,
   isRecalculating = false,
 }) => {
+  const { formatMoney } = useFormatPrefs();
   if (!isOpen || !product) return null;
 
   const modifiedSupplies: ModifiedSupplyInfo[] = product.modifiedSupplies || [];
@@ -117,7 +118,7 @@ export const PriceReviewModal: React.FC<PriceReviewModalProps> = ({
 
             {modifiedSupplies.length === 0 ? (
               <div className="p-3 bg-neutral-50 rounded-2xl border border-dashed border-neutral-200 text-center text-neutral-500 text-xs italic">
-                El costo total de la receta difiere del costo guardado ({formatCurrency(savedDirectCost)} vs {formatCurrency(currentMaterialsCost)}).
+                El costo total de la receta difiere del costo guardado ({formatMoney(savedDirectCost)} vs {formatMoney(currentMaterialsCost)}).
               </div>
             ) : (
               <div className="space-y-2.5">
@@ -162,8 +163,8 @@ export const PriceReviewModal: React.FC<PriceReviewModalProps> = ({
                             <TrendingDown className="w-3 h-3 text-sky-700" />
                           )}
                           {item.isIncrease
-                            ? `+${formatCurrency(item.priceDiff)} (+${item.percentChange}%)`
-                            : `-${formatCurrency(Math.abs(item.priceDiff))} (-${item.percentChange}%)`}
+                            ? `+${formatMoney(item.priceDiff)} (+${item.percentChange}%)`
+                            : `-${formatMoney(Math.abs(item.priceDiff))} (-${item.percentChange}%)`}
                         </span>
                       </div>
                     </div>
@@ -173,19 +174,19 @@ export const PriceReviewModal: React.FC<PriceReviewModalProps> = ({
                       <div>
                         <span className="text-neutral-400 block text-[10px]">Precio anterior:</span>
                         <span className="font-semibold text-neutral-700">
-                          {formatCurrency(item.prevPrice)} / {item.purchaseUnit}
+                          {formatMoney(item.prevPrice)} / {item.purchaseUnit}
                         </span>
                         <span className="text-[10px] text-neutral-400 block">
-                          ({formatCurrency(item.prevUnitCost)} / {item.useUnit})
+                          ({formatMoney(item.prevUnitCost)} / {item.useUnit})
                         </span>
                       </div>
                       <div className="border-l border-neutral-100 pl-2">
                         <span className="text-neutral-400 block text-[10px]">Precio actual:</span>
                         <span className={`font-bold ${item.isIncrease ? "text-amber-900" : "text-sky-900"}`}>
-                          {formatCurrency(item.newPrice)} / {item.purchaseUnit}
+                          {formatMoney(item.newPrice)} / {item.purchaseUnit}
                         </span>
                         <span className={`text-[10px] block ${item.isIncrease ? "text-amber-700" : "text-sky-700"}`}>
-                          ({formatCurrency(item.newUnitCost)} / {item.useUnit})
+                          ({formatMoney(item.newUnitCost)} / {item.useUnit})
                         </span>
                       </div>
                     </div>
@@ -195,7 +196,7 @@ export const PriceReviewModal: React.FC<PriceReviewModalProps> = ({
                       <span>Impacto en costo de este producto:</span>
                       <strong className={`font-bold ${item.isIncrease ? "text-amber-800" : "text-sky-700"}`}>
                         {item.isIncrease ? "+" : "-"}
-                        {formatCurrency(item.costImpact)}
+                        {formatMoney(item.costImpact)}
                       </strong>
                     </div>
                   </div>
@@ -213,20 +214,20 @@ export const PriceReviewModal: React.FC<PriceReviewModalProps> = ({
               <div className="p-2 bg-white rounded-xl border border-neutral-200/60">
                 <span className="text-[10px] text-neutral-400 block">Costo Guardado</span>
                 <span className="font-bold text-neutral-800 text-xs">
-                  {formatCurrency(savedDirectCost)}
+                  {formatMoney(savedDirectCost)}
                 </span>
               </div>
               <div className="p-2 bg-white rounded-xl border border-neutral-200/60">
                 <span className="text-[10px] text-neutral-400 block">Nuevo Costo</span>
                 <span className="font-bold text-amber-800 text-xs">
-                  {formatCurrency(currentMaterialsCost)}
+                  {formatMoney(currentMaterialsCost)}
                 </span>
               </div>
               <div className="p-2 bg-amber-100/50 rounded-xl border border-amber-200/60">
                 <span className="text-[10px] text-amber-700 block">Diferencia</span>
                 <span className="font-extrabold text-amber-900 text-xs">
                   {costDiff > 0 ? "+" : ""}
-                  {formatCurrency(costDiff)}
+                  {formatMoney(costDiff)}
                 </span>
               </div>
             </div>
@@ -234,7 +235,7 @@ export const PriceReviewModal: React.FC<PriceReviewModalProps> = ({
             {product.include_labor && (
               <div className="text-[11px] text-neutral-500 flex justify-between pt-1 border-t border-neutral-200/40">
                 <span>Costo productivo (mano de obra):</span>
-                <span>{formatCurrency(totalLaborCost)}</span>
+                <span>{formatMoney(totalLaborCost)}</span>
               </div>
             )}
           </div>
@@ -267,19 +268,19 @@ export const PriceReviewModal: React.FC<PriceReviewModalProps> = ({
                           </span>
                         </div>
                         <span className="text-[10px] text-neutral-400 block mt-0.5">
-                          Actual: {formatCurrency(currentSelling)}
+                          Actual: {formatMoney(currentSelling)}
                         </span>
                       </div>
 
                       <div className="text-right">
                         <div className="flex items-center gap-1 justify-end">
                           <span className="font-extrabold text-[#1F7A4C] text-sm">
-                            {formatCurrency(suggestedSelling)}
+                            {formatMoney(suggestedSelling)}
                           </span>
                           {sellingDiff !== 0 && (
                             <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">
                               {sellingDiff > 0 ? "+" : ""}
-                              {formatCurrency(sellingDiff)}
+                              {formatMoney(sellingDiff)}
                             </span>
                           )}
                         </div>

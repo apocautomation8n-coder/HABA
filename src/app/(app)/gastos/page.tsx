@@ -3,7 +3,7 @@ import React, { useEffect, useState, useMemo } from "react";
 import { DollarSign, Clock, Plus, Trash2, Edit2, Calendar, AlertCircle, Check, Sparkles, X, Calculator, HelpCircle, Loader2, Info } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
-import { formatCurrency } from "@/lib/units";
+import { useFormatPrefs } from "@/hooks/useFormatPrefs";
 import { ExpenseModal, FixedExpense } from "@/components/gastos/ExpenseModal";
 import { DeleteExpenseModal } from "@/components/gastos/DeleteExpenseModal";
 
@@ -17,6 +17,7 @@ interface LaborSettings {
 
 export default function GastosPage() {
   const supabase = createClient();
+  const { formatMoney, formatNumber, parseNumber, numberLocale } = useFormatPrefs();
 
   const [loading, setLoading] = useState(true);
 
@@ -97,14 +98,14 @@ export default function GastosPage() {
     if (val === "" || val === null || val === undefined) return "";
     const clean = String(val).replace(/\D/g, "");
     if (!clean) return "";
-    return parseInt(clean, 10).toLocaleString("es-AR");
+    return formatNumber(parseInt(clean, 10));
   };
 
   // Cálculo reactivo de Mano de Obra
   const parsedSalary =
     typeof salary === "number"
       ? salary
-      : parseFloat(String(salary).replace(/\./g, "").replace(/,/g, ".")) || 0;
+      : parseNumber(String(salary)) || 0;
   const numDays = typeof daysPerMonth === "number" ? daysPerMonth : parseFloat(String(daysPerMonth)) || 0;
   const numHours = typeof hoursPerDay === "number" ? hoursPerDay : parseFloat(String(hoursPerDay)) || 0;
   const totalHoursPerMonth = numDays * numHours;
@@ -239,7 +240,7 @@ export default function GastosPage() {
               Total Gastos Fijos Mensuales
             </span>
             <span className="text-2xl font-black text-[#2B2B2B] mt-0.5 block font-display">
-              {formatCurrency(totalMonthlyExpenses)}
+              {formatMoney(totalMonthlyExpenses)}
             </span>
           </div>
           <button
@@ -285,7 +286,7 @@ export default function GastosPage() {
                   <div>
                     <h4 className="text-xs font-bold text-[#2B2B2B]">{expense.name}</h4>
                     <p className="text-[10px] text-[#7A7A7A] capitalize">
-                      {expense.periodicity} · {formatCurrency(expense.amount)}
+                      {expense.periodicity} · {formatMoney(expense.amount)}
                     </p>
                   </div>
                 </div>
@@ -293,7 +294,7 @@ export default function GastosPage() {
                 <div className="flex items-center gap-2 sm:gap-3">
                   <div className="text-right">
                     <span className="text-xs font-bold text-[#1F7A4C] block">
-                      {formatCurrency(expense.monthly_equivalent)}
+                      {formatMoney(expense.monthly_equivalent)}
                     </span>
                     <span className="text-[9px] text-[#7A7A7A] block">/ mes</span>
                   </div>
@@ -398,15 +399,15 @@ export default function GastosPage() {
             <div className="space-y-2 text-xs font-medium text-[#2B2B2B]">
               <div className="flex justify-between items-center">
                 <span>Gastos Operativos:</span>
-                <span>{formatCurrency(totalMonthlyExpenses)}/mes</span>
+                <span>{formatMoney(totalMonthlyExpenses)}/mes</span>
               </div>
               <div className="flex justify-between items-center">
                 <span>+ Sueldo Pretendido:</span>
-                <span>{formatCurrency(parsedSalary)}/mes</span>
+                <span>{formatMoney(parsedSalary)}/mes</span>
               </div>
               <div className="pt-2 mt-2 border-t border-[#C3EBC0] flex justify-between items-center font-bold text-sm text-[#1F7A4C]">
                 <span>= Objetivo Mensual:</span>
-                <span>{formatCurrency(objetivoMensual)}/mes</span>
+                <span>{formatMoney(objetivoMensual)}/mes</span>
               </div>
             </div>
           </div>
@@ -426,7 +427,7 @@ export default function GastosPage() {
                   Valor por Hora
                 </span>
                 <span className="text-base font-black text-[#2B2B2B] font-display">
-                  {formatCurrency(calculatedHourlyRate)}
+                  {formatMoney(calculatedHourlyRate)}
                 </span>
                 <span className="text-[9px] block text-[#7A7A7A] mt-0.5">
                   ({totalHoursPerMonth} hs/mes)
@@ -438,7 +439,7 @@ export default function GastosPage() {
                   Valor por Minuto
                 </span>
                 <span className="text-base font-black text-[#1F7A4C] font-display">
-                  {formatCurrency(calculatedMinuteRate)}
+                  {formatMoney(calculatedMinuteRate)}
                 </span>
                 <span className="text-[9px] block text-[#2E9E65] mt-0.5 font-medium">
                   Se aplica a tus productos
@@ -480,21 +481,21 @@ export default function GastosPage() {
                   1️⃣ <strong>Objetivo Mensual:</strong> Sumamos tus gastos operativos y tu sueldo:
                 </p>
                 <div className="bg-white p-2 rounded-xl border border-[#DCF4D7] font-mono text-[10.5px] text-[#1F7A4C]">
-                  Gastos + Sueldo = <strong>{formatCurrency(objetivoMensual)} al mes</strong>
+                  Gastos + Sueldo = <strong>{formatMoney(objetivoMensual)} al mes</strong>
                 </div>
 
                 <p>
                   2️⃣ <strong>Valor por Hora:</strong> Dividís tu objetivo mensual por el total de horas que trabajás:
                 </p>
                 <div className="bg-white p-2 rounded-xl border border-[#DCF4D7] font-mono text-[10.5px] text-[#1F7A4C]">
-                  {formatCurrency(objetivoMensual)} ÷ {totalHoursPerMonth} hs = <strong>{formatCurrency(calculatedHourlyRate)} por hora</strong>
+                  {formatMoney(objetivoMensual)} ÷ {totalHoursPerMonth} hs = <strong>{formatMoney(calculatedHourlyRate)} por hora</strong>
                 </div>
 
                 <p>
                   3️⃣ <strong>Valor por Minuto:</strong> Dividís el valor hora entre los 60 minutos de la hora:
                 </p>
                 <div className="bg-white p-2 rounded-xl border border-[#DCF4D7] font-mono text-[10.5px] text-[#1F7A4C]">
-                  {formatCurrency(calculatedHourlyRate)} ÷ 60 min = <strong>{formatCurrency(calculatedMinuteRate)} por minuto</strong>
+                  {formatMoney(calculatedHourlyRate)} ÷ 60 min = <strong>{formatMoney(calculatedMinuteRate)} por minuto</strong>
                 </div>
 
                 <p className="text-[10.5px] text-[#2E9E65] pt-1.5 border-t border-[#DCF4D7] font-medium">
@@ -541,7 +542,7 @@ export default function GastosPage() {
             <div className="flex items-center justify-center gap-1.5 mt-2 text-[10px] text-neutral-400">
               <Check className="w-3 h-3 text-[#3BB578]" />
               <span>
-                Última actualización: {new Date(lastSavedAt).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })} hs
+                Última actualización: {new Date(lastSavedAt).toLocaleDateString(numberLocale, { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })} hs
               </span>
             </div>
           )}

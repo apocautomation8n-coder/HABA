@@ -5,6 +5,7 @@ import { X, Calendar, TrendingUp, DollarSign, Plus, ArrowUpDown, Tag, Sparkles, 
 import { Insumo, PriceRecord } from "@/types/insumo";
 import { PriceHistoryChart } from "./PriceHistoryChart";
 import { HabaMascot } from "@/components/HabaMascot";
+import { useFormatPrefs } from "@/hooks/useFormatPrefs";
 
 interface PriceHistoryDrawerProps {
   isOpen: boolean;
@@ -21,6 +22,7 @@ export function PriceHistoryDrawer({
   onAddPriceRecord,
   onDeletePriceRecord,
 }: PriceHistoryDrawerProps) {
+  const { formatMoney, parseNumber, numberLocale, currency } = useFormatPrefs();
   // Ordenamiento de la lista: true = descendente (recientes primero), false = ascendente (antiguos primero)
   const [isDescOrder, setIsDescOrder] = useState<boolean>(true);
   const [showAddForm, setShowAddForm] = useState<boolean>(false);
@@ -123,18 +125,14 @@ export function PriceHistoryDrawer({
   if (!insumo) return null;
 
   const formatCurrency = (val: number) => {
-    return new Intl.NumberFormat("es-AR", {
-      style: "currency",
-      currency: "ARS",
-      maximumFractionDigits: 0,
-    }).format(val);
+    return formatMoney(val);
   };
 
   const handleSavePrice = (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
 
-    const num = parseFloat(newPrice);
+    const num = parseNumber(newPrice);
     if (isNaN(num) || num <= 0) {
       setFormError("Ingresá un precio válido mayor a 0");
       return;
@@ -359,7 +357,7 @@ export function PriceHistoryDrawer({
                           disabled={deletingId === item.id}
                           onClick={async () => {
                             if (!onDeletePriceRecord || !insumo) return;
-                            const formattedDate = new Date(item.date).toLocaleDateString("es-AR", {
+                            const formattedDate = new Date(item.date).toLocaleDateString(numberLocale, {
                               day: "numeric",
                               month: "short",
                               year: "numeric",
@@ -436,7 +434,7 @@ export function PriceHistoryDrawer({
                 <div className="grid grid-cols-2 gap-2.5">
                   <div className="space-y-1">
                     <label className="text-[11px] font-semibold text-neutral-600 block">
-                      Precio ($ ARS) *
+                      Precio ({currency}) *
                     </label>
                     <div className="relative">
                       <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-xs text-neutral-400 pointer-events-none font-bold">

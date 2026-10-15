@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo } from "react";
 import { PriceRecord } from "@/types/insumo";
+import { useFormatPrefs } from "@/hooks/useFormatPrefs";
 
 interface PriceHistoryChartProps {
   history: PriceRecord[];
@@ -9,6 +10,7 @@ interface PriceHistoryChartProps {
 }
 
 export function PriceHistoryChart({ history, unit }: PriceHistoryChartProps) {
+  const { formatMoney, numberLocale } = useFormatPrefs();
   const [activePointIndex, setActivePointIndex] = useState<number | null>(null);
 
   // Ordenar cronológicamente (de más antiguo a más reciente para el gráfico)
@@ -102,17 +104,13 @@ export function PriceHistoryChart({ history, unit }: PriceHistoryChartProps) {
 
   // Formateadores
   const formatCurrency = (val: number) => {
-    return new Intl.NumberFormat("es-AR", {
-      style: "currency",
-      currency: "ARS",
-      maximumFractionDigits: 0,
-    }).format(val);
+    return formatMoney(val);
   };
 
   const formatDateLabel = (dateStr: string) => {
     try {
       const date = new Date(dateStr);
-      return date.toLocaleDateString("es-AR", {
+      return date.toLocaleDateString(numberLocale, {
         day: "numeric",
         month: "short",
       });
@@ -155,7 +153,7 @@ export function PriceHistoryChart({ history, unit }: PriceHistoryChartProps) {
         <div>
           <span className="text-[11px] font-medium text-neutral-400 block">
             {activePointIndex !== null
-              ? `Registro del ${new Date(activePoint.record.date).toLocaleDateString("es-AR", {
+              ? `Registro del ${new Date(activePoint.record.date).toLocaleDateString(numberLocale, {
                   day: "numeric",
                   month: "long",
                   year: "numeric",

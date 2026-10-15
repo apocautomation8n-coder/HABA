@@ -2,7 +2,7 @@
  * Módulo de utilidades y constantes de Productos para HABA
  */
 
-import { calculateUnitCost, formatCurrency, normalizeUnit } from "./units";
+import { calculateUnitCost, formatMoney, FormatPrefs, normalizeUnit } from "./units";
 import { createClient } from "./supabase/client";
 
 export interface ProductCategory {
@@ -1206,7 +1206,8 @@ export interface PriceDifferenceResult {
 export function getPriceDifference(
   currentPrice: number,
   savedPrice: number,
-  costImpact?: number
+  costImpact?: number,
+  prefs?: FormatPrefs
 ): PriceDifferenceResult | null {
   const diff = currentPrice - savedPrice;
   if (Math.abs(diff) <= 0.001) {
@@ -1226,7 +1227,7 @@ export function getPriceDifference(
   const formattedBadge = `${arrow} ${badgeLabel} (${sign}${absPercent}%)`;
 
   const absImpact = costImpact !== undefined ? Math.abs(costImpact) : 0;
-  const formattedImpact = `${sign}${formatCurrency(absImpact)}`;
+  const formattedImpact = `${sign}${formatMoney(absImpact, prefs)}`;
 
   return {
     diff,

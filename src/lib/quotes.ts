@@ -1,4 +1,4 @@
-import { formatCurrency } from "@/lib/units";
+import { formatMoney, FormatPrefs } from "@/lib/units";
 
 export interface QuoteItem {
   id?: string;
@@ -42,6 +42,10 @@ export interface UserProfile {
   business_rubro?: string | null;
   rubro?: string | null;
   quote_primary_color?: string | null;
+  currency?: string | null;
+  number_locale?: string | null;
+  numberLocale?: string | null;
+  decimals?: number | null;
 }
 
 export interface QuoteThemeColor {
@@ -365,26 +369,40 @@ export function buildQuoteWhatsAppMessage(
   const val = validity || getQuoteValidity(quote);
   const { cleanNotes, shippingCost } = parseQuoteNotes(quote.notes);
 
+  const formatPrefs: FormatPrefs = {
+    currency: profile?.currency || "ARS",
+    numberLocale: profile?.number_locale || profile?.numberLocale || "es-AR",
+    decimals: typeof profile?.decimals === "number" ? profile.decimals : 2,
+  };
+
+  const finalShippingCost = shippingCost || (quote.shipping_cost ? Number(quote.shipping_cost) : 0);
+  const rawSubtotal = quote.subtotal;
+  const rawDiscount = quote.discount_percent > 0 ? (rawSubtotal * quote.discount_percent) / 100 : 0;
+  const rawTotal = quote.total;
+
+  const displaySubtotal = formatPrefs.decimals === 0 ? Math.round(rawSubtotal) : rawSubtotal;
+  const displayDiscount = formatPrefs.decimals === 0 ? Math.round(rawDiscount) : rawDiscount;
+  const displayShipping = formatPrefs.decimals === 0 ? Math.round(finalShippingCost) : finalShippingCost;
+  const displayTotal = formatPrefs.decimals === 0 ? Math.round(rawTotal) : rawTotal;
+
   const itemsText = (quote.quote_items || [])
     .map(
       (item) =>
-        `• ${item.quantity}x ${item.product_name} (${formatCurrency(item.unit_price)}) = ${formatCurrency(
-          item.subtotal
+        `• ${item.quantity}x ${item.product_name} (${formatMoney(item.unit_price, formatPrefs)}) = ${formatMoney(
+          item.subtotal,
+          formatPrefs
         )}`
     )
     .join("\n");
 
   const discountText =
     quote.discount_percent > 0
-      ? `\n🏷️ Descuento (${quote.discount_percent}%): -${formatCurrency(
-          (quote.subtotal * quote.discount_percent) / 100
-        )}`
+      ? `\n🏷️ Descuento (${quote.discount_percent}%): -${formatMoney(displayDiscount, formatPrefs)}`
       : "";
 
-  const finalShippingCost = shippingCost || (quote.shipping_cost ? Number(quote.shipping_cost) : 0);
   const shippingText =
     finalShippingCost > 0
-      ? `\n🚚 Envío: ${formatCurrency(finalShippingCost)} (sujeto a tarifa del correo)`
+      ? `\n🚚 Envío: ${formatMoney(displayShipping, formatPrefs)} (sujeto a tarifa del correo)`
       : "";
 
   const notesText = cleanNotes ? `\n\n📝 *Condiciones / Entrega:*\n${cleanNotes}` : "";
@@ -414,8 +432,8 @@ export function buildQuoteWhatsAppMessage(
     `*Cliente:* ${quote.client_name}\n` +
     `*Emisión:* ${val.formattedIssuedAt}\n\n` +
     `*Detalle de Productos:*\n${itemsText}\n\n` +
-    `*Subtotal:* ${formatCurrency(quote.subtotal)}${discountText}${shippingText}\n` +
-    `*TOTAL FINAL:* ${formatCurrency(quote.total)}${notesText}\n\n` +
+    `*Subtotal:* ${formatMoney(displaySubtotal, formatPrefs)}${discountText}${shippingText}\n` +
+    `*TOTAL FINAL:* ${formatMoney(displayTotal, formatPrefs)}${notesText}\n\n` +
     `⏳ *Presupuesto válido hasta el ${val.formattedValidUntil}* (${val.validityDays} días corridos a partir de la fecha de emisión). Precios sujetos a modificación posterior.` +
     contactFooter +
     `\n\n¡Muchas gracias por tu consulta!`
@@ -478,17 +496,32 @@ export function generateQuotePrintHtml(
   const instagram = profile?.instagram;
   const address = profile?.address;
 
-  const discountAmount =
-    quote.discount_percent > 0 ? (quote.subtotal * quote.discount_percent) / 100 : 0;
-  const finalShippingCost = shippingCost || (quote.shipping_cost ? Number(quote.shipping_cost) : 0);
+  const formattedIssuedDate = new Date(quote.created_at).toLocaleDateString(
+    profile?.number_locale || profile?.numberLocale || "es-AR",
+    {
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+    }
+  );
+  const formatPrefs: FormatPrefs = {
+    currency: profile?.currency || "ARS",
+    numberLocale: profile?.number_locale || profile?.numberLocale || "es-AR",
+    decimals: typeof profile?.decimals === "number" ? profile.decimals : 2,
+  };
 
-  const formattedIssuedDate = new Date(quote.created_at).toLocaleDateString("es-AR", {
-    day: "2-digit",
-    month: "long",
-    year: "numeric",
-  });
+  const finalShippingCost = shippingCost || (quote.shipping_cost ? Number(quote.shipping_cost) : 0);
+  const rawSubtotal = quote.subtotal;
+  const rawDiscount = (rawSubtotal * (quote.discount_percent || 0)) / 100;
+  const rawTotal = quote.total;
+
+  const displaySubtotal = formatPrefs.decimals === 0 ? Math.round(rawSubtotal) : rawSubtotal;
+  const displayDiscount = formatPrefs.decimals === 0 ? Math.round(rawDiscount) : rawDiscount;
+  const displayShipping = formatPrefs.decimals === 0 ? Math.round(finalShippingCost) : finalShippingCost;
+  const displayTotal = formatPrefs.decimals === 0 ? Math.round(rawTotal) : rawTotal;
+
   const formattedDeliveryDate = quote.delivery_date
-    ? new Date(quote.delivery_date).toLocaleDateString("es-AR", {
+    ? new Date(quote.delivery_date).toLocaleDateString(formatPrefs.numberLocale, {
         day: "2-digit",
         month: "short",
         year: "numeric",
@@ -501,8 +534,8 @@ export function generateQuotePrintHtml(
       <tr>
         <td style="padding: 6px 10px; border-bottom: 1px solid #f0f0f0; font-weight: 700; color: #1f2937; text-align: left;">${escapeHtml(item.product_name)}</td>
         <td style="padding: 6px 8px; border-bottom: 1px solid #f0f0f0; text-align: center; font-weight: 800; color: #374151;">${escapeHtml(item.quantity)}</td>
-        <td style="padding: 6px 10px; border-bottom: 1px solid #f0f0f0; text-align: right; color: #4b5563;">${formatCurrency(item.unit_price)}</td>
-        <td style="padding: 6px 10px; border-bottom: 1px solid #f0f0f0; text-align: right; font-weight: 900; color: ${theme.primaryDark || theme.primary};">${formatCurrency(item.subtotal)}</td>
+        <td style="padding: 6px 10px; border-bottom: 1px solid #f0f0f0; text-align: right; color: #4b5563;">${formatMoney(item.unit_price, formatPrefs)}</td>
+        <td style="padding: 6px 10px; border-bottom: 1px solid #f0f0f0; text-align: right; font-weight: 900; color: ${theme.primaryDark || theme.primary};">${formatMoney(item.subtotal, formatPrefs)}</td>
       </tr>
     `
     )
@@ -776,17 +809,17 @@ export function generateQuotePrintHtml(
             <tbody>
               <tr>
                 <td style="color: #6b7280;">Subtotal:</td>
-                <td style="text-align: right; font-weight: 700; color: #1f2937;">${formatCurrency(quote.subtotal)}</td>
+                <td style="text-align: right; font-weight: 700; color: #1f2937;">${formatMoney(displaySubtotal, formatPrefs)}</td>
               </tr>
-              ${discountAmount > 0 ? `
+              ${displayDiscount > 0 ? `
               <tr>
                 <td style="color: #b91c1c;">Descuento (${quote.discount_percent}%):</td>
-                <td style="text-align: right; color: #b91c1c; font-weight: 700;">-${formatCurrency(discountAmount)}</td>
+                <td style="text-align: right; color: #b91c1c; font-weight: 700;">-${formatMoney(displayDiscount, formatPrefs)}</td>
               </tr>` : ""}
-              ${finalShippingCost > 0 ? `
+              ${displayShipping > 0 ? `
               <tr>
                 <td style="color: ${theme.primaryDark || theme.primary};">Costo de Envío:</td>
-                <td style="text-align: right; color: ${theme.primaryDark || theme.primary}; font-weight: 700;">+${formatCurrency(finalShippingCost)}</td>
+                <td style="text-align: right; color: ${theme.primaryDark || theme.primary}; font-weight: 700;">+${formatMoney(displayShipping, formatPrefs)}</td>
               </tr>` : ""}
             </tbody>
           </table>
@@ -796,7 +829,7 @@ export function generateQuotePrintHtml(
               <span style="font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.5px; display: block; opacity: 0.85;">Total Final</span>
               <span style="font-size: 8.5px; opacity: 0.75; display: block;">Presupuesto congelado</span>
             </div>
-            <span>${formatCurrency(quote.total)}</span>
+            <span>${formatMoney(displayTotal, formatPrefs)}</span>
           </div>
           ${finalShippingCost > 0 ? `
           <p style="font-size: 9px; color: #9ca3af; text-align: right; font-style: italic; margin: 3px 0 0;">

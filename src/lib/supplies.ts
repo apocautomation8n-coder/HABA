@@ -1,4 +1,4 @@
-import { normalizeUnit } from "@/lib/units";
+import { normalizeUnit, parseNumber } from "@/lib/units";
 
 export type UnitDimensionUnit = "cm" | "mm" | "m";
 
@@ -198,8 +198,12 @@ export function calculateUnitFractionQuantity({
  * Convierte una cantidad decimal en una representación fraccionaria legible y amigable
  * para insumos por unidad en recipes (ej. "aprox. 1/75 de unidad", "1/2 de unidad").
  */
-export function getFriendlyFractionLabel(qty: number | string, unitLabel: string = "unidad"): string | null {
-  const num = typeof qty === "number" ? qty : parseFloat(String(qty).replace(",", "."));
+export function getFriendlyFractionLabel(
+  qty: number | string,
+  unitLabel: string = "unidad",
+  locale: string = "es-AR"
+): string | null {
+  const num = typeof qty === "number" ? qty : parseNumber(qty, locale);
   if (isNaN(num) || num <= 0) return null;
 
   const rawUnit = unitLabel.trim().toLowerCase();
@@ -253,8 +257,8 @@ export function getFriendlyFractionLabel(qty: number | string, unitLabel: string
       }
     }
 
-    // 3. Fallback en es-AR formateado con hasta 4 decimales
-    const formatted = num.toLocaleString("es-AR", { maximumFractionDigits: 4 });
+    // 3. Fallback con locale formateado con hasta 4 decimales
+    const formatted = num.toLocaleString(locale, { maximumFractionDigits: 4 });
     return `${formatted} de ${cleanUnit}`;
   }
 
@@ -270,7 +274,7 @@ export function getFriendlyFractionLabel(qty: number | string, unitLabel: string
     }
   }
 
-  const formatted = num.toLocaleString("es-AR", { maximumFractionDigits: 4 });
+  const formatted = num.toLocaleString(locale, { maximumFractionDigits: 4 });
   return `${formatted} ${cleanUnit}es`;
 }
 

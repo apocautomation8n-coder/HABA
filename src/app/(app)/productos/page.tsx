@@ -37,7 +37,8 @@ import {
 } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
-import { formatCurrency, calculateUnitCost } from "@/lib/units";
+import { calculateUnitCost } from "@/lib/units";
+import { useFormatPrefs } from "@/hooks/useFormatPrefs";
 import {
   PRODUCT_CATEGORIES,
   parseProductMeta,
@@ -197,6 +198,7 @@ export type EditPriceLine = ChannelPriceItem;
 export default function ProductosPage() {
   const supabase = createClient();
   const router = useRouter();
+  const { formatMoney, formatNumber, parseNumber, numberLocale } = useFormatPrefs();
 
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -876,9 +878,9 @@ export default function ProductosPage() {
       const current = updated[index];
       const merged = { ...current, ...patch };
 
-      const p = typeof merged.pieces === "number" ? merged.pieces : parseFloat(String(merged.pieces)) || 1;
-      const w = typeof merged.width === "number" ? merged.width : parseFloat(String(merged.width)) || 0;
-      const l = typeof merged.length === "number" ? merged.length : parseFloat(String(merged.length)) || 0;
+      const p = typeof merged.pieces === "number" ? merged.pieces : parseNumber(String(merged.pieces)) || 1;
+      const w = typeof merged.width === "number" ? merged.width : parseNumber(String(merged.width)) || 0;
+      const l = typeof merged.length === "number" ? merged.length : parseNumber(String(merged.length)) || 0;
       const wU = merged.widthUnit || "cm";
       const lU = merged.lengthUnit || "cm";
       const hasUnitDims = isUnitSupplyWithDimensions(merged);
@@ -2274,7 +2276,7 @@ export default function ProductosPage() {
                       Costo Total
                     </span>
                     <span className="text-sm font-black text-[#1F7A4C]">
-                      {formatCurrency(product.total_cost)}
+                      {formatMoney(product.total_cost)}
                     </span>
                     <span className="text-[9px] block text-neutral-400 mt-0.5">
                       {product.include_labor
@@ -2290,7 +2292,7 @@ export default function ProductosPage() {
                         : "Precio Sugerido"}
                     </span>
                     <span className="text-sm font-black text-[#1F7A4C]">
-                      {retailPrice ? formatCurrency(retailPrice.selling_price) : "-"}
+                      {retailPrice ? formatMoney(retailPrice.selling_price) : "-"}
                     </span>
                     {retailPrice && (
                       <span className="text-[9px] block text-[#1F7A4C] mt-0.5 font-semibold">
@@ -2416,12 +2418,12 @@ export default function ProductosPage() {
                                         <TrendingDown className="w-2.5 h-2.5 text-sky-700" />
                                       )}
                                       {mod.isIncrease
-                                        ? `+${formatCurrency(mod.priceDiff)} (+${mod.percentChange}%)`
-                                        : `-${formatCurrency(Math.abs(mod.priceDiff))} (-${mod.percentChange}%)`}
+                                        ? `+${formatMoney(mod.priceDiff)} (+${mod.percentChange}%)`
+                                        : `-${formatMoney(Math.abs(mod.priceDiff))} (-${mod.percentChange}%)`}
                                     </span>
                                   </div>
                                   <div className="text-[10px] text-neutral-500 mt-0.5">
-                                    {formatCurrency(mod.prevPrice)} → {formatCurrency(mod.newPrice)} / {mod.purchaseUnit} • Usa: {mod.quantity} {mod.useUnit}
+                                    {formatMoney(mod.prevPrice)} → {formatMoney(mod.newPrice)} / {mod.purchaseUnit} • Usa: {mod.quantity} {mod.useUnit}
                                   </div>
                                 </div>
                                 <div className="text-right flex-shrink-0">
@@ -2432,8 +2434,8 @@ export default function ProductosPage() {
                                     }`}
                                   >
                                     {mod.isIncrease
-                                      ? `+${formatCurrency(mod.costImpact)}`
-                                      : `-${formatCurrency(mod.costImpact)}`}
+                                      ? `+${formatMoney(mod.costImpact)}`
+                                      : `-${formatMoney(mod.costImpact)}`}
                                   </span>
                                 </div>
                               </div>
@@ -2442,9 +2444,9 @@ export default function ProductosPage() {
                         )}
 
                         <div className="flex items-center justify-between bg-white/80 p-2 rounded-xl border border-amber-200/60 text-[11px]">
-                          <span>Costo materiales guardado: <strong>{formatCurrency(product.direct_cost)}</strong></span>
+                          <span>Costo materiales guardado: <strong>{formatMoney(product.direct_cost)}</strong></span>
                           <span>➔</span>
-                          <span>Costo actual vigente: <strong className="text-amber-800">{formatCurrency(product.currentMaterialsCost)}</strong></span>
+                          <span>Costo actual vigente: <strong className="text-amber-800">{formatMoney(product.currentMaterialsCost)}</strong></span>
                         </div>
 
                         <div className="flex items-center justify-between pt-1 gap-2">
@@ -2484,13 +2486,13 @@ export default function ProductosPage() {
                       </span>
                       <div className="flex justify-between text-neutral-600">
                         <span>Total Insumos & Componentes:</span>
-                        <span className="font-semibold">{formatCurrency(product.direct_cost)}</span>
+                        <span className="font-semibold">{formatMoney(product.direct_cost)}</span>
                       </div>
                       {product.include_labor && (
                         <>
                           <div className="flex justify-between text-neutral-600">
                             <span>Costo productivo ({product.work_time_minutes} min):</span>
-                            <span className="font-semibold">{formatCurrency(product.labor_cost)}</span>
+                            <span className="font-semibold">{formatMoney(product.labor_cost)}</span>
                           </div>
                           <div className="text-[10px] text-neutral-400 -mt-0.5">
                             Incluye gastos operativos + sueldo
@@ -2593,27 +2595,27 @@ export default function ProductosPage() {
                                     {item.quantity} {supply?.use_unit || "u"}
                                     {(() => {
                                       if (isUnitSupply(supply)) {
-                                        const frac = getFriendlyFractionLabel(item.quantity, supply?.use_unit || "u");
+                                        const frac = getFriendlyFractionLabel(item.quantity, supply?.use_unit || "u", numberLocale);
                                         if (frac) {
                                           return <span className="text-neutral-500 font-semibold ml-1">({frac})</span>;
                                         }
                                       }
                                       return null;
-                                    })()} • {formatCurrency(unitCost)} /{supply?.use_unit || "u"}
+                                    })()} • {formatMoney(unitCost)} /{supply?.use_unit || "u"}
                                     {isModified && modInfo && (
                                       <span
                                         className={`font-semibold ml-1 ${
                                           modInfo.isIncrease ? "text-amber-800" : "text-sky-800"
                                         }`}
                                       >
-                                        (antes {formatCurrency(modInfo.prevUnitCost)}/{modInfo.useUnit})
+                                        (antes {formatMoney(modInfo.prevUnitCost)}/{modInfo.useUnit})
                                       </span>
                                     )}
                                   </span>
                                 </div>
                                 <div className="text-right flex-shrink-0">
                                   <span className="font-extrabold text-[#1F7A4C] text-xs block">
-                                    {formatCurrency(subtotalCost)}
+                                    {formatMoney(subtotalCost)}
                                   </span>
                                   {isModified && modInfo && (
                                     <span
@@ -2622,8 +2624,8 @@ export default function ProductosPage() {
                                       }`}
                                     >
                                       {modInfo.isIncrease
-                                        ? `+${formatCurrency(modInfo.costImpact)}`
-                                        : `-${formatCurrency(modInfo.costImpact)}`}
+                                        ? `+${formatMoney(modInfo.costImpact)}`
+                                        : `-${formatMoney(modInfo.costImpact)}`}
                                     </span>
                                   )}
                                 </div>
@@ -2673,12 +2675,12 @@ export default function ProductosPage() {
                                     </span>
                                   </div>
                                   <span className="text-[10px] text-neutral-400 block mt-0.5">
-                                    {item.quantity} u • {formatCurrency(unitCost)} / u (costo base)
+                                    {item.quantity} u • {formatMoney(unitCost)} / u (costo base)
                                   </span>
                                 </div>
                                 <div className="text-right flex-shrink-0">
                                   <span className="font-extrabold text-[#1F7A4C] text-xs block">
-                                    {formatCurrency(subtotalCost)}
+                                    {formatMoney(subtotalCost)}
                                   </span>
                                 </div>
                               </div>
@@ -2707,11 +2709,11 @@ export default function ProductosPage() {
                                     {price.channel_name}
                                   </span>
                                   <span className="text-[10px] text-[#1F7A4C] font-semibold">
-                                    Margen {price.profit_margin_percent}% (+{formatCurrency(profit)})
+                                    Margen {price.profit_margin_percent}% (+{formatMoney(profit)})
                                   </span>
                                 </div>
                                 <span className="font-extrabold text-[#1F7A4C] text-sm">
-                                  {formatCurrency(price.selling_price)}
+                                  {formatMoney(price.selling_price)}
                                 </span>
                               </div>
                             );
@@ -3006,7 +3008,7 @@ export default function ProductosPage() {
                   </div>
                   <div className="ml-auto text-right flex-shrink-0">
                     <span className="text-xs font-bold text-[#1F7A4C] bg-emerald-50/80 px-2.5 py-1 rounded-xl border border-emerald-100/80 whitespace-nowrap inline-block shadow-2xs">
-                      Materiales: {formatCurrency(editDirectCost)}
+                      Materiales: {formatMoney(editDirectCost)}
                     </span>
                   </div>
                 </div>
@@ -3027,7 +3029,7 @@ export default function ProductosPage() {
                             .filter((s) => !editSupplies.some((es) => es.supply_id === s.id))
                             .map((s) => (
                               <option key={s.id} value={s.id}>
-                                {s.name} ({s.category === "packaging" ? "📦 Packaging" : "🧵 Materia"}) - {formatCurrency(s.current_price)}/{s.purchase_unit || "u"}
+                                {s.name} ({s.category === "packaging" ? "📦 Packaging" : "🧵 Materia"}) - {formatMoney(s.current_price)}/{s.purchase_unit || "u"}
                               </option>
                             ))}
                         </select>
@@ -3076,9 +3078,9 @@ export default function ProductosPage() {
                           const isSurface = isSurfaceSupply(item);
                           const hasUnitDims = isUnitSupplyWithDimensions(item);
                           const isUnit = isUnitSupply(item);
-                          const qty = typeof item.quantity === "number" ? item.quantity : parseFloat(String(item.quantity)) || 0;
+                          const qty = typeof item.quantity === "number" ? item.quantity : parseNumber(String(item.quantity));
                           const lineSubtotal = item.unit_cost * qty;
-                          const friendlyFrac = isUnit ? getFriendlyFractionLabel(item.quantity, item.use_unit) : null;
+                          const friendlyFrac = isUnit ? getFriendlyFractionLabel(item.quantity, item.use_unit, numberLocale) : null;
                           const modInfo = editModalModifiedSupplies.find(
                             (m) => m.supplyId === item.supply_id
                           );
@@ -3121,14 +3123,14 @@ export default function ProductosPage() {
                                     )}
                                   </div>
                                   <span className="text-[10px] text-neutral-400 block mt-0.5">
-                                    {formatCurrency(item.unit_cost)} / {item.use_unit}
+                                    {formatMoney(item.unit_cost)} / {item.use_unit}
                                     {isModified && modInfo && (
                                       <span
                                         className={`font-semibold ml-1 ${
                                           modInfo.isIncrease ? "text-amber-800" : "text-sky-800"
                                         }`}
                                       >
-                                        (antes {formatCurrency(modInfo.prevUnitCost)}/{modInfo.useUnit})
+                                        (antes {formatMoney(modInfo.prevUnitCost)}/{modInfo.useUnit})
                                       </span>
                                     )}
                                   </span>
@@ -3246,7 +3248,7 @@ export default function ProductosPage() {
                                         <span className="text-[10px] text-neutral-400 font-medium">Consumo total:</span>
                                         <span className="text-[11px] font-bold text-neutral-700 bg-neutral-100 border border-neutral-200/60 px-2 py-0.5 rounded-lg whitespace-nowrap">
                                           {qty > 0
-                                            ? `${qty.toLocaleString("es-AR", { maximumFractionDigits: 4 })} ${item.use_unit}`
+                                            ? `${qty.toLocaleString(numberLocale, { maximumFractionDigits: 4 })} ${item.use_unit}`
                                             : `0 ${item.use_unit}`}
                                         </span>
                                         {friendlyFrac && (
@@ -3258,7 +3260,7 @@ export default function ProductosPage() {
                                       <div className="text-right pl-2 border-l border-neutral-200/60">
                                         <span className="text-[9px] text-neutral-400 block uppercase font-bold leading-none mb-0.5">Subtotal</span>
                                         <span className="font-extrabold text-[#1F7A4C] text-xs">
-                                          {formatCurrency(lineSubtotal)}
+                                          {formatMoney(lineSubtotal)}
                                         </span>
                                       </div>
                                     </div>
@@ -3292,7 +3294,7 @@ export default function ProductosPage() {
                                   <div className="text-right">
                                     <span className="text-[9px] text-neutral-400 block uppercase font-bold leading-none mb-0.5">Subtotal</span>
                                     <span className="font-extrabold text-[#1F7A4C] text-xs">
-                                      {formatCurrency(lineSubtotal)}
+                                      {formatMoney(lineSubtotal)}
                                     </span>
                                   </div>
                                 </div>
@@ -3328,7 +3330,7 @@ export default function ProductosPage() {
                               const baseCost = Number(p.total_cost) || Number(p.direct_cost) || 0;
                               return (
                                 <option key={p.id} value={p.id}>
-                                  {p.name} - Costo base: {formatCurrency(baseCost)}/u
+                                  {p.name} - Costo base: {formatMoney(baseCost)}/u
                                 </option>
                               );
                             })}
@@ -3355,7 +3357,7 @@ export default function ProductosPage() {
                     ) : (
                       <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
                         {editComponents.map((item, idx) => {
-                          const qty = typeof item.quantity === "number" ? item.quantity : parseFloat(String(item.quantity)) || 0;
+                          const qty = typeof item.quantity === "number" ? item.quantity : parseNumber(String(item.quantity));
                           const lineSubtotal = item.unit_cost * qty;
 
                           return (
@@ -3371,7 +3373,7 @@ export default function ProductosPage() {
                                   </span>
                                 </div>
                                 <span className="text-[10px] text-neutral-400 block ml-5 mt-0.5">
-                                  Costo base: {formatCurrency(item.unit_cost)} / u
+                                  Costo base: {formatMoney(item.unit_cost)} / u
                                 </span>
                               </div>
 
@@ -3389,7 +3391,7 @@ export default function ProductosPage() {
                                   u
                                 </span>
                                 <span className="text-xs font-bold text-[#1F7A4C] min-w-[65px] text-right">
-                                  {formatCurrency(lineSubtotal)}
+                                  {formatMoney(lineSubtotal)}
                                 </span>
                                 <button
                                   type="button"

@@ -2,7 +2,7 @@
 
 import React from "react";
 import { Layers } from "lucide-react";
-import { formatCurrency } from "@/lib/units";
+import { useFormatPrefs } from "@/hooks/useFormatPrefs";
 
 export interface ProductYieldCardProps {
   yieldValue: number | string;
@@ -27,7 +27,8 @@ export function ProductYieldCard({
   unitTotalCost,
   className = "",
 }: ProductYieldCardProps) {
-  const numYield = typeof yieldValue === "number" ? yieldValue : parseFloat(String(yieldValue)) || 1;
+  const { formatMoney, parseNumber } = useFormatPrefs();
+  const numYield = typeof yieldValue === "number" ? yieldValue : parseNumber(String(yieldValue)) || 1;
   const safeYield = numYield > 0 ? numYield : 1;
 
   // Si hay mano de obra incluida, reflejarla en el desglose y totales
@@ -51,7 +52,7 @@ export function ProductYieldCard({
       onChangeYield("");
       return;
     }
-    const parsed = parseFloat(raw);
+    const parsed = parseNumber(raw);
     if (isNaN(parsed)) {
       onChangeYield("");
     } else {
@@ -124,19 +125,19 @@ export function ProductYieldCard({
               Costo Total del Lote {hasLabor ? "(Producción)" : "(Materiales)"}:
             </span>
             <span className="text-[10px] text-neutral-400 block mt-0.5">
-              Insumos: <strong className="text-neutral-600">{formatCurrency(suppliesCost)}</strong>
+              Insumos: <strong className="text-neutral-600">{formatMoney(suppliesCost)}</strong>
               {" | "}
-              Subproductos: <strong className="text-neutral-600">{formatCurrency(componentsCost)}</strong>
+              Subproductos: <strong className="text-neutral-600">{formatMoney(componentsCost)}</strong>
               {hasLabor && (
                 <>
                   {" | "}
-                  M.O: <strong className="text-neutral-600">{formatCurrency(batchLaborCost!)}</strong>
+                  M.O: <strong className="text-neutral-600">{formatMoney(batchLaborCost!)}</strong>
                 </>
               )}
             </span>
           </div>
           <span className="text-sm font-black text-neutral-800">
-            {formatCurrency(displayBatchCost)}
+            {formatMoney(displayBatchCost)}
           </span>
         </div>
 
@@ -145,7 +146,7 @@ export function ProductYieldCard({
             Costo Unitario Resultante ({safeYield} {safeYield === 1 ? "unidad" : "unidades"}):
           </span>
           <span className="text-sm font-black text-[#1F7A4C] bg-[#DCF4D7] px-2.5 py-0.5 rounded-lg border border-[#3BB578]/30 shadow-2xs">
-            {formatCurrency(displayUnitCost)} / u
+            {formatMoney(displayUnitCost)} / u
           </span>
         </div>
       </div>

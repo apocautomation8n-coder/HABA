@@ -18,10 +18,10 @@ import {
   UNIT_PRESETS,
   UnitPreset,
   calculateUnitCost,
-  formatCurrency,
   findMatchingPreset,
   normalizeUnit,
 } from "@/lib/units";
+import { useFormatPrefs } from "@/hooks/useFormatPrefs";
 import { useModalThemeColor } from "@/hooks/useModalThemeColor";
 import { formDraftStorage } from "@/lib/formStorage";
 import {
@@ -120,6 +120,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
   existingSupplies,
 }) => {
   const supabase = createClient();
+  const { formatMoney, parseNumber, currency } = useFormatPrefs();
   useModalThemeColor(isOpen);
 
   const [mounted, setMounted] = useState(false);
@@ -827,8 +828,8 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
   useEffect(() => {
     if (!isSurfaceUnit) return;
 
-    const w = parseFloat(String(dimWidth));
-    const l = parseFloat(String(dimLength));
+    const w = parseNumber(String(dimWidth));
+    const l = parseNumber(String(dimLength));
 
     if (!isNaN(w) && w > 0 && !isNaN(l) && l > 0) {
       let area = 0;
@@ -1024,13 +1025,13 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
 
   if (!isOpen || !mounted) return null;
 
-  const parsedPrice = typeof currentPrice === "number" ? currentPrice : parseFloat(currentPrice) || 0;
-  const parsedQuantity = typeof purchaseQuantity === "number" ? purchaseQuantity : parseFloat(String(purchaseQuantity)) || 0;
+  const parsedPrice = typeof currentPrice === "number" ? currentPrice : parseNumber(currentPrice);
+  const parsedQuantity = typeof purchaseQuantity === "number" ? purchaseQuantity : parseNumber(String(purchaseQuantity));
   const parsedConversion = activePreset?.isStandard
     ? activePreset.defaultFactor
     : typeof conversionFactor === "number"
     ? conversionFactor
-    : parseFloat(String(conversionFactor)) || 0;
+    : parseNumber(String(conversionFactor));
 
   const unitCost = calculateUnitCost(parsedPrice, parsedQuantity, parsedConversion);
   const totalRecipeUnits = parsedQuantity * parsedConversion;
@@ -1055,8 +1056,8 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
       return;
     }
     if (isSurfaceUnit) {
-      const w = parseFloat(String(dimWidth));
-      const l = parseFloat(String(dimLength));
+      const w = parseNumber(String(dimWidth));
+      const l = parseNumber(String(dimLength));
       if ((isNaN(w) || w <= 0 || isNaN(l) || l <= 0) && parsedQuantity <= 0) {
         setError("Por favor ingresá el ancho y el largo del insumo (mayores a 0)");
         return;
@@ -1141,12 +1142,12 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
         }
 
         const parsedUnitWidth =
-          isUnitPurchase && unitWidth !== "" && !isNaN(Number(unitWidth)) && Number(unitWidth) > 0
-            ? Number(unitWidth)
+          isUnitPurchase && unitWidth !== "" && !isNaN(parseNumber(String(unitWidth))) && parseNumber(String(unitWidth)) > 0
+            ? parseNumber(String(unitWidth))
             : null;
         const parsedUnitLength =
-          isUnitPurchase && unitLength !== "" && !isNaN(Number(unitLength)) && Number(unitLength) > 0
-            ? Number(unitLength)
+          isUnitPurchase && unitLength !== "" && !isNaN(parseNumber(String(unitLength))) && parseNumber(String(unitLength)) > 0
+            ? parseNumber(String(unitLength))
             : null;
         const parsedUnitDimUnit =
           parsedUnitWidth && parsedUnitLength ? (unitDimensionUnit || "cm") : null;
@@ -1172,12 +1173,12 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
       } else {
         const nowIso = new Date().toISOString();
         const parsedUnitWidth =
-          isUnitPurchase && unitWidth !== "" && !isNaN(Number(unitWidth)) && Number(unitWidth) > 0
-            ? Number(unitWidth)
+          isUnitPurchase && unitWidth !== "" && !isNaN(parseNumber(String(unitWidth))) && parseNumber(String(unitWidth)) > 0
+            ? parseNumber(String(unitWidth))
             : null;
         const parsedUnitLength =
-          isUnitPurchase && unitLength !== "" && !isNaN(Number(unitLength)) && Number(unitLength) > 0
-            ? Number(unitLength)
+          isUnitPurchase && unitLength !== "" && !isNaN(parseNumber(String(unitLength))) && parseNumber(String(unitLength)) > 0
+            ? parseNumber(String(unitLength))
             : null;
         const parsedUnitDimUnit =
           parsedUnitWidth && parsedUnitLength ? (unitDimensionUnit || "cm") : null;
@@ -1761,7 +1762,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
             >
               <div className="space-y-1">
                 <label className="text-[11px] font-semibold text-[#2B2B2B] block">
-                  Precio de Reposición ($ ARS) *
+                  Precio de Reposición ({currency}) *
                 </label>
                 <div className="relative">
                   <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-[#7A7A7A] font-bold text-xs">
@@ -1838,7 +1839,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
                 </div>
                 <div className="text-right">
                   <span className="text-base sm:text-lg font-black text-[#1F7A4C] font-display">
-                    {formatCurrency(unitCost)}
+                    {formatMoney(unitCost)}
                   </span>
                   <span className="text-[10px] block text-[#2E9E65] font-semibold">
                     por cada {useUnit}

@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useMemo } from "react";
 import { X, Sparkles, AlertCircle, Loader2, DollarSign, Calendar, Calculator } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { formatCurrency } from "@/lib/units";
+import { useFormatPrefs } from "@/hooks/useFormatPrefs";
 import { useModalThemeColor } from "@/hooks/useModalThemeColor";
 
 export interface FixedExpense {
@@ -48,6 +48,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
   initialExpense,
 }) => {
   const supabase = createClient();
+  const { formatMoney, parseNumber } = useFormatPrefs();
   useModalThemeColor(isOpen);
 
   const [name, setName] = useState("");
@@ -73,7 +74,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
   }, [initialExpense, isOpen]);
 
   // Cálculo en vivo del equivalente mensual
-  const parsedAmount = typeof amount === "number" ? amount : parseFloat(amount) || 0;
+  const parsedAmount = typeof amount === "number" ? amount : parseNumber(amount);
   const monthlyEquivalent = useMemo(() => {
     if (parsedAmount <= 0) return 0;
     const divider = PERIODICITY_DIVIDERS[periodicity] || 1;
@@ -311,7 +312,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
             </div>
             <div className="text-right">
               <span className="text-xs sm:text-sm font-black text-[#1F7A4C]">
-                {formatCurrency(monthlyEquivalent)}
+                {formatMoney(monthlyEquivalent)}
               </span>
               <span className="text-[9px] text-neutral-500 block">/ mes</span>
             </div>

@@ -28,7 +28,7 @@ import {
 } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
-import { formatCurrency } from "@/lib/units";
+import { useFormatPrefs } from "@/hooks/useFormatPrefs";
 import { matchesSearch } from "@/lib/search";
 import {
   formatDateToInput,
@@ -70,6 +70,7 @@ function NuevoPresupuestoContent() {
   const isEditing = Boolean(editId);
 
   const supabase = createClient();
+  const { formatMoney, parseNumber, decimals } = useFormatPrefs();
 
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -369,21 +370,22 @@ function NuevoPresupuestoContent() {
   // Cálculos reactivos de subtotales y total congelado
   const subtotal = useMemo(() => {
     return items.reduce((acc, item) => {
-      const p = typeof item.unitPrice === "number" ? item.unitPrice : parseFloat(String(item.unitPrice)) || 0;
-      const q = typeof item.quantity === "number" ? item.quantity : parseFloat(String(item.quantity)) || 0;
+      const p = parseNumber(item.unitPrice);
+      const q = parseNumber(item.quantity);
       return acc + p * q;
     }, 0);
-  }, [items]);
+  }, [items, parseNumber]);
 
   const discountAmount = useMemo(() => {
-    const disc = typeof discountPercent === "number" ? discountPercent : parseFloat(String(discountPercent)) || 0;
+    const disc = parseNumber(discountPercent);
     if (disc <= 0) return 0;
     return subtotal * (disc / 100);
-  }, [subtotal, discountPercent]);
+  }, [subtotal, discountPercent, parseNumber]);
 
   const total = useMemo(() => {
-    return Math.max(0, subtotal - discountAmount) + (shippingCost || 0);
-  }, [subtotal, discountAmount, shippingCost]);
+    const raw = Math.max(0, subtotal - discountAmount) + (shippingCost || 0);
+    return decimals === 0 ? Math.round(raw) : raw;
+  }, [subtotal, discountAmount, shippingCost, decimals]);
 
   // Guardar presupuesto congelado en Supabase
   const handleSaveQuote = async () => {
@@ -626,14 +628,14 @@ function NuevoPresupuestoContent() {
             Total Presupuestado
           </span>
           <span className="text-xs text-[#1F7A4C]">
-            Subtotal: {formatCurrency(subtotal)}
+            Subtotal: {formatMoney(subtotal)}
             {Number(discountPercent) > 0 && ` | Dcto: -${discountPercent}%`}
-            {Number(shippingCost) > 0 && ` | Envío: +${formatCurrency(shippingCost)}`}
+            {Number(shippingCost) > 0 && ` | Envío: +${formatMoney(shippingCost)}`}
           </span>
         </div>
         <div className="text-right">
           <span className="text-2xl font-black text-[#1F7A4C]">
-            {formatCurrency(total)}
+            {formatMoney(total)}
           </span>
           <span className="text-[9px] block text-[#1F7A4C]">Valor final congelado</span>
         </div>
@@ -814,7 +816,7 @@ function NuevoPresupuestoContent() {
                     <div className="text-right pt-1 border-t border-neutral-200/40">
                       <span className="text-[11px] text-neutral-400 mr-1">Subtotal ítem:</span>
                       <span className="text-xs font-black text-[#1F7A4C]">
-                        {formatCurrency(lineTotal)}
+                        {formatMoney(lineTotal)}
                       </span>
                     </div>
                   </div>
@@ -938,12 +940,12 @@ function NuevoPresupuestoContent() {
 
             <div className="flex items-center gap-2 text-xs flex-wrap">
               <span className="text-neutral-600 font-medium">
-                Subtotal: <strong className="text-neutral-800">{formatCurrency(subtotal)}</strong>
+                Subtotal: <strong className="text-neutral-800">{formatMoney(subtotal)}</strong>
               </span>
 
               {Number(discountPercent) > 0 ? (
                 <span className="text-[10px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-1.5 py-0.2 rounded-md">
-                  Dcto: -{discountPercent}% (-{formatCurrency(discountAmount)})
+                  Dcto: -{discountPercent}% (-{formatMoney(discountAmount)})
                 </span>
               ) : (
                 <span className="text-[10px] text-neutral-400">
@@ -953,7 +955,7 @@ function NuevoPresupuestoContent() {
 
               {shippingCost > 0 && (
                 <span className="text-[10px] font-bold text-[#1F7A4C] bg-[#DCF4D7] border border-[#C3EBC0] px-1.5 py-0.2 rounded-md flex items-center gap-0.5">
-                  🚚 Envío: +{formatCurrency(shippingCost)}
+                  🚚 Envío: +{formatMoney(shippingCost)}
                 </span>
               )}
             </div>
@@ -965,7 +967,7 @@ function NuevoPresupuestoContent() {
               Total Final
             </span>
             <span className="text-base sm:text-lg font-black text-[#1F7A4C] leading-tight block">
-              {formatCurrency(total)}
+              {formatMoney(total)}
             </span>
           </div>
         </div>
@@ -1061,7 +1063,7 @@ function NuevoPresupuestoContent() {
                               {price.channel_name}
                             </span>
                             <span className="font-extrabold text-[#1F7A4C]">
-                              {formatCurrency(price.selling_price)}
+                              {formatMoney(price.selling_price)}
                             </span>
                           </button>
                         ))
@@ -1080,7 +1082,7 @@ function NuevoPresupuestoContent() {
                         >
                           <span className="font-semibold text-neutral-700">Precio Base</span>
                           <span className="font-extrabold text-[#1F7A4C]">
-                            {formatCurrency(prod.total_cost)}
+                            {formatMoney(prod.total_cost)}
                           </span>
                         </button>
                       )}
