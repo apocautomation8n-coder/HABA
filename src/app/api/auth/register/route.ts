@@ -132,6 +132,58 @@ export async function POST(request: Request) {
       ) {
         return NextResponse.json({ error: duplicateMessage }, { status: 409 });
       }
+
+      // Si Supabase excedió el límite horario de envíos de email de prueba ("email rate limit exceeded")
+      // crear la usuaria de forma directa confirmada para no bloquear su registro ni su prueba de 15 días
+      if (msg.includes("rate limit") || msg.includes("email rate limit")) {
+        console.warn("[Registro] Límite de emails de Supabase alcanzado. Creando usuaria directamente con service_role...");
+        const admin = createSupabaseClient(url, serviceKey, {
+          auth: { autoRefreshToken: false, persistSession: false },
+        });
+        const { data: adminCreated, error: adminErr } = await admin.auth.admin.createUser({
+          email,
+          password,
+          email_confirm: true,
+          user_metadata: {
+            full_name: fullName,
+            business_name: businessName || fullName,
+            phone: phone || null,
+            business_phone: phone || null,
+            ...planUserMetadata,
+          },
+          app_metadata: appMetadata,
+        });
+
+        if (adminErr) {
+          const adminMsg = adminErr.message.toLowerCase();
+          if (adminMsg.includes("already registered") || adminMsg.includes("user already exists")) {
+            return NextResponse.json({ error: duplicateMessage }, { status: 409 });
+          }
+          return NextResponse.json({ error: adminErr.message || "Error al registrar usuaria." }, { status: 400 });
+        }
+
+        // Crear registro en profiles
+        try {
+          await admin.from("profiles").upsert({
+            id: adminCreated.user.id,
+            email,
+            full_name: fullName,
+            business_name: businessName || fullName,
+            phone: phone || null,
+            role: "user",
+            status: "active",
+            updated_at: new Date().toISOString(),
+          });
+        } catch {
+          // ignore
+        }
+
+        return NextResponse.json({
+          success: true,
+          requiresEmailConfirmation: false,
+        });
+      }
+
       return NextResponse.json({ error: error.message || "No se pudo completar el registro." }, { status: 400 });
     }
 
