@@ -64,9 +64,11 @@ export async function POST(request: Request) {
         }
       }
 
+      // No enviar payer_email para permitir abonar con cualquier cuenta o billetera de Mercado Pago
+      // sin bloquear por discrepancia de emails (evita error 'subscription-invalid-user').
+      // La asociación unívoca está 100% garantizada por external_reference = user.id.
       const payload: Record<string, any> = {
         external_reference: user.id,
-        payer_email: user.email,
         back_url: backUrl,
         notification_url: notificationUrl,
       };
@@ -106,7 +108,6 @@ export async function POST(request: Request) {
           const fallbackPayload: Record<string, any> = {
             reason: title,
             external_reference: user.id,
-            payer_email: user.email,
             back_url: backUrl,
             notification_url: notificationUrl,
             auto_recurring: {
