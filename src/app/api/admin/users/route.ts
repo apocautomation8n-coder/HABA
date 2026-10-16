@@ -204,10 +204,12 @@ export async function POST(request: Request) {
       );
     }
 
+    // Regla de Negocio: todo alta nueva comienza obligatoriamente en plan de prueba (15 días)
+    // El plan mensual solo se habilita al abonar a través de la pasarela de Mercado Pago
+    const effectivePlanType: PlanType = "prueba";
     const startDate =
       planStartDate?.trim() || new Date().toISOString().split("T")[0];
-    const endDate =
-      planEndDate?.trim() || calculatePlanEndDate(startDate, planType as PlanType);
+    const endDate = calculatePlanEndDate(startDate, effectivePlanType);
 
     // Obtener usuarios existentes de Auth y perfiles para calcular el siguiente ID secuencial
     let nextAccountNumber = "01";
@@ -246,7 +248,7 @@ export async function POST(request: Request) {
 
     // 1. Crear usuario en Auth con confirmación automática, metadata de plan y account_number único
     const initialPlanMeta = buildInitialUserMetadata({
-      planType: planType as PlanType,
+      planType: effectivePlanType,
       planStartDate: startDate,
       planEndDate: endDate,
       accountStatus: accountStatus,

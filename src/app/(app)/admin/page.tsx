@@ -1015,20 +1015,12 @@ export default function AdminPage() {
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1">
                       <label className="text-[11px] font-semibold text-[#2B2B2B]">Plan *</label>
-                      <select
-                        value={newPlanType}
-                        onChange={(e) => {
-                          const p = e.target.value as PlanType;
-                          setNewPlanType(p);
-                          setNewPlanEndDate(calculatePlanEndDate(newPlanStartDate, p));
-                        }}
-                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#EAF0E8] rounded-xl focus:border-[#3BB578] outline-none text-[#2B2B2B]"
-                      >
-                        <option value="prueba">Prueba (15 días)</option>
-                        <option value="mensual">Mensual (1 mes)</option>
-                        <option value="trimestral">Trimestral (3 meses)</option>
-                        <option value="anual">Anual (1 año)</option>
-                      </select>
+                      <input
+                        type="text"
+                        readOnly
+                        value="Prueba (15 días)"
+                        className="w-full px-2.5 py-1.5 text-xs bg-neutral-100 border border-[#EAF0E8] rounded-xl text-neutral-600 font-semibold cursor-not-allowed select-none"
+                      />
                     </div>
 
                     <div className="space-y-1">

@@ -62,7 +62,8 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
 
     let preapproval: any = null;
 
-    // 2. Buscar preapproval en Mercado Pago por external_reference (prioridad 1)
+    // 2. Buscar preapproval en Mercado Pago ESTRICTAMENTE por external_reference = userId
+    // REGLA CRÍTICA: Solo se sincronizan suscripciones iniciadas a través de la pasarela oficial de HABA
     try {
       const searchRes = await fetch(
         `https://api.mercadopago.com/preapproval/search?external_reference=${encodeURIComponent(
@@ -75,39 +76,17 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
       if (searchRes.ok) {
         const searchData = await searchRes.json();
         if (Array.isArray(searchData.results) && searchData.results.length > 0) {
-          preapproval = searchData.results[0];
+          // Asegurar que el external_reference coincida unívocamente con el usuario
+          const matched = searchData.results.find(
+            (p: any) => p.external_reference === userId
+          );
+          if (matched) {
+            preapproval = matched;
+          }
         }
       }
     } catch (e) {
       console.warn("[Mercado Pago Sync] Error buscando por external_reference:", e);
-    }
-
-    // 3. Fallback: Buscar preapproval por email del pagador si no se encontró por external_reference
-    if (!preapproval && targetEmail) {
-      try {
-        const emailSearchRes = await fetch(
-          `https://api.mercadopago.com/preapproval/search?payer_email=${encodeURIComponent(
-            targetEmail
-          )}&status=authorized`,
-          {
-            headers: { Authorization: `Bearer ${accessToken}` },
-          }
-        );
-        if (emailSearchRes.ok) {
-          const emailData = await emailSearchRes.json();
-          if (Array.isArray(emailData.results) && emailData.results.length > 0) {
-            // REGLA ESTRICTA: Solo asociar si no tiene un external_reference de OTRA usuaria distinta
-            const candidate = emailData.results.find(
-              (p: any) => !p.external_reference || p.external_reference === userId
-            );
-            if (candidate) {
-              preapproval = candidate;
-            }
-          }
-        }
-      } catch (e) {
-        console.warn("[Mercado Pago Sync] Error buscando por email:", e);
-      }
     }
 
     // 4. Si no hay preapproval recurrente, buscar pagos autorizados recientes

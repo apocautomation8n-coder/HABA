@@ -270,12 +270,17 @@ export default function SettingsPage() {
               if (data.profile?.account_status) setAccountStatus(data.profile.account_status);
               if (data.profile?.account_number) setAccountNumber(data.profile.account_number);
 
-              // Si volvio de abonar en Mercado Pago, sincronizar automaticamente
+              // Si volvio de abonar en Mercado Pago, sincronizar automaticamente y limpiar URL
               if (
                 typeof window !== "undefined" &&
                 (window.location.search.includes("status=approved") ||
                   window.location.search.includes("preapproval_id"))
               ) {
+                try {
+                  window.history.replaceState({}, document.title, window.location.pathname);
+                } catch {
+                  // ignore
+                }
                 handleSyncMercadoPago(true);
               }
             }
