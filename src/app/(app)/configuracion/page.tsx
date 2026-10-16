@@ -147,7 +147,7 @@ export default function SettingsPage() {
       // Si no detectó la suscripción automáticamente con su email de HABA y fue acción manual
       if (!data.synced && !silent) {
         const customEmail = window.prompt(
-          `No detectamos un cobro en Mercado Pago asociado a tu email de HABA (${email || "tu cuenta"}).\n\nSi pagaste desde una cuenta de Mercado Pago con OTRO email (ej: tu cuenta personal o de un familiar), ingresalo acá para vincular tu suscripción:`
+          `No detectamos un cobro en Mercado Pago asociado a tu email de HABA (${email || "tu cuenta"}).\n\nSi pagaste desde una cuenta de Mercado Pago con OTRO email (ej: cuenta personal o de un familiar) o querés vincularlo por N° de operación, ingresalo acá:`
         );
         if (customEmail && customEmail.trim()) {
           setSyncingMP(true);

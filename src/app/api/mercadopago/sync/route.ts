@@ -27,10 +27,27 @@ async function handleSync(request: Request) {
     const body = request.method === "POST" ? await request.json().catch(() => ({})) : {};
 
     const requestedUserId = url.searchParams.get("userId") || body.userId;
-    const explicitPayerEmail =
+    let explicitPayerEmail =
       body.payer_email || body.payerEmail || url.searchParams.get("payer_email") || url.searchParams.get("payerEmail");
-    const explicitPreapprovalId =
+    let explicitPreapprovalId =
       body.preapproval_id || body.preapprovalId || url.searchParams.get("preapproval_id") || url.searchParams.get("preapprovalId");
+    let explicitPaymentId =
+      body.payment_id || body.paymentId || url.searchParams.get("payment_id") || url.searchParams.get("paymentId");
+    const rawQuery = body.query || url.searchParams.get("query");
+
+    // Detección inteligente si el usuario ingresó un dato genérico en el prompt (email, n° de operación o ID de suscripción)
+    if (explicitPayerEmail) {
+      const clean = explicitPayerEmail.trim();
+      if (/^\d{6,16}$/.test(clean)) {
+        // Es un número de pago/operación (ej: 183522471869)
+        explicitPaymentId = clean;
+        explicitPayerEmail = undefined;
+      } else if (clean.startsWith("2c93") || (clean.length >= 24 && !clean.includes("@"))) {
+        // Es un preapproval_id de suscripción
+        explicitPreapprovalId = clean;
+        explicitPayerEmail = undefined;
+      }
+    }
 
     let targetUserId = user.id;
     let targetEmail = user.email;
@@ -49,6 +66,8 @@ async function handleSync(request: Request) {
       email: targetEmail,
       payerEmail: explicitPayerEmail || undefined,
       preapprovalId: explicitPreapprovalId || undefined,
+      paymentId: explicitPaymentId || undefined,
+      queryInput: rawQuery || undefined,
     });
 
     return NextResponse.json(result);
