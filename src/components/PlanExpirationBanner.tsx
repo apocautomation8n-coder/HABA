@@ -11,7 +11,7 @@ export function PlanExpirationBanner() {
   const [subscribing, setSubscribing] = useState(false);
 
   useEffect(() => {
-    // Si viene parámetro test=true o banner=true en la URL, no considerar el descarte en sessionStorage
+    // Si viene parámetro banner=true o test=true en la URL, no considerar el descarte en sessionStorage
     const searchParams =
       typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
     const forceShow =
@@ -27,11 +27,19 @@ export function PlanExpirationBanner() {
         const res = await fetch("/api/user/profile");
         if (res.ok) {
           const data = await res.json();
+
+          // REGLA ESTRICTA Y ABSOLUTA:
+          // El banner NUNCA debe aparecerle a la cuenta de Administradora (Gio)
+          if (data.isAdmin || data.profile?.role === "admin") {
+            setLoaded(true);
+            return;
+          }
+
           const p = data.profile;
           setProfile(p);
 
-          // Si el plan ya expiró y no es admin, redirigir a /plan-vencido
-          if (!data.isAdmin && p && isPlanExpired(p.plan_end_date, p.account_status)) {
+          // Si el plan ya expiró en una usuaria regular, redirigir a /plan-vencido
+          if (p && isPlanExpired(p.plan_end_date, p.account_status)) {
             window.location.href = "/plan-vencido";
             return;
           }

@@ -53,6 +53,13 @@ function PlanVencidoContent() {
           return;
         }
 
+        // A la cuenta de Admin NUNCA le expira el plan ni puede permanecer en /plan-vencido
+        const { checkIsAdmin } = await import("@/lib/auth-helpers");
+        if (checkIsAdmin(user)) {
+          router.push("/dashboard");
+          return;
+        }
+
         // Si volvió de Mercado Pago con status=approved, verificar si el webhook ya activó la cuenta
         if (isApprovedReturn) {
           const res = await fetch("/api/user/profile");

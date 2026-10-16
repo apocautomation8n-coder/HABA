@@ -734,27 +734,29 @@ export default function SettingsPage() {
             </span>
           </div>
 
-          <div className="pt-2.5 border-t border-neutral-200/60">
-            <button
-              type="button"
-              onClick={handleSubscribeMercadoPago}
-              disabled={subscribingMP}
-              className="w-full py-2.5 px-3 bg-[#3BB578] hover:bg-[#2E9E65] active:scale-[0.99] text-white text-xs font-bold rounded-xl transition flex items-center justify-center gap-2 shadow-xs disabled:opacity-75"
-            >
-              {subscribingMP ? (
-                <>
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  <span>Conectando con Mercado Pago...</span>
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-3.5 h-3.5 text-white" />
-                  <span>Suscribirme al Plan Mensual (Mercado Pago)</span>
-                  <ExternalLink className="w-3 h-3 text-white/80" />
-                </>
-              )}
-            </button>
-          </div>
+          {role !== "admin" && (
+            <div className="pt-2.5 border-t border-neutral-200/60">
+              <button
+                type="button"
+                onClick={handleSubscribeMercadoPago}
+                disabled={subscribingMP}
+                className="w-full py-2.5 px-3 bg-[#3BB578] hover:bg-[#2E9E65] active:scale-[0.99] text-white text-xs font-bold rounded-xl transition flex items-center justify-center gap-2 shadow-xs disabled:opacity-75"
+              >
+                {subscribingMP ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Conectando con Mercado Pago...</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-3.5 h-3.5 text-white" />
+                    <span>Suscribirme al Plan Mensual (Mercado Pago)</span>
+                    <ExternalLink className="w-3 h-3 text-white/80" />
+                  </>
+                )}
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
