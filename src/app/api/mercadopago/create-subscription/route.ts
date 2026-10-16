@@ -30,25 +30,33 @@ export async function POST(request: Request) {
     // 1. Integración Oficial API Preapproval (con MP_ACCESS_TOKEN)
     // Ata obligatoriamente external_reference = user.id para trazabilidad unívoca
     if (accessToken) {
+      const planId = process.env.MP_PREAPPROVAL_PLAN_ID || process.env.MP_PLAN_ID;
       const amount = process.env.MP_SUBSCRIPTION_AMOUNT
         ? parseFloat(process.env.MP_SUBSCRIPTION_AMOUNT)
-        : 15000;
+        : 7000;
       const currency = process.env.MP_SUBSCRIPTION_CURRENCY || "ARS";
-      const title = process.env.MP_SUBSCRIPTION_TITLE || "Suscripción Mensual HABA";
+      const title = process.env.MP_SUBSCRIPTION_TITLE || "Haba Mensual";
 
       const payload: Record<string, any> = {
-        reason: title,
         external_reference: user.id,
         payer_email: user.email,
         back_url: backUrl,
         notification_url: notificationUrl,
-        auto_recurring: {
+      };
+
+      if (planId) {
+        // Si se configuró el ID de plan preexistente de Mercado Pago
+        payload.preapproval_plan_id = planId;
+      } else {
+        // Creación dinámica recurrente con monto y título oficial de HABA ($7.000)
+        payload.reason = title;
+        payload.auto_recurring = {
           frequency: 1,
           frequency_type: "months",
           transaction_amount: amount,
           currency_id: currency,
-        },
-      };
+        };
+      }
 
       try {
         const mpRes = await fetch("https://api.mercadopago.com/preapproval", {
