@@ -131,7 +131,7 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
     }
 
     // 2. Buscar preapproval en Mercado Pago:
-    // Prioridad 1: Por external_reference = userId
+    // Prioridad 1: Por external_reference = userId (verificación ESTRICTA en memoria)
     if (!preapproval) {
       try {
         const searchRes = await fetch(
@@ -145,11 +145,15 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
         if (searchRes.ok) {
           const searchData = await searchRes.json();
           if (Array.isArray(searchData.results) && searchData.results.length > 0) {
-            const active = searchData.results.filter(
-              (p: any) => p.status === "authorized" || p.status === "paused"
+            // REGLA CRÍTICA: Mercado Pago ignora external_reference en el search, por lo que SIEMPRE
+            // se debe verificar que p.external_reference coincida unívocamente con este userId.
+            const matched = searchData.results.find(
+              (p: any) =>
+                p.external_reference === userId &&
+                (p.status === "authorized" || p.status === "paused")
             );
-            if (active.length > 0) {
-              preapproval = active[0];
+            if (matched) {
+              preapproval = matched;
             }
           }
         }
@@ -170,7 +174,11 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
         );
         if (directRes.ok) {
           const directData = await directRes.json();
-          if (directData && (directData.status === "authorized" || directData.status === "paused")) {
+          if (
+            directData &&
+            (directData.status === "authorized" || directData.status === "paused") &&
+            (!directData.external_reference || directData.external_reference === userId)
+          ) {
             preapproval = directData;
           }
         }
@@ -179,22 +187,25 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
       }
     }
 
-    // Prioridad 3: Fallback para suscripciones por email del pagador (incluye payerEmail explícito si pagó con otra cuenta)
-    const candidateEmails = Array.from(
-      new Set(
-        [
-          payerEmail,
-          targetEmail,
-          targetUser.email,
-          targetUser.user_metadata?.business_email,
-          targetUser.user_metadata?.email,
-        ]
-          .filter(Boolean)
-          .map((e) => (e as string).trim().toLowerCase())
-      )
-    );
+    // Prioridad 3: Fallback para suscripciones por email
+    // Si el usuario ingresó explícitamente un payerEmail (ej: modal manual de usuario)
+    const explicitEmail = payerEmail ? payerEmail.trim().toLowerCase() : null;
 
     if (!preapproval) {
+      const candidateEmails = Array.from(
+        new Set(
+          [
+            explicitEmail,
+            targetEmail,
+            targetUser.email,
+            targetUser.user_metadata?.business_email,
+            targetUser.user_metadata?.email,
+          ]
+            .filter(Boolean)
+            .map((e) => (e as string).trim().toLowerCase())
+        )
+      );
+
       for (const cEmail of candidateEmails) {
         if (preapproval) break;
         try {
@@ -218,16 +229,19 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
                   new Date(b.date_created || 0).getTime() - new Date(a.date_created || 0).getTime()
               );
 
-              // 1. Tomar la suscripción autorizada más reciente sin external_reference o de este usuario
-              let candidate = sorted.find((p: any) => p.external_reference === userId);
-              if (!candidate) {
+              let candidate: any = null;
+
+              // 1. Si la suscripción ya tiene el external_reference de este usuario
+              candidate = sorted.find((p: any) => p.external_reference === userId);
+
+              // 2. Si no tiene external_reference y es el email propio de la cuenta de HABA
+              if (!candidate && cEmail === targetEmail) {
                 candidate = sorted.find((p: any) => !p.external_reference);
               }
 
-              // 2. Si el usuario ingresó explícitamente este email (o pagó con otra cuenta),
-              // tomar la suscripción autorizada más reciente de ese pagador
-              if (!candidate && (payerEmail || queryInput) && sorted.length > 0) {
-                candidate = sorted[0];
+              // 3. SOLO si el usuario ingresó EXPLÍCITAMENTE este email de pagador (modal manual)
+              if (!candidate && explicitEmail && cEmail === explicitEmail && sorted.length > 0) {
+                candidate = sorted.find((p: any) => !p.external_reference) || sorted[0];
               }
 
               if (candidate) {
@@ -268,7 +282,12 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
         if (paySearchRes.ok) {
           const payData = await paySearchRes.json();
           if (Array.isArray(payData.results) && payData.results.length > 0) {
-            paymentApproved = payData.results[0];
+            const matched = payData.results.find(
+              (p: any) => p.external_reference === userId && p.status === "approved"
+            );
+            if (matched) {
+              paymentApproved = matched;
+            }
           }
         }
       } catch (e) {
@@ -276,8 +295,8 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
       }
     }
 
-    // 4.1 Fallback por pagos recientes asociados al email del pagador
-    if (!preapproval && !paymentApproved && candidateEmails.length > 0) {
+    // 4.1 Fallback por pagos recientes SOLO SI se ingresó explícitamente un payerEmail
+    if (!preapproval && !paymentApproved && explicitEmail) {
       try {
         const recentPayRes = await fetch(
           `https://api.mercadopago.com/v1/payments/search?status=approved&sort=date_created&criteria=desc&limit=30`,
@@ -290,7 +309,7 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
           if (Array.isArray(recentPayData.results)) {
             const matchedPayment = recentPayData.results.find((p: any) => {
               const pEmail = (p.payer?.email || "").trim().toLowerCase();
-              return candidateEmails.includes(pEmail);
+              return pEmail === explicitEmail && p.status === "approved";
             });
             if (matchedPayment) {
               paymentApproved = matchedPayment;
