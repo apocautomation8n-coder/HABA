@@ -28,6 +28,9 @@ import {
   History,
   ChevronDown,
   ChevronUp,
+  SlidersHorizontal,
+  RotateCcw,
+  FilterX,
 } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { isRealUserAvatar } from "@/components/ProfileAvatar";
@@ -85,6 +88,10 @@ interface UserProfile {
   mp_preapproval_id?: string | null;
 }
 
+export type FilterPlan = "todos" | "prueba" | "mensual" | "anual";
+export type FilterVigencia = "todas" | "vigente" | "proximo" | "vencido";
+export type FilterStatus = "todos" | "active" | "suspended";
+
 type QuickFilter = "todos" | "activos" | "proximos" | "vencidos" | "desactivados";
 
 export default function AdminPage() {
@@ -97,6 +104,10 @@ export default function AdminPage() {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [search, setSearch] = useState("");
   const [quickFilter, setQuickFilter] = useState<QuickFilter>("todos");
+  const [filterPlan, setFilterPlan] = useState<FilterPlan>("todos");
+  const [filterVigencia, setFilterVigencia] = useState<FilterVigencia>("todas");
+  const [filterStatus, setFilterStatus] = useState<FilterStatus>("todos");
+  const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false);
   const [expandedHistoryUserId, setExpandedHistoryUserId] = useState<string | null>(null);
 
   // Modal para dar de alta nueva usuaria
@@ -489,11 +500,13 @@ export default function AdminPage() {
       const info = getPlanStatusInfo(u.plan_end_date);
       const accStatus =
         u.account_status || (u.status === "suspended" ? "suspended" : "active");
+      const isVencido = info.status === "vencido" || info.remainingDays < 0;
+      const isProximo = !isVencido && info.remainingDays <= 3 && info.remainingDays >= 0;
 
       acc.todos++;
-      if (accStatus === "active" && info.status !== "vencido") acc.activos++;
-      if (info.status === "proximo_a_vencer") acc.proximos++;
-      if (info.status === "vencido") acc.vencidos++;
+      if (accStatus === "active" && !isVencido) acc.activos++;
+      if (isProximo) acc.proximos++;
+      if (isVencido) acc.vencidos++;
       if (accStatus === "deactivated" || accStatus === "suspended") acc.desactivados++;
 
       return acc;
@@ -501,36 +514,85 @@ export default function AdminPage() {
     { todos: 0, activos: 0, proximos: 0, vencidos: 0, desactivados: 0 }
   );
 
-  // Filtrar usuarias por texto y filtro rápido
+  const isAnyFilterActive = Boolean(
+    search.trim() ||
+    filterPlan !== "todos" ||
+    filterVigencia !== "todas" ||
+    filterStatus !== "todos" ||
+    quickFilter !== "todos"
+  );
+
+  const activeFiltersCount = [
+    Boolean(search.trim()),
+    filterPlan !== "todos",
+    filterVigencia !== "todas",
+    filterStatus !== "todos",
+  ].filter(Boolean).length;
+
+  const resetAllFilters = () => {
+    setSearch("");
+    setFilterPlan("todos");
+    setFilterVigencia("todas");
+    setFilterStatus("todos");
+    setQuickFilter("todos");
+  };
+
+  // Filtrar usuarias por texto y filtros combinados (intersección AND)
   const filteredUsers = useMemo(() => {
     return users.filter((u) => {
+      // 1. Buscador por texto (nombre, email, n° de cuenta, emprendimiento o teléfono)
       const matches = matchesSearch(
         [u.email, u.full_name, u.business_name, u.account_number, u.phone],
         search
       );
-
       if (!matches) return false;
 
-      const info = getPlanStatusInfo(u.plan_end_date);
-      const accStatus =
-        u.account_status || (u.status === "suspended" ? "suspended" : "active");
+      // 2. Filtro de Tipo de Plan
+      const userPlan = u.plan_type || "prueba";
+      if (filterPlan !== "todos" && userPlan !== filterPlan) {
+        return false;
+      }
 
+      // 3. Filtro de Vigencia (usando getPlanStatusInfo)
+      const info = getPlanStatusInfo(u.plan_end_date);
+      const isVencido = info.status === "vencido" || info.remainingDays < 0;
+      const isProximo = !isVencido && info.remainingDays <= 3 && info.remainingDays >= 0;
+      const isVigente = !isVencido && !isProximo;
+
+      if (filterVigencia === "vigente" && !isVigente) return false;
+      if (filterVigencia === "proximo" && !isProximo) return false;
+      if (filterVigencia === "vencido" && !isVencido) return false;
+
+      // 4. Filtro de Estado de Cuenta
+      const effectiveAccountStatus =
+        u.account_status || (u.status === "suspended" ? "suspended" : "active");
+      if (filterStatus === "active" && effectiveAccountStatus !== "active") {
+        return false;
+      }
+      if (
+        filterStatus === "suspended" &&
+        effectiveAccountStatus !== "suspended" &&
+        effectiveAccountStatus !== "deactivated"
+      ) {
+        return false;
+      }
+
+      // 5. Presets de Filtros Rápidos (si están seleccionados desde los chips)
       if (quickFilter === "activos") {
-        return accStatus === "active" && info.status !== "vencido";
-      }
-      if (quickFilter === "proximos") {
-        return info.status === "proximo_a_vencer";
-      }
-      if (quickFilter === "vencidos") {
-        return info.status === "vencido";
-      }
-      if (quickFilter === "desactivados") {
-        return accStatus === "deactivated" || accStatus === "suspended";
+        if (effectiveAccountStatus !== "active" || isVencido) return false;
+      } else if (quickFilter === "proximos") {
+        if (!isProximo) return false;
+      } else if (quickFilter === "vencidos") {
+        if (!isVencido) return false;
+      } else if (quickFilter === "desactivados") {
+        if (effectiveAccountStatus !== "deactivated" && effectiveAccountStatus !== "suspended") {
+          return false;
+        }
       }
 
       return true;
     });
-  }, [users, search, quickFilter]);
+  }, [users, search, filterPlan, filterVigencia, filterStatus, quickFilter]);
 
   if (loading) {
     return (
@@ -629,15 +691,14 @@ export default function AdminPage() {
         )}
       </div>
 
-      {/* Filtros Rápidos */}
+      {/* Filtros Rápidos (Chips) */}
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar text-xs">
         <button
           onClick={() => {
-            setQuickFilter("todos");
-            setSearch("");
+            resetAllFilters();
           }}
           className={`px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1.5 whitespace-nowrap ${
-            quickFilter === "todos"
+            quickFilter === "todos" && !isAnyFilterActive
               ? "bg-[#2B2B2B] text-white shadow-xs"
               : "bg-white text-[#7A7A7A] hover:bg-neutral-50 border border-[#EAF0E8]"
           }`}
@@ -645,7 +706,9 @@ export default function AdminPage() {
           <span>Todos</span>
           <span
             className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-              quickFilter === "todos" ? "bg-white/25 text-white" : "bg-neutral-100 text-[#2B2B2B]"
+              quickFilter === "todos" && !isAnyFilterActive
+                ? "bg-white/25 text-white"
+                : "bg-neutral-100 text-[#2B2B2B]"
             }`}
           >
             {userStats.todos}
@@ -655,7 +718,8 @@ export default function AdminPage() {
         <button
           onClick={() => {
             setQuickFilter("activos");
-            setSearch("");
+            setFilterStatus("active");
+            setFilterVigencia("todas");
           }}
           className={`px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1.5 whitespace-nowrap ${
             quickFilter === "activos"
@@ -678,7 +742,7 @@ export default function AdminPage() {
         <button
           onClick={() => {
             setQuickFilter("proximos");
-            setSearch("");
+            setFilterVigencia("proximo");
           }}
           className={`px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1.5 whitespace-nowrap ${
             quickFilter === "proximos"
@@ -701,7 +765,7 @@ export default function AdminPage() {
         <button
           onClick={() => {
             setQuickFilter("vencidos");
-            setSearch("");
+            setFilterVigencia("vencido");
           }}
           className={`px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1.5 whitespace-nowrap ${
             quickFilter === "vencidos"
@@ -724,7 +788,7 @@ export default function AdminPage() {
         <button
           onClick={() => {
             setQuickFilter("desactivados");
-            setSearch("");
+            setFilterStatus("suspended");
           }}
           className={`px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1.5 whitespace-nowrap ${
             quickFilter === "desactivados"
@@ -745,11 +809,176 @@ export default function AdminPage() {
         </button>
       </div>
 
+      {/* Barra de Filtros Avanzados (Multicriterio) */}
+      <div className="bg-white rounded-3xl p-3.5 sm:p-4 border border-[#EAF0E8] shadow-xs space-y-3">
+        {/* Cabecera de la barra de filtros */}
+        <div className="flex items-center justify-between flex-wrap gap-2 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-[#2B2B2B] flex items-center gap-1.5 font-display text-sm">
+              <SlidersHorizontal className="w-4 h-4 text-[#3BB578]" />
+              <span>Filtros avanzados</span>
+            </span>
+            {activeFiltersCount > 0 && (
+              <span className="text-[10px] bg-[#DCF4D7] text-[#1F7A4C] font-bold px-2 py-0.5 rounded-full border border-[#C3EBC0]">
+                {activeFiltersCount} {activeFiltersCount === 1 ? "activo" : "activos"}
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2.5">
+            {/* Contador de resultados */}
+            <span className="text-xs text-[#7A7A7A]">
+              Mostrando <strong className="text-[#2B2B2B] font-bold">{filteredUsers.length}</strong> de{" "}
+              <span>{users.length}</span> usuarias
+            </span>
+
+            {/* Botón Restablecer filtros */}
+            {isAnyFilterActive && (
+              <button
+                type="button"
+                onClick={resetAllFilters}
+                className="inline-flex items-center gap-1 text-[11px] font-bold text-neutral-500 hover:text-rose-600 bg-neutral-100 hover:bg-rose-50 px-2.5 py-1 rounded-xl transition cursor-pointer"
+                title="Restablecer todos los filtros"
+              >
+                <RotateCcw className="w-3 h-3" />
+                <span>Restablecer</span>
+              </button>
+            )}
+
+            {/* Botón Colapsar en Mobile */}
+            <button
+              type="button"
+              onClick={() => setIsMobileFiltersOpen((prev) => !prev)}
+              className="sm:hidden p-1.5 text-neutral-500 hover:text-[#2B2B2B] bg-neutral-100 hover:bg-neutral-200 rounded-xl transition"
+              title={isMobileFiltersOpen ? "Ocultar selectores" : "Mostrar selectores"}
+            >
+              {isMobileFiltersOpen ? (
+                <ChevronUp className="w-4 h-4" />
+              ) : (
+                <ChevronDown className="w-4 h-4" />
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* Grid de Selectores (visible en desktop siempre, colapsable en mobile) */}
+        <div className={`grid grid-cols-1 sm:grid-cols-3 gap-2.5 ${isMobileFiltersOpen ? "grid" : "hidden sm:grid"}`}>
+          {/* 1. Selector de Plan */}
+          <div className="space-y-1">
+            <label className="text-[11px] font-bold text-neutral-500 flex items-center gap-1">
+              <Sparkles className="w-3 h-3 text-[#3BB578]" />
+              <span>Tipo de Plan</span>
+            </label>
+            <div className="relative">
+              <select
+                value={filterPlan}
+                onChange={(e) => {
+                  setFilterPlan(e.target.value as FilterPlan);
+                  if (quickFilter !== "todos") setQuickFilter("todos");
+                }}
+                className={`w-full text-xs rounded-xl px-3 py-2 pr-8 border outline-none font-medium cursor-pointer transition appearance-none ${
+                  filterPlan !== "todos"
+                    ? "bg-[#DCF4D7]/40 border-[#3BB578] text-[#1F7A4C] font-bold"
+                    : "bg-neutral-50/80 border-[#EAF0E8] text-[#2B2B2B] hover:bg-white focus:bg-white focus:border-[#3BB578]"
+                }`}
+              >
+                <option value="todos">Todos los planes</option>
+                <option value="prueba">Plan Prueba</option>
+                <option value="mensual">Plan Mensual</option>
+                <option value="anual">Plan Anual</option>
+              </select>
+              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2.5 text-neutral-400">
+                <ChevronDown className="w-3.5 h-3.5" />
+              </div>
+            </div>
+          </div>
+
+          {/* 2. Selector de Vigencia */}
+          <div className="space-y-1">
+            <label className="text-[11px] font-bold text-neutral-500 flex items-center gap-1">
+              <Clock className="w-3 h-3 text-[#3BB578]" />
+              <span>Vigencia del Plan</span>
+            </label>
+            <div className="relative">
+              <select
+                value={filterVigencia}
+                onChange={(e) => {
+                  setFilterVigencia(e.target.value as FilterVigencia);
+                  if (quickFilter !== "todos") setQuickFilter("todos");
+                }}
+                className={`w-full text-xs rounded-xl px-3 py-2 pr-8 border outline-none font-medium cursor-pointer transition appearance-none ${
+                  filterVigencia !== "todas"
+                    ? "bg-[#DCF4D7]/40 border-[#3BB578] text-[#1F7A4C] font-bold"
+                    : "bg-neutral-50/80 border-[#EAF0E8] text-[#2B2B2B] hover:bg-white focus:bg-white focus:border-[#3BB578]"
+                }`}
+              >
+                <option value="todas">Todas las vigencias</option>
+                <option value="vigente">Vigente</option>
+                <option value="proximo">Próximo a vencer (≤ 3 días)</option>
+                <option value="vencido">Vencido</option>
+              </select>
+              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2.5 text-neutral-400">
+                <ChevronDown className="w-3.5 h-3.5" />
+              </div>
+            </div>
+          </div>
+
+          {/* 3. Selector de Estado de Cuenta */}
+          <div className="space-y-1">
+            <label className="text-[11px] font-bold text-neutral-500 flex items-center gap-1">
+              <Power className="w-3 h-3 text-[#3BB578]" />
+              <span>Estado de la Cuenta</span>
+            </label>
+            <div className="relative">
+              <select
+                value={filterStatus}
+                onChange={(e) => {
+                  setFilterStatus(e.target.value as FilterStatus);
+                  if (quickFilter !== "todos") setQuickFilter("todos");
+                }}
+                className={`w-full text-xs rounded-xl px-3 py-2 pr-8 border outline-none font-medium cursor-pointer transition appearance-none ${
+                  filterStatus !== "todos"
+                    ? "bg-[#DCF4D7]/40 border-[#3BB578] text-[#1F7A4C] font-bold"
+                    : "bg-neutral-50/80 border-[#EAF0E8] text-[#2B2B2B] hover:bg-white focus:bg-white focus:border-[#3BB578]"
+                }`}
+              >
+                <option value="todos">Todos los estados</option>
+                <option value="active">Activa</option>
+                <option value="suspended">Suspendida / Apagada</option>
+              </select>
+              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2.5 text-neutral-400">
+                <ChevronDown className="w-3.5 h-3.5" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Lista de Usuarias */}
       <div className="space-y-3">
         {filteredUsers.length === 0 ? (
-          <div className="bg-white rounded-3xl p-6 border border-[#EAF0E8] text-center text-xs text-[#7A7A7A]">
-            No se encontraron usuarias con los filtros seleccionados.
+          <div className="bg-white rounded-3xl p-8 border border-[#EAF0E8] text-center flex flex-col items-center justify-center space-y-3 shadow-xs">
+            <div className="w-12 h-12 bg-neutral-100 text-neutral-400 rounded-2xl flex items-center justify-center">
+              <FilterX className="w-6 h-6 text-neutral-400" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-[#2B2B2B]">
+                No se encontraron usuarias con los filtros seleccionados
+              </p>
+              <p className="text-xs text-[#7A7A7A] mt-1 max-w-sm mx-auto">
+                No hay coincidencias que cumplan con la combinación de filtros aplicada o el término buscado.
+              </p>
+            </div>
+            {isAnyFilterActive && (
+              <button
+                type="button"
+                onClick={resetAllFilters}
+                className="mt-2 py-2 px-4 bg-[#DCF4D7] hover:bg-[#C3EBC0] text-[#1F7A4C] text-xs font-bold rounded-2xl transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Limpiar filtros</span>
+              </button>
+            )}
           </div>
         ) : (
           filteredUsers.map((u) => {
