@@ -13,12 +13,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 });
     }
 
-    // Calcular URL de retorno a la app
+    // Calcular URL de retorno y notificación webhook
     const host = request.headers.get("x-forwarded-host") || request.headers.get("host") || "haba.app";
     const proto =
       request.headers.get("x-forwarded-proto") || (host.includes("localhost") ? "http" : "https");
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") || `${proto}://${host}`;
-    const backUrl = `${baseUrl}/plan-vencido?status=approved`;
+    const url = new URL(request.url);
+    const body = await request.json().catch(() => ({}));
+    const returnPath = body.return_url || url.searchParams.get("return_url") || "/configuracion?status=approved";
+    const backUrl = `${baseUrl}${returnPath.startsWith("/") ? returnPath : `/${returnPath}`}`;
+    const notificationUrl = `${baseUrl}/api/webhooks/mercadopago`;
 
     const accessToken = process.env.MP_ACCESS_TOKEN;
     const directSubscriptionUrl = process.env.NEXT_PUBLIC_MP_SUBSCRIPTION_URL;
@@ -32,11 +36,12 @@ export async function POST(request: Request) {
       const currency = process.env.MP_SUBSCRIPTION_CURRENCY || "ARS";
       const title = process.env.MP_SUBSCRIPTION_TITLE || "Suscripción Mensual HABA";
 
-      const payload = {
+      const payload: Record<string, any> = {
         reason: title,
         external_reference: user.id,
         payer_email: user.email,
         back_url: backUrl,
+        notification_url: notificationUrl,
         auto_recurring: {
           frequency: 1,
           frequency_type: "months",

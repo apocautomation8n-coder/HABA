@@ -122,9 +122,17 @@ export async function updateSession(request: NextRequest) {
       }
     } else {
       // Si el plan está vigente pero intenta entrar a /login, /registro o /plan-vencido, enviar a /dashboard
-      // Nota: Si incluye ?test=true en /plan-vencido, se permite el acceso para testing de la pasarela de pago
-      const isTestingExpired = isExpiredPage && request.nextUrl.searchParams.get("test") === "true";
-      if ((isAuthPage || isExpiredPage) && !isTestingExpired) {
+      // Nota: Si incluye ?test=true o retorno de Mercado Pago en /plan-vencido, permitir para verificar el pago
+      const hasPaymentParams =
+        request.nextUrl.searchParams.has("status") ||
+        request.nextUrl.searchParams.has("preapproval_id") ||
+        request.nextUrl.searchParams.has("payment_id") ||
+        request.nextUrl.searchParams.has("collection_id") ||
+        request.nextUrl.searchParams.get("test") === "true";
+
+      const isTestingOrReturning = isExpiredPage && hasPaymentParams;
+
+      if ((isAuthPage || isExpiredPage) && !isTestingOrReturning) {
         const url = request.nextUrl.clone();
         url.pathname = "/dashboard";
         const redirectResponse = NextResponse.redirect(url);

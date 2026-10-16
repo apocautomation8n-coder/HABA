@@ -135,6 +135,9 @@ function PlanVencidoContent() {
   const handleVerifyStatus = async () => {
     try {
       setVerifyingPayment(true);
+      try {
+        await fetch("/api/mercadopago/sync", { method: "POST" });
+      } catch {}
       const res = await fetch("/api/user/profile");
       if (res.ok) {
         const data = await res.json();

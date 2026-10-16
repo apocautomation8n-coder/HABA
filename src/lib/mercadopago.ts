@@ -1,0 +1,203 @@
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+import { calculatePlanEndDate, getTrustedPlanMeta } from "@/lib/plan-helpers";
+
+function getAdminClient() {
+  return createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    }
+  );
+}
+
+const PAYMENT_GRACE_DAYS = 3;
+
+function addDays(dateStr: string, days: number): string {
+  const [y, m, d] = dateStr.split("-").map((n) => parseInt(n, 10));
+  const date = new Date(Date.UTC(y, m - 1, d));
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().split("T")[0];
+}
+
+export interface SyncSubscriptionResult {
+  synced: boolean;
+  status?: string;
+  plan_type?: string;
+  plan_end_date?: string;
+  mp_preapproval_id?: string;
+  error?: string;
+}
+
+/**
+ * Consulta en la API de Mercado Pago las suscripciones o cobros aprobados para un usuario
+ * e impacta de inmediato en Supabase (Auth app_metadata, user_metadata y profiles).
+ *
+ * Funciona como salvaguarda ante demoras o fallas en el webhook de Mercado Pago.
+ */
+export async function syncUserSubscriptionWithMercadoPago(options: {
+  userId: string;
+  email?: string | null;
+}): Promise<SyncSubscriptionResult> {
+  const { userId, email } = options;
+  const accessToken = process.env.MP_ACCESS_TOKEN;
+
+  if (!accessToken || !userId) {
+    return { synced: false, error: "Faltan credenciales o userId" };
+  }
+
+  const supabaseAdmin = getAdminClient();
+
+  try {
+    // 1. Obtener datos actuales del usuario en Supabase
+    const { data: userRes, error: fetchErr } = await supabaseAdmin.auth.admin.getUserById(userId);
+    if (fetchErr || !userRes?.user) {
+      return { synced: false, error: "Usuario no encontrado en Supabase: " + fetchErr?.message };
+    }
+    const targetUser = userRes.user;
+    const targetEmail = (email || targetUser.email || "").trim().toLowerCase();
+
+    let preapproval: any = null;
+
+    // 2. Buscar preapproval en Mercado Pago por external_reference (prioridad 1)
+    try {
+      const searchRes = await fetch(
+        `https://api.mercadopago.com/preapproval/search?external_reference=${encodeURIComponent(
+          userId
+        )}&status=authorized`,
+        {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        }
+      );
+      if (searchRes.ok) {
+        const searchData = await searchRes.json();
+        if (Array.isArray(searchData.results) && searchData.results.length > 0) {
+          preapproval = searchData.results[0];
+        }
+      }
+    } catch (e) {
+      console.warn("[Mercado Pago Sync] Error buscando por external_reference:", e);
+    }
+
+    // 3. Fallback: Buscar preapproval por email del pagador si no se encontró por external_reference
+    if (!preapproval && targetEmail) {
+      try {
+        const emailSearchRes = await fetch(
+          `https://api.mercadopago.com/preapproval/search?payer_email=${encodeURIComponent(
+            targetEmail
+          )}&status=authorized`,
+          {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          }
+        );
+        if (emailSearchRes.ok) {
+          const emailData = await emailSearchRes.json();
+          if (Array.isArray(emailData.results) && emailData.results.length > 0) {
+            preapproval = emailData.results[0];
+          }
+        }
+      } catch (e) {
+        console.warn("[Mercado Pago Sync] Error buscando por email:", e);
+      }
+    }
+
+    // 4. Si no hay preapproval recurrente, buscar pagos autorizados recientes
+    let paymentApproved: any = null;
+    if (!preapproval) {
+      try {
+        const paySearchRes = await fetch(
+          `https://api.mercadopago.com/v1/payments/search?external_reference=${encodeURIComponent(
+            userId
+          )}&status=approved&sort=date_created&criteria=desc`,
+          {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          }
+        );
+        if (paySearchRes.ok) {
+          const payData = await paySearchRes.json();
+          if (Array.isArray(payData.results) && payData.results.length > 0) {
+            paymentApproved = payData.results[0];
+          }
+        }
+      } catch (e) {
+        console.warn("[Mercado Pago Sync] Error buscando pagos por external_reference:", e);
+      }
+    }
+
+    if (!preapproval && !paymentApproved) {
+      return { synced: false, error: "No se encontró suscripción autorizada en Mercado Pago" };
+    }
+
+    const currentPlan = getTrustedPlanMeta(targetUser);
+    const today = new Date().toISOString().split("T")[0];
+
+    // Extender 30 días (+ días de gracia) o según next_payment_date de MP
+    const nextPaymentDate = preapproval?.next_payment_date;
+    const baseDate =
+      currentPlan.plan_end_date && currentPlan.plan_end_date > today
+        ? currentPlan.plan_end_date
+        : today;
+
+    const newEndDate = nextPaymentDate
+      ? addDays(nextPaymentDate.split("T")[0], PAYMENT_GRACE_DAYS)
+      : addDays(calculatePlanEndDate(baseDate, "mensual"), PAYMENT_GRACE_DAYS);
+
+    const preapprovalId = preapproval?.id || paymentApproved?.metadata?.preapproval_id || null;
+
+    // 5. Impactar en Supabase Auth (app_metadata y user_metadata)
+    const { error: updateAuthErr } = await supabaseAdmin.auth.admin.updateUserById(userId, {
+      app_metadata: {
+        ...targetUser.app_metadata,
+        plan_type: "mensual",
+        plan_start_date: currentPlan.plan_type === "mensual" ? currentPlan.plan_start_date : today,
+        plan_end_date: newEndDate,
+        account_status: "active",
+        mp_status: "authorized",
+        mp_preapproval_id: preapprovalId || currentPlan.mp_preapproval_id,
+      },
+      user_metadata: {
+        ...(targetUser.user_metadata || {}),
+        plan_type: "mensual",
+        plan_start_date: currentPlan.plan_type === "mensual" ? currentPlan.plan_start_date : today,
+        plan_end_date: newEndDate,
+        account_status: "active",
+      },
+    });
+
+    if (updateAuthErr) {
+      console.error("[Mercado Pago Sync] Error actualizando Auth:", updateAuthErr.message);
+      return { synced: false, error: updateAuthErr.message };
+    }
+
+    // 6. Impactar en public.profiles
+    try {
+      await supabaseAdmin
+        .from("profiles")
+        .update({
+          status: "active",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", userId);
+    } catch (err: any) {
+      console.warn("[Mercado Pago Sync] Error actualizando profiles:", err?.message);
+    }
+
+    console.log(
+      `[Mercado Pago Sync] Plan Mensual activado con éxito para ${userId} (${targetEmail}) hasta ${newEndDate}`
+    );
+
+    return {
+      synced: true,
+      status: "authorized",
+      plan_type: "mensual",
+      plan_end_date: newEndDate,
+      mp_preapproval_id: preapprovalId,
+    };
+  } catch (err: any) {
+    console.error("[Mercado Pago Sync] Error inesperado:", err);
+    return { synced: false, error: err.message };
+  }
+}

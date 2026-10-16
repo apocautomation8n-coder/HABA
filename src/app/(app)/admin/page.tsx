@@ -22,6 +22,7 @@ import {
   Filter,
   Hash,
   Sparkles,
+  RefreshCw,
 } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { isRealUserAvatar } from "@/components/ProfileAvatar";
@@ -238,6 +239,38 @@ export default function AdminPage() {
       }
     } catch (err: any) {
       alert("Error: " + err.message);
+    }
+  };
+
+  const [syncingUserId, setSyncingUserId] = useState<string | null>(null);
+
+  const syncUserMercadoPago = async (targetUser: UserProfile) => {
+    try {
+      setSyncingUserId(targetUser.id);
+      const res = await fetch(
+        `/api/mercadopago/sync?userId=${targetUser.id}&email=${encodeURIComponent(
+          targetUser.email || ""
+        )}`,
+        { method: "POST" }
+      );
+      const data = await res.json();
+      if (data.synced) {
+        alert(
+          `¡Suscripción de ${targetUser.full_name || targetUser.email} sincronizada con éxito!\nPlan: ${
+            data.plan_type
+          }\nFecha de fin: ${formatDateDisplay(data.plan_end_date)}`
+        );
+        await loadUsers();
+      } else {
+        alert(
+          data.error ||
+            "No se detectó un cobro o suscripción autorizada en Mercado Pago para esta usuaria todavía."
+        );
+      }
+    } catch (err: any) {
+      alert("Error al sincronizar con Mercado Pago: " + err.message);
+    } finally {
+      setSyncingUserId(null);
     }
   };
 
@@ -797,6 +830,22 @@ export default function AdminPage() {
 
                   {/* Acciones de Gio */}
                   <div className="flex items-center gap-1">
+                    {/* Botón Sincronizar Mercado Pago */}
+                    {u.role !== "admin" && (
+                      <button
+                        onClick={() => syncUserMercadoPago(u)}
+                        disabled={syncingUserId === u.id}
+                        className="p-2 text-neutral-400 hover:text-cyan-600 hover:bg-cyan-50 rounded-xl transition disabled:opacity-50"
+                        title="Sincronizar estado con Mercado Pago"
+                      >
+                        <RefreshCw
+                          className={`w-4 h-4 ${
+                            syncingUserId === u.id ? "animate-spin text-cyan-600" : ""
+                          }`}
+                        />
+                      </button>
+                    )}
+
                     {/* Botón Editar Datos y Plan */}
                     <button
                       onClick={() => openEditModal(u)}

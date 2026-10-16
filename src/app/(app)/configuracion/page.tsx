@@ -107,11 +107,17 @@ export default function SettingsPage() {
   const [laborSavedSuccess, setLaborSavedSuccess] = useState<boolean>(false);
   const [laborError, setLaborError] = useState<string | null>(null);
   const [subscribingMP, setSubscribingMP] = useState<boolean>(false);
+  const [syncingMP, setSyncingMP] = useState<boolean>(false);
+  const [syncNotice, setSyncNotice] = useState<string | null>(null);
 
   const handleSubscribeMercadoPago = async () => {
     try {
       setSubscribingMP(true);
-      const res = await fetch("/api/mercadopago/create-subscription", { method: "POST" });
+      const res = await fetch("/api/mercadopago/create-subscription", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ return_url: "/configuracion?status=approved" }),
+      });
       const data = await res.json();
       if (data.init_point) {
         window.location.href = data.init_point;
@@ -122,6 +128,29 @@ export default function SettingsPage() {
     } catch {
       alert("Error al conectar con la pasarela de pago.");
       setSubscribingMP(false);
+    }
+  };
+
+  const handleSyncMercadoPago = async (silent = false) => {
+    try {
+      if (!silent) setSyncingMP(true);
+      setSyncNotice(null);
+      const res = await fetch("/api/mercadopago/sync", { method: "POST" });
+      const data = await res.json();
+      if (data.synced) {
+        if (data.plan_type) setPlanType(data.plan_type);
+        if (data.plan_end_date) setPlanEndDate(data.plan_end_date);
+        setSyncNotice("¡Tu suscripción mensual fue verificada y activada con éxito!");
+      } else if (!silent) {
+        alert(
+          data.error ||
+            "Aún no detectamos la aprobación del cobro en Mercado Pago. Si acabás de pagar, por favor aguardá 1 minuto y volvé a presionar el botón."
+        );
+      }
+    } catch (err: any) {
+      if (!silent) alert("Error al sincronizar con Mercado Pago.");
+    } finally {
+      if (!silent) setSyncingMP(false);
     }
   };
 
@@ -240,6 +269,15 @@ export default function SettingsPage() {
               if (data.profile?.plan_end_date) setPlanEndDate(data.profile.plan_end_date);
               if (data.profile?.account_status) setAccountStatus(data.profile.account_status);
               if (data.profile?.account_number) setAccountNumber(data.profile.account_number);
+
+              // Si volvio de abonar en Mercado Pago, sincronizar automaticamente
+              if (
+                typeof window !== "undefined" &&
+                (window.location.search.includes("status=approved") ||
+                  window.location.search.includes("preapproval_id"))
+              ) {
+                handleSyncMercadoPago(true);
+              }
             }
           } catch {
             // ignore
@@ -734,8 +772,16 @@ export default function SettingsPage() {
             </span>
           </div>
 
+          {/* Aviso de sincronización exitosa */}
+          {syncNotice && (
+            <div className="p-3 bg-[#DCF4D7] border border-[#C3EBC0] rounded-2xl text-xs text-[#1F7A4C] font-semibold flex items-center gap-2">
+              <Check className="w-4 h-4 flex-shrink-0" />
+              <span>{syncNotice}</span>
+            </div>
+          )}
+
           {role !== "admin" && (
-            <div className="pt-2.5 border-t border-neutral-200/60">
+            <div className="pt-2.5 border-t border-neutral-200/60 space-y-2">
               <button
                 type="button"
                 onClick={handleSubscribeMercadoPago}
@@ -755,6 +801,19 @@ export default function SettingsPage() {
                   </>
                 )}
               </button>
+
+              <div className="flex items-center justify-between text-xs pt-1 px-1">
+                <span className="text-[11px] text-[#7A7A7A]">¿Ya pagaste tu suscripción?</span>
+                <button
+                  type="button"
+                  onClick={() => handleSyncMercadoPago(false)}
+                  disabled={syncingMP}
+                  className="text-[11px] font-bold text-[#1F7A4C] hover:text-[#185E3B] inline-flex items-center gap-1.5 px-2 py-1 hover:bg-[#DCF4D7]/50 rounded-lg transition active:scale-95 disabled:opacity-75"
+                >
+                  <RefreshCw className={`w-3 h-3 ${syncingMP ? "animate-spin" : ""}`} />
+                  <span>{syncingMP ? "Verificando..." : "Actualizar mi plan"}</span>
+                </button>
+              </div>
             </div>
           )}
         </div>

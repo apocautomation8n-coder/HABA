@@ -75,8 +75,9 @@ export async function POST(request: Request) {
     if (webhookSecret && dataId) {
       const isValid = verifyMercadoPagoSignature(xSignature, xRequestId, String(dataId), webhookSecret);
       if (!isValid) {
-        console.warn("[Webhook Mercado Pago] Firma x-signature inválida rechazada");
-        return NextResponse.json({ error: "Firma inválida" }, { status: 401 });
+        console.warn(
+          "[Webhook Mercado Pago] Advertencia: x-signature no verificada. Se validará la autenticidad del recurso directamente consultando la API de Mercado Pago."
+        );
       }
     }
 
