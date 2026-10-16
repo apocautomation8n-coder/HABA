@@ -1,13 +1,14 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { X, Clock } from "lucide-react";
+import { X, Clock, Sparkles, RefreshCw } from "lucide-react";
 import { isPlanExpiringSoon, isPlanExpired, formatDateDisplay } from "@/lib/plan-helpers";
 
 export function PlanExpirationBanner() {
   const [profile, setProfile] = useState<any>(null);
   const [dismissed, setDismissed] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [subscribing, setSubscribing] = useState(false);
 
   useEffect(() => {
     // Verificar si la usuaria ya lo cerró en esta pestaña/sesión
@@ -60,6 +61,23 @@ export function PlanExpirationBanner() {
     }
   };
 
+  const handleSubscribe = async () => {
+    try {
+      setSubscribing(true);
+      const res = await fetch("/api/mercadopago/create-subscription", { method: "POST" });
+      const data = await res.json();
+      if (data.init_point) {
+        window.location.href = data.init_point;
+      } else {
+        alert(data.error || "No se pudo iniciar el pago en Mercado Pago.");
+        setSubscribing(false);
+      }
+    } catch {
+      alert("Error de conexión con la pasarela de pago.");
+      setSubscribing(false);
+    }
+  };
+
   const formattedDate = formatDateDisplay(profile.plan_end_date);
   const dayText =
     remainingDays === 0
@@ -76,20 +94,41 @@ export function PlanExpirationBanner() {
           <span className="font-bold">
             Recordatorio: Tu período de prueba finaliza {dayText} (el {formattedDate}).
           </span>{" "}
-          <span className="text-amber-800">
-            El día del vencimiento podrás activar tu suscripción mensual para no interrumpir tu trabajo.
+          <span className="text-amber-800 hidden sm:inline">
+            Activá tu suscripción mensual para no interrumpir tu trabajo.
           </span>
         </p>
       </div>
 
-      <button
-        type="button"
-        onClick={handleDismiss}
-        className="p-1 text-amber-700 hover:text-amber-900 hover:bg-amber-100 rounded-lg transition flex-shrink-0"
-        title="Descartar aviso"
-      >
-        <X className="w-3.5 h-3.5" />
-      </button>
+      <div className="flex items-center gap-2 flex-shrink-0">
+        <button
+          type="button"
+          onClick={handleSubscribe}
+          disabled={subscribing}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#1F7A4C] hover:bg-[#185E3B] active:scale-95 text-white font-bold rounded-xl text-[10px] sm:text-[11px] transition shadow-xs disabled:opacity-75"
+        >
+          {subscribing ? (
+            <>
+              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              <span>Conectando...</span>
+            </>
+          ) : (
+            <>
+              <Sparkles className="w-3.5 h-3.5 text-white" />
+              <span>Suscribirme</span>
+            </>
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={handleDismiss}
+          className="p-1 text-amber-700 hover:text-amber-900 hover:bg-amber-100 rounded-lg transition"
+          title="Descartar aviso"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
     </div>
   );
 }

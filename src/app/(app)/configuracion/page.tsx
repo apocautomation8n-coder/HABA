@@ -11,6 +11,7 @@ import {
   LogOut,
   Check,
   Sparkles,
+  ExternalLink,
   Smartphone,
   Bell,
   Clock,
@@ -105,6 +106,24 @@ export default function SettingsPage() {
   const [savingLabor, setSavingLabor] = useState<boolean>(false);
   const [laborSavedSuccess, setLaborSavedSuccess] = useState<boolean>(false);
   const [laborError, setLaborError] = useState<string | null>(null);
+  const [subscribingMP, setSubscribingMP] = useState<boolean>(false);
+
+  const handleSubscribeMercadoPago = async () => {
+    try {
+      setSubscribingMP(true);
+      const res = await fetch("/api/mercadopago/create-subscription", { method: "POST" });
+      const data = await res.json();
+      if (data.init_point) {
+        window.location.href = data.init_point;
+      } else {
+        alert(data.error || "No se pudo conectar con Mercado Pago.");
+        setSubscribingMP(false);
+      }
+    } catch {
+      alert("Error al conectar con la pasarela de pago.");
+      setSubscribingMP(false);
+    }
+  };
 
   // Enlace dinámico de WhatsApp para soporte HABA (null si NEXT_PUBLIC_SUPPORT_WHATSAPP no está configurada)
   const supportWhatsAppUrl = buildProfileSupportWhatsAppUrl({
@@ -713,6 +732,28 @@ export default function SettingsPage() {
             <span className={`font-bold ${planStatusInfo.badgeText}`}>
               {planStatusInfo.rowText}
             </span>
+          </div>
+
+          <div className="pt-2.5 border-t border-neutral-200/60">
+            <button
+              type="button"
+              onClick={handleSubscribeMercadoPago}
+              disabled={subscribingMP}
+              className="w-full py-2.5 px-3 bg-[#3BB578] hover:bg-[#2E9E65] active:scale-[0.99] text-white text-xs font-bold rounded-xl transition flex items-center justify-center gap-2 shadow-xs disabled:opacity-75"
+            >
+              {subscribingMP ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Conectando con Mercado Pago...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-3.5 h-3.5 text-white" />
+                  <span>Suscribirme al Plan Mensual (Mercado Pago)</span>
+                  <ExternalLink className="w-3 h-3 text-white/80" />
+                </>
+              )}
+            </button>
           </div>
         </div>
       </div>

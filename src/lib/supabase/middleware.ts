@@ -122,7 +122,9 @@ export async function updateSession(request: NextRequest) {
       }
     } else {
       // Si el plan está vigente pero intenta entrar a /login, /registro o /plan-vencido, enviar a /dashboard
-      if (isAuthPage || isExpiredPage) {
+      // Nota: Si incluye ?test=true en /plan-vencido, se permite el acceso para testing de la pasarela de pago
+      const isTestingExpired = isExpiredPage && request.nextUrl.searchParams.get("test") === "true";
+      if ((isAuthPage || isExpiredPage) && !isTestingExpired) {
         const url = request.nextUrl.clone();
         url.pathname = "/dashboard";
         const redirectResponse = NextResponse.redirect(url);
