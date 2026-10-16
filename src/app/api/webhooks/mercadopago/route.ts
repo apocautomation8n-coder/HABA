@@ -232,14 +232,35 @@ export async function POST(request: Request) {
 
     if (status === "authorized" || status === "approved") {
       // Suscripción aprobada: activar plan mensual y extender fecha de fin
-      // Garantizar que la suscripción mensual otorgue al menos 30 días completos desde la fecha de cobro
-      const minMonthEndDate = addDays(today, 30);
+      const isNewPreapproval = Boolean(
+        preapprovalId &&
+          currentPlan.mp_preapproval_id &&
+          preapprovalId !== currentPlan.mp_preapproval_id
+      );
+      const isAdditionalPayment = isRecurringPayment || isStandardPayment;
+      const hasActiveFuturePlan = Boolean(
+        currentPlan.plan_end_date && currentPlan.plan_end_date > today
+      );
+
+      // Si el usuario ya contaba con días pagos vigentes, acumular sobre la fecha de fin existente (suma otro mes)
+      const baseDate =
+        hasActiveFuturePlan && (isNewPreapproval || isAdditionalPayment)
+          ? currentPlan.plan_end_date!
+          : today;
+
+      const minMonthEndDate = addDays(baseDate, 30);
       const mpEndDate = nextPaymentDate
         ? addDays(nextPaymentDate.split("T")[0], PAYMENT_GRACE_DAYS)
         : null;
 
-      const newEndDate =
+      const calculatedEndDate =
         mpEndDate && mpEndDate > minMonthEndDate ? mpEndDate : minMonthEndDate;
+
+      // Salvaguarda: nunca acortar una vigencia ya acreditada
+      const newEndDate =
+        currentPlan.plan_end_date && currentPlan.plan_end_date > calculatedEndDate
+          ? currentPlan.plan_end_date
+          : calculatedEndDate;
 
       // Actualizar datos de Auth (app_metadata y user_metadata)
       const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(targetUserId, {
