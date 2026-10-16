@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import React, { Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Lock,
   LogOut,
@@ -9,18 +9,21 @@ import {
   Receipt,
   Layers,
   Calculator,
+  Sparkles,
+  ExternalLink,
+  CheckCircle2,
+  RefreshCw,
+  AlertCircle,
 } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { WhatsAppIcon } from "@/components/WhatsAppIcon";
 import { createClient } from "@/lib/supabase/client";
-import {
-  buildPlanExpiredSupportWhatsAppUrl,
-  buildSubscriptionWhatsAppUrl,
-  isSupportWhatsAppConfigured,
-} from "@/lib/support";
+import { buildPlanExpiredSupportWhatsAppUrl } from "@/lib/support";
+import { isPlanExpired } from "@/lib/plan-helpers";
 
-export default function PlanVencidoPage() {
+function PlanVencidoContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = createClient();
 
   const [loading, setLoading] = useState(true);
@@ -30,7 +33,13 @@ export default function PlanVencidoPage() {
     fullName?: string | null;
     email?: string | null;
   } | null>(null);
+  const [subscribing, setSubscribing] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [verifyingPayment, setVerifyingPayment] = useState(false);
+
+  const statusParam = searchParams.get("status");
+  const isApprovedReturn = statusParam === "approved" || statusParam === "success";
 
   useEffect(() => {
     async function loadUserData() {
@@ -42,6 +51,19 @@ export default function PlanVencidoPage() {
         if (!user) {
           router.push("/login");
           return;
+        }
+
+        // Si volvió de Mercado Pago con status=approved, verificar si el webhook ya activó la cuenta
+        if (isApprovedReturn) {
+          const res = await fetch("/api/user/profile");
+          if (res.ok) {
+            const data = await res.json();
+            const p = data.profile;
+            if (p && !isPlanExpired(p.plan_end_date, p.account_status)) {
+              window.location.href = "/dashboard";
+              return;
+            }
+          }
         }
 
         // Cargar perfil para obtener número de cuenta y datos de contacto
@@ -60,7 +82,6 @@ export default function PlanVencidoPage() {
             }
           }
         } catch {
-          // Fallback a metadata de Auth
           setProfile({
             accountNumber: user.user_metadata?.account_number || null,
             businessName: user.user_metadata?.business_name || null,
@@ -76,7 +97,55 @@ export default function PlanVencidoPage() {
     }
 
     loadUserData();
-  }, [router, supabase]);
+  }, [router, supabase, isApprovedReturn]);
+
+  const handleSubscribe = async () => {
+    try {
+      setSubscribing(true);
+      setErrorMessage(null);
+
+      const res = await fetch("/api/mercadopago/create-subscription", {
+        method: "POST",
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.init_point) {
+        throw new Error(data.error || "No se pudo iniciar el proceso de suscripción.");
+      }
+
+      // Redirigir al checkout oficial de Mercado Pago
+      window.location.href = data.init_point;
+    } catch (err: any) {
+      console.error("Error al suscribirse:", err);
+      setErrorMessage(
+        err.message || "Ocurrió un error al contactar a Mercado Pago. Por favor intentá nuevamente."
+      );
+      setSubscribing(false);
+    }
+  };
+
+  const handleVerifyStatus = async () => {
+    try {
+      setVerifyingPayment(true);
+      const res = await fetch("/api/user/profile");
+      if (res.ok) {
+        const data = await res.json();
+        const p = data.profile;
+        if (p && !isPlanExpired(p.plan_end_date, p.account_status)) {
+          window.location.href = "/dashboard";
+          return;
+        }
+      }
+      setErrorMessage(
+        "Tu pago aún está siendo procesado por Mercado Pago. Esto puede demorar unos instantes. Podés aguardar o consultar a soporte."
+      );
+    } catch {
+      setErrorMessage("No se pudo verificar el estado en este momento.");
+    } finally {
+      setVerifyingPayment(false);
+    }
+  };
 
   const handleSignOut = async () => {
     try {
@@ -87,13 +156,6 @@ export default function PlanVencidoPage() {
       window.location.href = "/login";
     }
   };
-
-  const subscriptionWhatsAppUrl = buildSubscriptionWhatsAppUrl({
-    accountNumber: profile?.accountNumber,
-    businessName: profile?.businessName,
-    fullName: profile?.fullName,
-    email: profile?.email,
-  });
 
   const supportWhatsAppUrl = buildPlanExpiredSupportWhatsAppUrl({
     accountNumber: profile?.accountNumber,
@@ -125,9 +187,41 @@ export default function PlanVencidoPage() {
           </h1>
           <p className="text-xs text-[#7A7A7A] mt-1.5 leading-relaxed">
             Esperamos que HABA te haya ayudado a ordenar tus costos y dar claridad a tu emprendimiento.
-            Para seguir creando presupuestos y calculando precios, escribinos para activar tu suscripción.
+            Para seguir creando presupuestos y calculando precios, activá tu suscripción mensual.
           </p>
         </div>
+
+        {/* Banner de retorno de pago exitoso si aplica */}
+        {isApprovedReturn && (
+          <div className="w-full bg-[#EBF8F0] border border-[#BCE7CA] p-3.5 rounded-2xl text-left space-y-2">
+            <div className="flex items-start gap-2.5">
+              <CheckCircle2 className="w-4 h-4 text-[#1F7A4C] flex-shrink-0 mt-0.5" />
+              <div className="text-xs text-[#1F7A4C]">
+                <p className="font-bold">¡Pago registrado en Mercado Pago!</p>
+                <p className="text-[11px] text-[#2E7D32] mt-0.5">
+                  Estamos sincronizando tu cuenta. Si aún no accediste, hacé clic en verificar.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleVerifyStatus}
+              disabled={verifyingPayment}
+              className="w-full py-2 bg-[#1F7A4C] hover:bg-[#185E3B] text-white text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 shadow-2xs"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${verifyingPayment ? "animate-spin" : ""}`} />
+              <span>{verifyingPayment ? "Verificando..." : "Verificar y entrar a HABA"}</span>
+            </button>
+          </div>
+        )}
+
+        {/* Mensaje de error si ocurrió algún problema */}
+        {errorMessage && (
+          <div className="w-full bg-rose-50 border border-rose-200 p-3 rounded-2xl text-left flex items-start gap-2 text-rose-800 text-xs">
+            <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5 text-rose-600" />
+            <span className="leading-snug">{errorMessage}</span>
+          </div>
+        )}
 
         {/* Ficha de datos guardados y protegidos */}
         <div className="w-full bg-[#F6F7F2] rounded-2xl p-4 border border-[#EAF0E8] text-left space-y-2.5">
@@ -164,25 +258,29 @@ export default function PlanVencidoPage() {
 
         {/* Acciones principales */}
         <div className="w-full space-y-2.5 pt-1">
-          {/* Botón Principal: Suscribirme por WhatsApp */}
-          {subscriptionWhatsAppUrl ? (
-            <a
-              href={subscriptionWhatsAppUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              id="btn-suscribirme-plan-vencido"
-              className="w-full py-3.5 px-4 bg-[#3BB578] hover:bg-[#2E9E65] active:scale-[0.99] text-white font-bold rounded-2xl shadow-sm hover:shadow transition flex items-center justify-center gap-2 text-xs"
-            >
-              <WhatsAppIcon className="w-4 h-4 text-white" />
-              <span>Suscribirme al Plan Mensual por WhatsApp</span>
-            </a>
-          ) : (
-            <div className="p-3 bg-neutral-100 rounded-2xl text-xs text-neutral-600">
-              Para suscribirte, contactate con Gio de Amaoto Craft por WhatsApp.
-            </div>
-          )}
+          {/* Botón Principal: Suscribirme al Plan Mensual (Mercado Pago) */}
+          <button
+            type="button"
+            onClick={handleSubscribe}
+            disabled={subscribing || loading}
+            id="btn-suscribirme-plan-vencido"
+            className="w-full py-3.5 px-4 bg-[#3BB578] hover:bg-[#2E9E65] active:scale-[0.99] text-white font-bold rounded-2xl shadow-sm hover:shadow transition flex items-center justify-center gap-2 text-xs disabled:opacity-75 disabled:cursor-not-allowed"
+          >
+            {subscribing ? (
+              <>
+                <RefreshCw className="w-4 h-4 text-white animate-spin" />
+                <span>Conectando con Mercado Pago...</span>
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-4 h-4 text-white" />
+                <span>Suscribirme al Plan Mensual</span>
+                <ExternalLink className="w-3.5 h-3.5 text-white/80" />
+              </>
+            )}
+          </button>
 
-          {/* Botón Secundario: WhatsApp Soporte (T2) */}
+          {/* Botón Secundario: WhatsApp Soporte (Gio) */}
           {supportWhatsAppUrl && (
             <a
               href={supportWhatsAppUrl}
@@ -192,7 +290,7 @@ export default function PlanVencidoPage() {
               className="w-full py-3 px-4 bg-[#DCF4D7] hover:bg-[#C3EBC0] text-[#1F7A4C] font-bold rounded-2xl transition flex items-center justify-center gap-2 text-xs active:scale-[0.99]"
             >
               <WhatsAppIcon className="w-4 h-4 text-[#25D366]" />
-              <span>Consultas o asistencia con Gio</span>
+              <span>Contactar a soporte HABA</span>
             </a>
           )}
 
@@ -214,5 +312,19 @@ export default function PlanVencidoPage() {
         Vos contame qué hacés. Haba hace las cuentas. 🌱
       </div>
     </div>
+  );
+}
+
+export default function PlanVencidoPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-[#F6F7F2] flex items-center justify-center text-neutral-400 text-xs">
+          Cargando...
+        </div>
+      }
+    >
+      <PlanVencidoContent />
+    </Suspense>
   );
 }
