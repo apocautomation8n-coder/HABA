@@ -11,8 +11,13 @@ export function PlanExpirationBanner() {
   const [subscribing, setSubscribing] = useState(false);
 
   useEffect(() => {
-    // Verificar si la usuaria ya lo cerró en esta pestaña/sesión
-    if (typeof window !== "undefined") {
+    // Si viene parámetro test=true o banner=true en la URL, no considerar el descarte en sessionStorage
+    const searchParams =
+      typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+    const forceShow =
+      searchParams?.get("banner") === "true" || searchParams?.get("test") === "true";
+
+    if (typeof window !== "undefined" && !forceShow) {
       const isDismissed = sessionStorage.getItem("haba_dismiss_expiring_banner") === "true";
       if (isDismissed) setDismissed(true);
     }
@@ -22,15 +27,11 @@ export function PlanExpirationBanner() {
         const res = await fetch("/api/user/profile");
         if (res.ok) {
           const data = await res.json();
-          if (data.isAdmin) {
-            setLoaded(true);
-            return;
-          }
           const p = data.profile;
           setProfile(p);
 
-          // Si el plan ya expiró y por alguna razón no redirigió el middleware, redirigir desde cliente
-          if (p && isPlanExpired(p.plan_end_date, p.account_status)) {
+          // Si el plan ya expiró y no es admin, redirigir a /plan-vencido
+          if (!data.isAdmin && p && isPlanExpired(p.plan_end_date, p.account_status)) {
             window.location.href = "/plan-vencido";
             return;
           }
@@ -47,11 +48,8 @@ export function PlanExpirationBanner() {
 
   if (!loaded || dismissed || !profile) return null;
 
-  // Solo alertar si la cuenta está en período de prueba
-  const planType = profile.plan_type || "prueba";
-  if (planType !== "prueba") return null;
-
-  const { isExpiringSoon, remainingDays } = isPlanExpiringSoon(profile.plan_end_date, 3);
+  // Umbral preventivo: hasta 5 días inclusive (alineado con "Próximo a vencer" en toda la app)
+  const { isExpiringSoon, remainingDays } = isPlanExpiringSoon(profile.plan_end_date, 5);
   if (!isExpiringSoon) return null;
 
   const handleDismiss = () => {
@@ -78,6 +76,7 @@ export function PlanExpirationBanner() {
     }
   };
 
+  const isTrial = (profile.plan_type || "prueba") === "prueba";
   const formattedDate = formatDateDisplay(profile.plan_end_date);
   const dayText =
     remainingDays === 0
@@ -86,14 +85,16 @@ export function PlanExpirationBanner() {
       ? "en 1 día"
       : `en ${remainingDays} días`;
 
+  const bannerText = isTrial
+    ? `Recordatorio: Tu período de prueba finaliza ${dayText} (el ${formattedDate}).`
+    : `Recordatorio: Tu suscripción finaliza ${dayText} (el ${formattedDate}).`;
+
   return (
     <div className="w-full bg-amber-50 border-b border-amber-200/90 text-amber-900 px-3.5 py-2.5 text-xs flex items-center justify-between gap-3 shadow-2xs animate-in slide-in-from-top-1">
       <div className="flex items-start sm:items-center gap-2 min-w-0 flex-1">
         <Clock className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5 sm:mt-0 animate-pulse" />
         <p className="text-[11px] sm:text-xs leading-relaxed text-amber-900">
-          <span className="font-bold">
-            Recordatorio: Tu período de prueba finaliza {dayText} (el {formattedDate}).
-          </span>{" "}
+          <span className="font-bold">{bannerText}</span>{" "}
           <span className="text-amber-800 hidden sm:inline">
             Activá tu suscripción mensual para no interrumpir tu trabajo.
           </span>
