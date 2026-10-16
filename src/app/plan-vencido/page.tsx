@@ -124,7 +124,7 @@ export default function PlanVencidoPage() {
             ¡Tu prueba en HABA terminó!
           </h1>
           <p className="text-xs text-[#7A7A7A] mt-1.5 leading-relaxed">
-            Esperamos que HABA te haya ayudado a ordenar tus costos y dar claridad a tu taller.
+            Esperamos que HABA te haya ayudado a ordenar tus costos y dar claridad a tu emprendimiento.
             Para seguir creando presupuestos y calculando precios, escribinos para activar tu suscripción.
           </p>
         </div>
@@ -148,8 +148,8 @@ export default function PlanVencidoPage() {
             </div>
             <div className="bg-white p-2 rounded-xl border border-[#EAF0E8]">
               <Calculator className="w-4 h-4 text-[#3BB578] mx-auto mb-1" />
-              <span className="text-[10px] font-bold text-[#2B2B2B] block">Tus Recetas</span>
-              <span className="text-[9px] text-[#7A7A7A]">Guardadas</span>
+              <span className="text-[10px] font-bold text-[#2B2B2B] block">Tus Productos</span>
+              <span className="text-[9px] text-[#7A7A7A]">Guardados</span>
             </div>
             <div className="bg-white p-2 rounded-xl border border-[#EAF0E8]">
               <Receipt className="w-4 h-4 text-[#3BB578] mx-auto mb-1" />
