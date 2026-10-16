@@ -96,7 +96,13 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
         if (emailSearchRes.ok) {
           const emailData = await emailSearchRes.json();
           if (Array.isArray(emailData.results) && emailData.results.length > 0) {
-            preapproval = emailData.results[0];
+            // REGLA ESTRICTA: Solo asociar si no tiene un external_reference de OTRA usuaria distinta
+            const candidate = emailData.results.find(
+              (p: any) => !p.external_reference || p.external_reference === userId
+            );
+            if (candidate) {
+              preapproval = candidate;
+            }
           }
         }
       } catch (e) {

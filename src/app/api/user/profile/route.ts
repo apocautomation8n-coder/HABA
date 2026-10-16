@@ -4,7 +4,6 @@ import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { getTrustedPlanMeta } from "@/lib/plan-helpers";
 import { checkIsAdmin } from "@/lib/auth-helpers";
 import { formatAccountNumber, parseAccountNumber } from "@/lib/account";
-import { syncUserSubscriptionWithMercadoPago } from "@/lib/mercadopago";
 
 function getAdminClient() {
   return createSupabaseClient(
@@ -97,23 +96,6 @@ export async function GET(request: Request) {
       user.app_metadata?.account_status ||
       (profile?.status === "suspended" ? "suspended" : "active");
 
-    // Sincronización en vivo con Mercado Pago: si la usuaria abonó pero aún figura en prueba,
-    // consultar directamente a Mercado Pago y actualizar Supabase en el acto.
-    if (!isAdmin && planType !== "mensual" && process.env.MP_ACCESS_TOKEN) {
-      try {
-        const syncRes = await syncUserSubscriptionWithMercadoPago({
-          userId: user.id,
-          email: user.email,
-        });
-        if (syncRes.synced && syncRes.plan_type && syncRes.plan_end_date) {
-          planType = syncRes.plan_type as any;
-          planEndDate = syncRes.plan_end_date;
-          accountStatus = "active";
-        }
-      } catch (syncErr) {
-        console.warn("[Profile API] Error en sincronización con Mercado Pago:", syncErr);
-      }
-    }
     const avatarUrl = meta.avatar_url || null;
 
     const fullProfile = {
