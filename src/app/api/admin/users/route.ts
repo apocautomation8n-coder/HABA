@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { checkIsAdmin } from "@/lib/auth-helpers";
-import { calculatePlanEndDate, PlanType, buildInitialUserMetadata } from "@/lib/plan-helpers";
+import { calculatePlanEndDate, PlanType, buildInitialUserMetadata, getTrustedPlanMeta, splitPlanMetadata } from "@/lib/plan-helpers";
 import { formatAccountNumber, parseAccountNumber, getNextAccountNumberFromList } from "@/lib/account";
 
 function getAdminClient() {
@@ -93,15 +93,14 @@ export async function GET(request: Request) {
       const authUser = authMap.get(p.id);
       const meta = authUser?.user_metadata || {};
 
-      const planType: PlanType = meta.plan_type || "prueba";
-      const planStartDate =
-        meta.plan_start_date ||
-        p.created_at?.split("T")[0] ||
-        new Date().toISOString().split("T")[0];
-      const planEndDate =
-        meta.plan_end_date || calculatePlanEndDate(planStartDate, planType);
+      // Datos del plan: solo desde app_metadata (user_metadata lo puede editar la usuaria)
+      const trusted = getTrustedPlanMeta(authUser || { created_at: p.created_at });
+      const planType: PlanType = trusted.plan_type;
+      const planStartDate = trusted.plan_start_date;
+      const planEndDate = trusted.plan_end_date;
       const accountStatus =
-        meta.account_status || (p.status === "suspended" ? "suspended" : "active");
+        authUser?.app_metadata?.account_status ||
+        (p.status === "suspended" ? "suspended" : "active");
       const avatarUrl = meta.avatar_url || null;
 
       // Recuperar account_number normalizado en formato de 2 dígitos ("01", "02", etc.)
@@ -133,8 +132,8 @@ export async function GET(request: Request) {
         avatar_url: avatarUrl,
         is_new: isNew,
         registration_source: meta.registration_source || "admin",
-        mp_status: meta.mp_status || null,
-        mp_preapproval_id: meta.mp_preapproval_id || null,
+        mp_status: trusted.mp_status,
+        mp_preapproval_id: trusted.mp_preapproval_id,
       };
     });
 
@@ -144,14 +143,11 @@ export async function GET(request: Request) {
 
     for (const u of missingFromProfiles) {
       const meta = u.user_metadata || {};
-      const planType: PlanType = meta.plan_type || "prueba";
-      const planStartDate =
-        meta.plan_start_date ||
-        u.created_at?.split("T")[0] ||
-        new Date().toISOString().split("T")[0];
-      const planEndDate =
-        meta.plan_end_date || calculatePlanEndDate(planStartDate, planType);
-      const accountStatus = meta.account_status || "active";
+      const trusted = getTrustedPlanMeta(u);
+      const planType: PlanType = trusted.plan_type;
+      const planStartDate = trusted.plan_start_date;
+      const planEndDate = trusted.plan_end_date;
+      const accountStatus = trusted.account_status;
       const accountNumber = meta.account_number || idToSeqMap.get(u.id) || "01";
 
       users.push({
@@ -171,8 +167,8 @@ export async function GET(request: Request) {
         avatar_url: meta.avatar_url || null,
         is_new: true,
         registration_source: meta.registration_source || "public",
-        mp_status: meta.mp_status || null,
-        mp_preapproval_id: meta.mp_preapproval_id || null,
+        mp_status: trusted.mp_status,
+        mp_preapproval_id: trusted.mp_preapproval_id,
       });
     }
 
@@ -267,8 +263,10 @@ export async function POST(request: Request) {
           account_number: nextAccountNumber,
           full_name: fullName?.trim() || null,
           business_name: businessName?.trim() || null,
-          ...initialPlanMeta,
+          ...splitPlanMetadata(initialPlanMeta).user,
         },
+        // Datos del plan en app_metadata: no editables por la usuaria
+        app_metadata: splitPlanMetadata(initialPlanMeta).app,
       });
 
     if (authError || !authData.user) {
@@ -371,18 +369,24 @@ export async function PATCH(request: Request) {
     const updatedMetadata = { ...currentMetadata };
     if (fullName !== undefined) updatedMetadata.full_name = fullName?.trim() || null;
     if (businessName !== undefined) updatedMetadata.business_name = businessName?.trim() || null;
-    if (planType !== undefined) updatedMetadata.plan_type = planType;
-    if (planStartDate !== undefined) updatedMetadata.plan_start_date = planStartDate;
-    if (planEndDate !== undefined) updatedMetadata.plan_end_date = planEndDate;
-    if (accountStatus !== undefined) updatedMetadata.account_status = accountStatus;
     if (avatarUrl !== undefined) updatedMetadata.avatar_url = avatarUrl;
+
+    // Datos del plan: se guardan en app_metadata (solo el servidor puede escribirlos)
+    const planUpdates: Record<string, any> = {};
+    if (planType !== undefined) planUpdates.plan_type = planType;
+    if (planStartDate !== undefined) planUpdates.plan_start_date = planStartDate;
+    if (planEndDate !== undefined) planUpdates.plan_end_date = planEndDate;
+    if (accountStatus !== undefined) planUpdates.account_status = accountStatus;
 
     // Si viene solo status legacy (toggle active/suspended), sincronizar account_status
     if (status !== undefined && accountStatus === undefined) {
-      updatedMetadata.account_status = status === "suspended" ? "suspended" : "active";
+      planUpdates.account_status = status === "suspended" ? "suspended" : "active";
     }
 
     authUpdates.user_metadata = updatedMetadata;
+    if (Object.keys(planUpdates).length > 0) {
+      authUpdates.app_metadata = planUpdates;
+    }
 
     const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(userId, authUpdates);
     if (authError) {

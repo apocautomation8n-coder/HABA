@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
-import { calculatePlanEndDate } from "@/lib/plan-helpers";
+import { getTrustedPlanMeta } from "@/lib/plan-helpers";
 import { checkIsAdmin } from "@/lib/auth-helpers";
 import { formatAccountNumber, parseAccountNumber } from "@/lib/account";
 
@@ -87,15 +87,14 @@ export async function GET(request: Request) {
       }
     }
 
-    const planType = meta.plan_type || "prueba";
-    const planStartDate =
-      meta.plan_start_date ||
-      user.created_at?.split("T")[0] ||
-      new Date().toISOString().split("T")[0];
-    const planEndDate =
-      meta.plan_end_date || calculatePlanEndDate(planStartDate, planType);
+    // Datos del plan: solo desde app_metadata (user_metadata lo puede editar la usuaria)
+    const trustedPlan = getTrustedPlanMeta(user);
+    const planType = trustedPlan.plan_type;
+    const planStartDate = trustedPlan.plan_start_date;
+    const planEndDate = trustedPlan.plan_end_date;
     const accountStatus =
-      meta.account_status || (profile?.status === "suspended" ? "suspended" : "active");
+      user.app_metadata?.account_status ||
+      (profile?.status === "suspended" ? "suspended" : "active");
     const avatarUrl = meta.avatar_url || null;
 
     const fullProfile = {

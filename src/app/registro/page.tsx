@@ -18,8 +18,7 @@ import {
 } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
-import { buildInitialUserMetadata } from "@/lib/plan-helpers";
-import { TERMS_VERSION, isTermsEnabled } from "@/lib/terms";
+import { isTermsEnabled } from "@/lib/terms";
 
 export default function RegistroPage() {
   const router = useRouter();
@@ -98,74 +97,49 @@ export default function RegistroPage() {
     try {
       setLoading(true);
 
-      // Metadatos iniciales centralizados de T5 (Prueba 15 días, activa, flag nueva)
-      const initialPlanMeta = buildInitialUserMetadata({
-        planType: "prueba",
-        isNew: true,
-        registrationSource: "public",
-        termsVersion: isTermsEnabled() ? TERMS_VERSION : null,
-        termsAcceptedAt: isTermsEnabled() && acceptedTerms ? new Date().toISOString() : null,
+      // El registro se procesa en el servidor: los datos del plan no los define el navegador
+      const res = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fullName: cleanFullName,
+          businessName: cleanBusinessName,
+          phone: cleanPhone,
+          email: cleanEmail,
+          password,
+          acceptedTerms,
+          honeypot,
+          elapsedMs: elapsed,
+        }),
       });
+      const result = await res.json().catch(() => ({}));
 
-      const { data, error } = await supabase.auth.signUp({
-        email: cleanEmail,
-        password,
-        options: {
-          data: {
-            full_name: cleanFullName,
-            business_name: cleanBusinessName || cleanFullName,
-            phone: cleanPhone || null,
-            business_phone: cleanPhone || null,
-            ...initialPlanMeta,
-          },
-          emailRedirectTo: `${window.location.origin}/dashboard`,
-        },
-      });
-
-      if (error) {
-        const msg = error.message.toLowerCase();
-        if (
-          msg.includes("already registered") ||
-          msg.includes("already in use") ||
-          msg.includes("user already exists") ||
-          error.status === 422
-        ) {
-          setErrorMessage(
-            "Ya existe una cuenta registrada con este correo electrónico. Si es tuya, podés iniciar sesión o restablecer tu contraseña."
-          );
-        } else {
-          setErrorMessage(error.message || "No se pudo completar el registro.");
-        }
+      if (!res.ok) {
+        setErrorMessage(result?.error || "No se pudo completar el registro.");
         return;
       }
 
-      // Verificación de email duplicado cuando Supabase tiene habilitada la protección de enumeración
-      if (
-        data?.user &&
-        Array.isArray(data.user.identities) &&
-        data.user.identities.length === 0
-      ) {
-        setErrorMessage(
-          "Ya existe una cuenta registrada con este correo electrónico. Si es tuya, podés iniciar sesión o restablecer tu contraseña."
-        );
-        return;
-      }
-
-      // Registro exitoso
       setSuccessEmail(cleanEmail);
 
-      // Si Supabase no requiere confirmación de email y devuelve sesión activa de inmediato
-      if (data?.session) {
-        setRequiresEmailConfirmation(false);
-        setIsSuccess(true);
-        setTimeout(() => {
-          window.location.href = "/dashboard";
-        }, 1500);
-      } else {
-        // Requiere confirmación por correo
-        setRequiresEmailConfirmation(true);
-        setIsSuccess(true);
+      if (result?.requiresEmailConfirmation === false) {
+        // La cuenta quedó activa de inmediato: se inicia sesión y se entra a la app
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+          email: cleanEmail,
+          password,
+        });
+        if (!signInError) {
+          setRequiresEmailConfirmation(false);
+          setIsSuccess(true);
+          setTimeout(() => {
+            window.location.href = "/dashboard";
+          }, 1500);
+          return;
+        }
       }
+
+      // Requiere confirmación por correo
+      setRequiresEmailConfirmation(true);
+      setIsSuccess(true);
     } catch (err: any) {
       setErrorMessage("Ocurrió un error inesperado al procesar el registro.");
     } finally {

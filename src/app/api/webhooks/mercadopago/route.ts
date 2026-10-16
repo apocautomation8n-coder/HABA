@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
-import { calculatePlanEndDate } from "@/lib/plan-helpers";
+import { calculatePlanEndDate, getTrustedPlanMeta } from "@/lib/plan-helpers";
 
 function getAdminClient() {
   return createSupabaseClient(
@@ -163,7 +163,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ received: true, matchedUser: false });
     }
 
-    const currentMeta = targetUser.user_metadata || {};
+    // Los datos del plan se guardan en app_metadata: solo el servidor puede escribirlos
+    const currentPlan = getTrustedPlanMeta(targetUser);
     const today = new Date().toISOString().split("T")[0];
 
     if (status === "authorized") {
@@ -173,20 +174,20 @@ export async function POST(request: Request) {
         ? addDays(nextPaymentDate.split("T")[0], PAYMENT_GRACE_DAYS)
         : addDays(calculatePlanEndDate(today, "mensual"), PAYMENT_GRACE_DAYS);
 
-      const updatedMeta = {
-        ...currentMeta,
-        plan_type: "mensual",
-        plan_start_date: currentMeta.plan_start_date || today,
-        plan_end_date: newEndDate,
-        account_status: "active",
-        mp_status: "authorized",
-        mp_preapproval_id: preapprovalId,
-        updated_at: new Date().toISOString(),
-      };
-
-      await supabaseAdmin.auth.admin.updateUserById(targetUserId, {
-        user_metadata: updatedMeta,
+      const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(targetUserId, {
+        app_metadata: {
+          plan_type: "mensual",
+          plan_start_date: currentPlan.plan_type === "mensual" ? currentPlan.plan_start_date : today,
+          plan_end_date: newEndDate,
+          account_status: "active",
+          mp_status: "authorized",
+          mp_preapproval_id: preapprovalId,
+        },
       });
+      if (updateError) {
+        console.error("[Webhook Mercado Pago] No se pudo activar el plan:", updateError.message);
+        return NextResponse.json({ error: updateError.message }, { status: 500 });
+      }
 
       try {
         await supabaseAdmin
@@ -203,15 +204,13 @@ export async function POST(request: Request) {
       console.log(`[Webhook Mercado Pago] Suscripción activada con éxito para usuario ${targetUserId} hasta ${newEndDate}`);
     } else if (status === "cancelled" || status === "paused") {
       // Suscripción cancelada o pausada
-      const updatedMeta = {
-        ...currentMeta,
-        mp_status: status,
-        updated_at: new Date().toISOString(),
-      };
-
-      await supabaseAdmin.auth.admin.updateUserById(targetUserId, {
-        user_metadata: updatedMeta,
+      const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(targetUserId, {
+        app_metadata: { mp_status: status },
       });
+      if (updateError) {
+        console.error("[Webhook Mercado Pago] No se pudo registrar el estado:", updateError.message);
+        return NextResponse.json({ error: updateError.message }, { status: 500 });
+      }
 
       console.log(`[Webhook Mercado Pago] Suscripción ${status} para usuario ${targetUserId}`);
     }

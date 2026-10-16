@@ -248,3 +248,71 @@ export function getSubscriptionUrl(): string {
   return process.env.NEXT_PUBLIC_MP_SUBSCRIPTION_URL || "";
 }
 
+/**
+ * SEGURIDAD — datos del plan confiables.
+ *
+ * user_metadata puede ser editado por la propia usuaria desde el navegador
+ * (supabase.auth.updateUser), por lo que NUNCA debe usarse para decidir acceso o pagos.
+ * Los datos del plan viven en app_metadata, que solo puede escribir el servidor
+ * con la service role (panel de admin, webhook de Mercado Pago, registro).
+ *
+ * Si una cuenta no tiene datos del plan en app_metadata (por ejemplo, alguien que llamó
+ * a la API de registro de Supabase directamente), se asume una prueba de 15 días
+ * contada desde created_at, que también es un dato del servidor.
+ */
+export const TRUSTED_PLAN_KEYS = [
+  "plan_type",
+  "plan_start_date",
+  "plan_end_date",
+  "account_status",
+  "mp_status",
+  "mp_preapproval_id",
+] as const;
+
+export interface TrustedPlanMeta {
+  plan_type: PlanType;
+  plan_start_date: string;
+  plan_end_date: string;
+  account_status: AccountStatus;
+  mp_status: string | null;
+  mp_preapproval_id: string | null;
+}
+
+interface UserWithAppMetadata {
+  created_at?: string | null;
+  app_metadata?: Record<string, any> | null;
+}
+
+export function getTrustedPlanMeta(user: UserWithAppMetadata | null | undefined): TrustedPlanMeta {
+  const app = user?.app_metadata || {};
+  const createdDate =
+    (user?.created_at || "").split("T")[0] || new Date().toISOString().split("T")[0];
+
+  const planType: PlanType = app.plan_type || "prueba";
+  const planStart: string = app.plan_start_date || createdDate;
+  const planEnd: string = app.plan_end_date || calculatePlanEndDate(planStart, planType);
+
+  return {
+    plan_type: planType,
+    plan_start_date: planStart,
+    plan_end_date: planEnd,
+    account_status: (app.account_status as AccountStatus) || "active",
+    mp_status: app.mp_status || null,
+    mp_preapproval_id: app.mp_preapproval_id || null,
+  };
+}
+
+/** Separa un objeto en { app: claves del plan (confiables), user: el resto }. */
+export function splitPlanMetadata(input: Record<string, any>): {
+  app: Record<string, any>;
+  user: Record<string, any>;
+} {
+  const app: Record<string, any> = {};
+  const user: Record<string, any> = {};
+  for (const [key, value] of Object.entries(input || {})) {
+    if ((TRUSTED_PLAN_KEYS as readonly string[]).includes(key)) app[key] = value;
+    else user[key] = value;
+  }
+  return { app, user };
+}
+

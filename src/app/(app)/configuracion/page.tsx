@@ -51,6 +51,7 @@ import {
   getPlanStatusInfo,
   formatDateDisplay,
   calculatePlanEndDate,
+  getTrustedPlanMeta,
 } from "@/lib/plan-helpers";
 
 export default function SettingsPage() {
@@ -164,18 +165,12 @@ export default function SettingsPage() {
           if (user.user_metadata?.avatar_url) {
             setAvatarUrl(user.user_metadata.avatar_url);
           }
-          if (user.user_metadata?.plan_type) {
-            setPlanType(user.user_metadata.plan_type);
-          }
-          if (user.user_metadata?.plan_start_date) {
-            setPlanStartDate(user.user_metadata.plan_start_date);
-          }
-          if (user.user_metadata?.plan_end_date) {
-            setPlanEndDate(user.user_metadata.plan_end_date);
-          }
-          if (user.user_metadata?.account_status) {
-            setAccountStatus(user.user_metadata.account_status);
-          }
+          // Datos del plan: solo desde app_metadata (user_metadata lo puede editar la usuaria)
+          const trustedPlan = getTrustedPlanMeta(user);
+          setPlanType(trustedPlan.plan_type);
+          setPlanStartDate(trustedPlan.plan_start_date);
+          setPlanEndDate(trustedPlan.plan_end_date);
+          setAccountStatus(trustedPlan.account_status);
           if (user.user_metadata?.account_number) {
             setAccountNumber(user.user_metadata.account_number);
           }

@@ -1,6 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { isPlanExpired } from "@/lib/plan-helpers";
+import { isPlanExpired, getTrustedPlanMeta } from "@/lib/plan-helpers";
 import { checkIsAdmin } from "@/lib/auth-helpers";
 
 export async function updateSession(request: NextRequest) {
@@ -106,9 +106,8 @@ export async function updateSession(request: NextRequest) {
     }
 
     // 2. Control de expiración para usuarias regulares (T6)
-    const planEndDate = user.user_metadata?.plan_end_date;
-    const accountStatus = user.user_metadata?.account_status;
-    const hasExpired = isPlanExpired(planEndDate, accountStatus);
+    const trustedPlan = getTrustedPlanMeta(user);
+    const hasExpired = isPlanExpired(trustedPlan.plan_end_date, trustedPlan.account_status);
 
     if (hasExpired) {
       // Si el plan venció y no está en /plan-vencido, redirigir forzosamente a la pantalla de bloqueo
