@@ -3,13 +3,9 @@
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Sparkles,
   Lock,
-  ExternalLink,
   LogOut,
   ShieldAlert,
-  CheckCircle,
-  HelpCircle,
   Receipt,
   Layers,
   Calculator,
@@ -19,9 +15,9 @@ import { WhatsAppIcon } from "@/components/WhatsAppIcon";
 import { createClient } from "@/lib/supabase/client";
 import {
   buildPlanExpiredSupportWhatsAppUrl,
+  buildSubscriptionWhatsAppUrl,
   isSupportWhatsAppConfigured,
 } from "@/lib/support";
-import { getSubscriptionUrl } from "@/lib/plan-helpers";
 
 export default function PlanVencidoPage() {
   const router = useRouter();
@@ -92,7 +88,13 @@ export default function PlanVencidoPage() {
     }
   };
 
-  const subscriptionUrl = getSubscriptionUrl();
+  const subscriptionWhatsAppUrl = buildSubscriptionWhatsAppUrl({
+    accountNumber: profile?.accountNumber,
+    businessName: profile?.businessName,
+    fullName: profile?.fullName,
+    email: profile?.email,
+  });
+
   const supportWhatsAppUrl = buildPlanExpiredSupportWhatsAppUrl({
     accountNumber: profile?.accountNumber,
     businessName: profile?.businessName,
@@ -123,7 +125,7 @@ export default function PlanVencidoPage() {
           </h1>
           <p className="text-xs text-[#7A7A7A] mt-1.5 leading-relaxed">
             Esperamos que HABA te haya ayudado a ordenar tus costos y dar claridad a tu taller.
-            Para seguir creando presupuestos y calculando precios, activá tu suscripción mensual.
+            Para seguir creando presupuestos y calculando precios, escribinos para activar tu suscripción.
           </p>
         </div>
 
@@ -162,33 +164,21 @@ export default function PlanVencidoPage() {
 
         {/* Acciones principales */}
         <div className="w-full space-y-2.5 pt-1">
-          {/* Botón Principal: Suscribirme por Mercado Pago */}
-          {subscriptionUrl ? (
+          {/* Botón Principal: Suscribirme por WhatsApp */}
+          {subscriptionWhatsAppUrl ? (
             <a
-              href={subscriptionUrl}
+              href={subscriptionWhatsAppUrl}
               target="_blank"
               rel="noopener noreferrer"
               id="btn-suscribirme-plan-vencido"
               className="w-full py-3.5 px-4 bg-[#3BB578] hover:bg-[#2E9E65] active:scale-[0.99] text-white font-bold rounded-2xl shadow-sm hover:shadow transition flex items-center justify-center gap-2 text-xs"
             >
-              <Sparkles className="w-4 h-4" />
-              <span>Suscribirme al Plan Mensual</span>
-              <ExternalLink className="w-3.5 h-3.5 opacity-80" />
-            </a>
-          ) : supportWhatsAppUrl ? (
-            <a
-              href={supportWhatsAppUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              id="btn-suscribirme-whatsapp-fallback"
-              className="w-full py-3.5 px-4 bg-[#3BB578] hover:bg-[#2E9E65] active:scale-[0.99] text-white font-bold rounded-2xl shadow-sm hover:shadow transition flex items-center justify-center gap-2 text-xs"
-            >
-              <Sparkles className="w-4 h-4" />
-              <span>Solicitar suscripción mensual</span>
+              <WhatsAppIcon className="w-4 h-4 text-white" />
+              <span>Suscribirme al Plan Mensual por WhatsApp</span>
             </a>
           ) : (
             <div className="p-3 bg-neutral-100 rounded-2xl text-xs text-neutral-600">
-              Para suscribirte, contactate con Gio de Amaoto Craft.
+              Para suscribirte, contactate con Gio de Amaoto Craft por WhatsApp.
             </div>
           )}
 
@@ -202,7 +192,7 @@ export default function PlanVencidoPage() {
               className="w-full py-3 px-4 bg-[#DCF4D7] hover:bg-[#C3EBC0] text-[#1F7A4C] font-bold rounded-2xl transition flex items-center justify-center gap-2 text-xs active:scale-[0.99]"
             >
               <WhatsAppIcon className="w-4 h-4 text-[#25D366]" />
-              <span>Contactar a soporte HABA</span>
+              <span>Consultas o asistencia con Gio</span>
             </a>
           )}
 

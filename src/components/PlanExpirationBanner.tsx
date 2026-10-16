@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Sparkles, X, Clock, ExternalLink } from "lucide-react";
-import { isPlanExpiringSoon, isPlanExpired, getSubscriptionUrl } from "@/lib/plan-helpers";
-import { buildPlanExpiredSupportWhatsAppUrl } from "@/lib/support";
+import { X, Clock } from "lucide-react";
+import { isPlanExpiringSoon, isPlanExpired } from "@/lib/plan-helpers";
+import { buildSubscriptionWhatsAppUrl } from "@/lib/support";
+import { WhatsAppIcon } from "@/components/WhatsAppIcon";
 
 export function PlanExpirationBanner() {
   const [profile, setProfile] = useState<any>(null);
@@ -50,15 +51,12 @@ export function PlanExpirationBanner() {
   const { isExpiringSoon, remainingDays } = isPlanExpiringSoon(profile.plan_end_date, 3);
   if (!isExpiringSoon) return null;
 
-  const subscriptionUrl = getSubscriptionUrl();
-  const supportWhatsAppUrl = buildPlanExpiredSupportWhatsAppUrl({
+  const targetUrl = buildSubscriptionWhatsAppUrl({
     accountNumber: profile.account_number,
     businessName: profile.business_name,
     fullName: profile.full_name,
     email: profile.email,
   });
-
-  const targetUrl = subscriptionUrl || supportWhatsAppUrl;
 
   const handleDismiss = () => {
     setDismissed(true);
@@ -92,11 +90,10 @@ export function PlanExpirationBanner() {
             href={targetUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-[10px] sm:text-[11px] transition shadow-xs active:scale-95"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#1F7A4C] hover:bg-[#185E3B] text-white font-bold rounded-xl text-[10px] sm:text-[11px] transition shadow-xs active:scale-95"
           >
-            <Sparkles className="w-3 h-3" />
+            <WhatsAppIcon className="w-3.5 h-3.5 text-white" />
             <span>Suscribirme</span>
-            <ExternalLink className="w-2.5 h-2.5 opacity-80" />
           </a>
         )}
 

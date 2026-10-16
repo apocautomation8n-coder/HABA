@@ -125,4 +125,30 @@ export function buildPlanExpiredSupportWhatsAppUrl(data?: SupportProfileData & {
   return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
 }
 
+/**
+ * Genera el enlace de WhatsApp para usuarias que desean pagar/suscribirse al plan mensual
+ */
+export function buildSubscriptionWhatsAppUrl(data?: SupportProfileData & { email?: string | null }): string | null {
+  const phone = getSupportWhatsAppNumber();
+  if (!phone) return null;
+
+  const accountNum = data?.accountNumber?.trim();
+  const name = data?.businessName?.trim() || data?.fullName?.trim();
+  let idText = "";
+  if (accountNum && name) {
+    idText = `la cuenta #${accountNum} (${name})`;
+  } else if (accountNum) {
+    idText = `la cuenta #${accountNum}`;
+  } else if (name) {
+    idText = `mi cuenta (${name})`;
+  } else {
+    idText = "mi cuenta";
+  }
+
+  const emailPart = data?.email?.trim() ? ` Correo: ${data.email.trim()}.` : "";
+  const message = `¡Hola Gio! Quiero suscribirme al Plan Mensual de HABA para ${idText}.${emailPart} ¿Cómo coordinamos el pago?`;
+  return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+}
+
+
 
