@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { calculatePlanEndDate } from "@/lib/plan-helpers";
+import { checkIsAdmin } from "@/lib/auth-helpers";
 import { formatAccountNumber, parseAccountNumber } from "@/lib/account";
 
 function getAdminClient() {
@@ -45,10 +46,8 @@ export async function GET(request: Request) {
       .eq("id", user.id)
       .maybeSingle();
 
-    const isAdmin =
-      user.email?.toLowerCase() === "admin@admin.com" ||
-      user.user_metadata?.role === "admin" ||
-      profile?.role === "admin";
+    // user_metadata.role no se usa: la propia usuaria puede editarlo.
+    const isAdmin = checkIsAdmin(user, profile?.role);
 
     const meta = user.user_metadata || {};
     let accountNumber = profile?.account_number || meta.account_number || null;

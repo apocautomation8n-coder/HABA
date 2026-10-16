@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { isPlanExpired } from "@/lib/plan-helpers";
+import { checkIsAdmin } from "@/lib/auth-helpers";
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
@@ -88,9 +89,7 @@ export async function updateSession(request: NextRequest) {
 
   // Si hay usuario autenticado:
   if (user) {
-    const isAdmin =
-      user.email?.toLowerCase() === "admin@admin.com" ||
-      user.user_metadata?.role === "admin";
+    const isAdmin = checkIsAdmin(user);
 
     // 1. La administradora Gio nunca se bloquea
     if (isAdmin) {

@@ -16,6 +16,17 @@ function getAdminClient() {
   );
 }
 
+// Días de gracia sobre la fecha del próximo cobro: evita bloquear a una usuaria que
+// ya pagó mientras Mercado Pago acredita el cobro y envía la notificación.
+const PAYMENT_GRACE_DAYS = 3;
+
+function addDays(dateStr: string, days: number): string {
+  const [y, m, d] = dateStr.split("-").map((n) => parseInt(n, 10));
+  const date = new Date(Date.UTC(y, m - 1, d));
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().split("T")[0];
+}
+
 /**
  * Valida la firma HMAC-SHA256 x-signature de Mercado Pago si MP_WEBHOOK_SECRET está configurado.
  */
@@ -38,11 +49,13 @@ function verifyMercadoPagoSignature(
   const v1 = parts["v1"];
   if (!ts || !v1) return false;
 
-  // Mercado Pago manifest template
-  const manifest = `id:${dataId};request-id:${xRequestIdHeader || ""};ts:${ts};`;
+  // Mercado Pago manifest template (el data.id alfanumérico se firma en minúsculas)
+  const manifest = `id:${dataId.toLowerCase()};request-id:${xRequestIdHeader || ""};ts:${ts};`;
   const computedHash = crypto.createHmac("sha256", secret).update(manifest).digest("hex");
 
-  return computedHash === v1;
+  const a = Buffer.from(computedHash);
+  const b = Buffer.from(v1);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
 export async function POST(request: Request) {
@@ -73,25 +86,44 @@ export async function POST(request: Request) {
       return NextResponse.json({ received: true, note: "MP_ACCESS_TOKEN no configurado" });
     }
 
-    // Procesar únicamente suscripciones (preapproval)
+    // Procesar suscripciones (preapproval) y cobros recurrentes de una suscripción
     const isSubscription =
       type === "subscription_preapproval" ||
       type === "preapproval" ||
       action?.includes("preapproval");
+    const isRecurringPayment =
+      type === "subscription_authorized_payment" || action?.includes("authorized_payment");
 
-    if (!isSubscription || !dataId) {
+    if ((!isSubscription && !isRecurringPayment) || !dataId) {
       return NextResponse.json({ received: true, ignored: true });
     }
 
+    // Un cobro mensual notifica el id del cobro: se busca la suscripción a la que pertenece
+    let preapprovalId = String(dataId);
+    if (isRecurringPayment) {
+      const payRes = await fetch(`https://api.mercadopago.com/authorized_payments/${dataId}`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!payRes.ok) {
+        console.error(`[Webhook Mercado Pago] Error ${payRes.status} consultando cobro ${dataId}`);
+        return NextResponse.json({ error: "No se pudo consultar el cobro en MP" }, { status: 502 });
+      }
+      const payment = await payRes.json();
+      if (!payment.preapproval_id) {
+        return NextResponse.json({ received: true, ignored: true });
+      }
+      preapprovalId = String(payment.preapproval_id);
+    }
+
     // Consultar estado de la suscripción en la API de Mercado Pago
-    const mpRes = await fetch(`https://api.mercadopago.com/preapproval/${dataId}`, {
+    const mpRes = await fetch(`https://api.mercadopago.com/preapproval/${preapprovalId}`, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
       },
     });
 
     if (!mpRes.ok) {
-      console.error(`[Webhook Mercado Pago] Error ${mpRes.status} consultando preapproval ${dataId}`);
+      console.error(`[Webhook Mercado Pago] Error ${mpRes.status} consultando preapproval ${preapprovalId}`);
       return NextResponse.json({ error: "No se pudo consultar preapproval en MP" }, { status: 502 });
     }
 
@@ -136,9 +168,10 @@ export async function POST(request: Request) {
 
     if (status === "authorized") {
       // Suscripción aprobada: activar plan mensual y extender fecha de fin
+      // El acceso llega hasta el próximo cobro más unos días de gracia
       const newEndDate = nextPaymentDate
-        ? nextPaymentDate.split("T")[0]
-        : calculatePlanEndDate(today, "mensual");
+        ? addDays(nextPaymentDate.split("T")[0], PAYMENT_GRACE_DAYS)
+        : addDays(calculatePlanEndDate(today, "mensual"), PAYMENT_GRACE_DAYS);
 
       const updatedMeta = {
         ...currentMeta,
@@ -147,7 +180,7 @@ export async function POST(request: Request) {
         plan_end_date: newEndDate,
         account_status: "active",
         mp_status: "authorized",
-        mp_preapproval_id: String(dataId),
+        mp_preapproval_id: preapprovalId,
         updated_at: new Date().toISOString(),
       };
 

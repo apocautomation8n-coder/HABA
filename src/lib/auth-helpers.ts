@@ -29,12 +29,10 @@ export function checkIsAdmin(
 ): boolean {
   if (!user && !profileRole) return false;
 
+  // Seguridad: user_metadata es editable por cualquier usuaria desde el navegador,
+  // por eso NO se usa user_metadata.role para otorgar permisos de administración.
   const email = user?.email?.trim().toLowerCase();
-  if (email === "admin@admin.com" || email === "gio@amaoto.com") {
-    return true;
-  }
-
-  if (user?.user_metadata?.role === "admin") {
+  if (email === "admin@admin.com") {
     return true;
   }
 
