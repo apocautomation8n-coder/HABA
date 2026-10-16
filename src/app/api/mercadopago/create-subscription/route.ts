@@ -64,15 +64,9 @@ export async function POST(request: Request) {
         }
       }
 
-      // Mercado Pago API /preapproval requiere obligatoriamente payer_email.
-      // Permitimos que el cliente envíe body.payer_email si abona desde una cuenta de MP
-      // con otro correo para evitar el error 'subscription-invalid-user'.
-      // La asociación unívoca a la cuenta de HABA está 100% garantizada por external_reference = user.id.
-      const payerEmail = (body.payer_email || body.payerEmail || user.email || "").trim().toLowerCase();
-
       const payload: Record<string, any> = {
         external_reference: user.id,
-        payer_email: payerEmail,
+        payer_email: user.email,
         back_url: backUrl,
         notification_url: notificationUrl,
       };
@@ -112,7 +106,7 @@ export async function POST(request: Request) {
           const fallbackPayload: Record<string, any> = {
             reason: title,
             external_reference: user.id,
-            payer_email: payerEmail,
+            payer_email: user.email,
             back_url: backUrl,
             notification_url: notificationUrl,
             auto_recurring: {

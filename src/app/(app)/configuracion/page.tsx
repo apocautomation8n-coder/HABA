@@ -109,20 +109,14 @@ export default function SettingsPage() {
   const [subscribingMP, setSubscribingMP] = useState<boolean>(false);
   const [syncingMP, setSyncingMP] = useState<boolean>(false);
   const [syncNotice, setSyncNotice] = useState<string | null>(null);
-  const [showCustomPayerEmail, setShowCustomPayerEmail] = useState<boolean>(false);
-  const [customPayerEmail, setCustomPayerEmail] = useState<string>("");
 
   const handleSubscribeMercadoPago = async () => {
     try {
       setSubscribingMP(true);
-      const payload: Record<string, any> = { return_url: "/configuracion?status=approved" };
-      if (customPayerEmail.trim()) {
-        payload.payer_email = customPayerEmail.trim();
-      }
       const res = await fetch("/api/mercadopago/create-subscription", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ return_url: "/configuracion?status=approved" }),
       });
       const data = await res.json();
       if (data.init_point) {
@@ -141,32 +135,12 @@ export default function SettingsPage() {
     try {
       if (!silent) setSyncingMP(true);
       setSyncNotice(null);
-      let res = await fetch("/api/mercadopago/sync", { method: "POST" });
-      let data = await res.json();
-
-      // Si no detectó la suscripción automáticamente con su email de HABA y fue acción manual
-      if (!data.synced && !silent) {
-        const customEmail = window.prompt(
-          `No detectamos un cobro en Mercado Pago asociado a tu email de HABA (${email || "tu cuenta"}).\n\nSi pagaste desde una cuenta de Mercado Pago con OTRO email (ej: cuenta personal o de un familiar) o querés vincularlo por N° de operación, ingresalo acá:`
-        );
-        if (customEmail && customEmail.trim()) {
-          setSyncingMP(true);
-          res = await fetch("/api/mercadopago/sync", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ payer_email: customEmail.trim() }),
-          });
-          data = await res.json();
-        }
-      }
-
+      const res = await fetch("/api/mercadopago/sync", { method: "POST" });
+      const data = await res.json();
       if (data.synced) {
         if (data.plan_type) setPlanType(data.plan_type);
         if (data.plan_end_date) setPlanEndDate(data.plan_end_date);
         setSyncNotice("¡Tu suscripción mensual fue verificada y activada con éxito!");
-        if (!silent) {
-          alert("¡Suscripción mensual verificada y activada con éxito!");
-        }
       } else if (!silent) {
         alert(
           data.error ||
@@ -836,47 +810,6 @@ export default function SettingsPage() {
                   </>
                 )}
               </button>
-
-              {/* Opción si paga con otra cuenta de Mercado Pago */}
-              <div className="pt-0.5 text-center">
-                {!showCustomPayerEmail ? (
-                  <button
-                    type="button"
-                    onClick={() => setShowCustomPayerEmail(true)}
-                    className="text-[10px] text-neutral-500 hover:text-[#1F7A4C] transition underline"
-                  >
-                    ¿Vas a pagar con una cuenta de Mercado Pago con otro e-mail?
-                  </button>
-                ) : (
-                  <div className="p-2.5 bg-white rounded-xl border border-neutral-200 text-left space-y-1 animate-in fade-in">
-                    <label className="text-[10.5px] font-semibold text-[#2B2B2B] block">
-                      E-mail de tu cuenta de Mercado Pago:
-                    </label>
-                    <div className="flex gap-1.5">
-                      <input
-                        type="email"
-                        value={customPayerEmail}
-                        onChange={(e) => setCustomPayerEmail(e.target.value)}
-                        placeholder="ej: tu_mercadopago@gmail.com"
-                        className="flex-1 px-2.5 py-1 text-xs bg-[#F6F7F2] border border-neutral-200 rounded-lg outline-none focus:border-[#3BB578] text-[#2B2B2B]"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowCustomPayerEmail(false);
-                          setCustomPayerEmail("");
-                        }}
-                        className="px-2 py-1 text-[10px] text-neutral-500 hover:text-neutral-700 font-semibold"
-                      >
-                        Quitar
-                      </button>
-                    </div>
-                    <p className="text-[9.5px] text-neutral-400">
-                      Evita el error de Mercado Pago si tu cuenta personal usa otro correo diferente al de HABA.
-                    </p>
-                  </div>
-                )}
-              </div>
 
               <div className="flex items-center justify-between text-xs pt-1 px-1">
                 <span className="text-[11px] text-[#7A7A7A]">¿Ya pagaste tu suscripción?</span>
