@@ -23,6 +23,11 @@ import {
   Hash,
   Sparkles,
   RefreshCw,
+  Phone,
+  MessageCircle,
+  History,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { isRealUserAvatar } from "@/components/ProfileAvatar";
@@ -39,6 +44,25 @@ import {
   calculatePlanEndDate,
 } from "@/lib/plan-helpers";
 import { matchesSearch } from "@/lib/search";
+
+/**
+ * Normaliza y construye el link directo a WhatsApp para comunicarse con una usuaria
+ */
+function buildWhatsAppUrl(rawPhone?: string | null, userName?: string): string {
+  if (!rawPhone) return "#";
+  let digits = rawPhone.replace(/\D/g, "");
+  if (!digits) return "#";
+  if (digits.startsWith("0")) digits = digits.substring(1);
+  if (!digits.startsWith("54")) {
+    if (digits.length === 10) digits = `549${digits}`;
+    else digits = `54${digits}`;
+  } else if (digits.startsWith("54") && !digits.startsWith("549") && digits.length === 12) {
+    digits = `549${digits.substring(2)}`;
+  }
+  const firstName = userName ? userName.split(" ")[0] : "";
+  const greeting = firstName ? `Hola ${firstName}! Te escribo desde HABA.` : "Hola! Te escribo desde HABA.";
+  return `https://wa.me/${digits}?text=${encodeURIComponent(greeting)}`;
+}
 
 interface UserProfile {
   id: string;
@@ -73,6 +97,7 @@ export default function AdminPage() {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [search, setSearch] = useState("");
   const [quickFilter, setQuickFilter] = useState<QuickFilter>("todos");
+  const [expandedHistoryUserId, setExpandedHistoryUserId] = useState<string | null>(null);
 
   // Modal para dar de alta nueva usuaria
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -80,6 +105,7 @@ export default function AdminPage() {
   const [newPassword, setNewPassword] = useState("");
   const [newFullName, setNewFullName] = useState("");
   const [newBusinessName, setNewBusinessName] = useState("");
+  const [newPhone, setNewPhone] = useState("");
   const [newPlanType, setNewPlanType] = useState<PlanType>("prueba");
   const [newPlanStartDate, setNewPlanStartDate] = useState(
     new Date().toISOString().split("T")[0]
@@ -103,6 +129,7 @@ export default function AdminPage() {
   const [editFullName, setEditFullName] = useState("");
   const [editBusinessName, setEditBusinessName] = useState("");
   const [editEmail, setEditEmail] = useState("");
+  const [editPhone, setEditPhone] = useState("");
   const [editPlanType, setEditPlanType] = useState<PlanType>("prueba");
   const [editPlanStartDate, setEditPlanStartDate] = useState("");
   const [editPlanEndDate, setEditPlanEndDate] = useState("");
@@ -321,6 +348,7 @@ export default function AdminPage() {
           password: newPassword,
           fullName: newFullName.trim(),
           businessName: newBusinessName.trim(),
+          phone: newPhone.trim(),
           planType: newPlanType,
           planStartDate: newPlanStartDate,
           planEndDate: newPlanEndDate,
@@ -339,6 +367,7 @@ export default function AdminPage() {
       setNewPassword("");
       setNewFullName("");
       setNewBusinessName("");
+      setNewPhone("");
       setNewPlanType("prueba");
       const today = new Date().toISOString().split("T")[0];
       setNewPlanStartDate(today);
@@ -402,6 +431,7 @@ export default function AdminPage() {
           fullName: editFullName.trim(),
           businessName: editBusinessName.trim(),
           email: editEmail.trim(),
+          phone: editPhone.trim(),
           planType: editPlanType,
           planStartDate: editPlanStartDate,
           planEndDate: editPlanEndDate,
@@ -433,6 +463,7 @@ export default function AdminPage() {
     setEditFullName(u.full_name || "");
     setEditBusinessName(u.business_name || "");
     setEditEmail(u.email || "");
+    setEditPhone(u.phone || "");
 
     const planType = u.plan_type || "prueba";
     const startDate =
@@ -474,7 +505,7 @@ export default function AdminPage() {
   const filteredUsers = useMemo(() => {
     return users.filter((u) => {
       const matches = matchesSearch(
-        [u.email, u.full_name, u.business_name, u.account_number],
+        [u.email, u.full_name, u.business_name, u.account_number, u.phone],
         search
       );
 
@@ -825,6 +856,34 @@ export default function AdminPage() {
                           Emprendimiento: <strong>{u.business_name}</strong>
                         </p>
                       )}
+
+                      {/* WhatsApp / Teléfono de Contacto */}
+                      <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                        {u.phone ? (
+                          <>
+                            <span className="text-[11px] text-[#2B2B2B] font-semibold flex items-center gap-1 bg-neutral-100 px-2 py-0.5 rounded-lg border border-neutral-200">
+                              <Phone className="w-3 h-3 text-[#3BB578]" />
+                              <span>{u.phone}</span>
+                            </span>
+                            <a
+                              href={buildWhatsAppUrl(u.phone, u.full_name)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-[#DCF4D7] hover:bg-[#C3EBC0] text-[#1F7A4C] text-[11px] font-bold border border-[#C3EBC0] transition shadow-2xs active:scale-95"
+                              title={`Abrir chat de WhatsApp con ${u.full_name || u.email}`}
+                            >
+                              <MessageCircle className="w-3.5 h-3.5 text-[#25D366] fill-[#25D366]" />
+                              <span>WhatsApp</span>
+                            </a>
+                          </>
+                        ) : (
+                          <span className="text-[11px] text-neutral-400 italic flex items-center gap-1">
+                            <Phone className="w-3 h-3 text-neutral-300" />
+                            <span>Sin WhatsApp registrado</span>
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -896,24 +955,117 @@ export default function AdminPage() {
                   </div>
                 </div>
 
-                {/* Vigencia y Fechas del Plan */}
+                {/* Vigencia, Fechas del Plan y Botón de Histórico */}
                 <div className="pt-2 border-t border-neutral-100 flex items-center justify-between flex-wrap gap-2 text-[11px] text-[#7A7A7A]">
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 flex-wrap">
                     <Calendar className="w-3.5 h-3.5 text-neutral-400" />
                     <span>
-                      Inicio: <strong>{formatDateDisplay(u.plan_start_date)}</strong>
+                      Alta HABA: <strong className="text-[#2B2B2B]">{formatDateDisplay(u.created_at)}</strong>
                     </span>
                     <span>·</span>
                     <span>
-                      Finaliza: <strong>{formatDateDisplay(u.plan_end_date)}</strong>
+                      Plan: <strong>{formatDateDisplay(u.plan_start_date)}</strong> al <strong>{formatDateDisplay(u.plan_end_date)}</strong>
                     </span>
                   </div>
 
-                  <div className="flex items-center gap-1 font-semibold">
-                    <Clock className="w-3.5 h-3.5 text-neutral-400" />
-                    <span className={planStatusInfo.badgeText}>{planStatusInfo.rowText}</span>
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1 font-semibold">
+                      <Clock className="w-3.5 h-3.5 text-neutral-400" />
+                      <span className={planStatusInfo.badgeText}>{planStatusInfo.rowText}</span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setExpandedHistoryUserId(expandedHistoryUserId === u.id ? null : u.id)
+                      }
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold transition ${
+                        expandedHistoryUserId === u.id
+                          ? "bg-[#2B2B2B] text-white"
+                          : "bg-neutral-100 hover:bg-neutral-200 text-[#1F7A4C]"
+                      }`}
+                      title="Ver trazabilidad completa de fechas y períodos de esta cuenta"
+                    >
+                      <History className="w-3 h-3" />
+                      <span>{expandedHistoryUserId === u.id ? "Cerrar" : "Histórico"}</span>
+                      {expandedHistoryUserId === u.id ? (
+                        <ChevronUp className="w-3 h-3" />
+                      ) : (
+                        <ChevronDown className="w-3 h-3" />
+                      )}
+                    </button>
                   </div>
                 </div>
+
+                {/* Sección Expandible de Histórico de Cuenta */}
+                {expandedHistoryUserId === u.id && (() => {
+                  const trialStart = (u.created_at || "").split("T")[0] || u.plan_start_date;
+                  const trialEnd = calculatePlanEndDate(trialStart, "prueba");
+                  const isTrialCurrent = u.plan_type === "prueba";
+
+                  return (
+                    <div className="pt-2 border-t border-neutral-200/80 bg-neutral-50/70 -mx-4 -mb-4 p-4 rounded-b-3xl space-y-2.5 text-xs text-[#2B2B2B] animate-in fade-in duration-150">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-[11px] uppercase tracking-wider text-[#1F7A4C] flex items-center gap-1.5">
+                          <History className="w-3.5 h-3.5 text-[#3BB578]" />
+                          Histórico y Trazabilidad de la Cuenta
+                        </span>
+                        <span className="text-[10px] text-neutral-500 font-mono">
+                          ID: {u.id.substring(0, 8)}...
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        {/* 1. Alta Original */}
+                        <div className="bg-white p-2.5 rounded-2xl border border-neutral-200 shadow-2xs">
+                          <p className="text-[10px] uppercase font-bold text-neutral-400">1. Alta Inicial en HABA</p>
+                          <p className="text-xs font-bold text-[#2B2B2B] mt-0.5">{formatDateDisplay(u.created_at)}</p>
+                          <p className="text-[10px] text-neutral-500 mt-0.5">
+                            Origen: {u.registration_source === "admin" ? "Alta por Gio (Admin)" : "Registro público"}
+                          </p>
+                        </div>
+
+                        {/* 2. Período de Prueba */}
+                        <div className="bg-white p-2.5 rounded-2xl border border-neutral-200 shadow-2xs">
+                          <div className="flex items-center justify-between">
+                            <p className="text-[10px] uppercase font-bold text-neutral-400">2. Período de Prueba</p>
+                            <span
+                              className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full ${
+                                isTrialCurrent ? "bg-amber-100 text-amber-800" : "bg-[#DCF4D7] text-[#1F7A4C]"
+                              }`}
+                            >
+                              {isTrialCurrent ? "En curso" : "Completada"}
+                            </span>
+                          </div>
+                          <p className="text-xs font-bold text-[#2B2B2B] mt-0.5">
+                            {formatDateDisplay(trialStart)} al {formatDateDisplay(trialEnd)}
+                          </p>
+                          <p className="text-[10px] text-neutral-500 mt-0.5">
+                            15 días de prueba inicial
+                          </p>
+                        </div>
+
+                        {/* 3. Plan Actual & Mercado Pago */}
+                        <div className="bg-white p-2.5 rounded-2xl border border-neutral-200 shadow-2xs">
+                          <div className="flex items-center justify-between">
+                            <p className="text-[10px] uppercase font-bold text-neutral-400">3. Plan Actual</p>
+                            <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-full bg-blue-50 text-blue-700">
+                              Plan {PLAN_NAMES[planType] || planType}
+                            </span>
+                          </div>
+                          <p className="text-xs font-bold text-[#2B2B2B] mt-0.5">
+                            {formatDateDisplay(u.plan_start_date)} al {formatDateDisplay(u.plan_end_date)}
+                          </p>
+                          <p className="text-[10px] text-neutral-500 mt-0.5 truncate" title={u.mp_preapproval_id || undefined}>
+                            {u.mp_preapproval_id
+                              ? `MP ID: ${u.mp_preapproval_id.substring(0, 14)}...`
+                              : "Sin suscripción MP registrada"}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             );
           })
@@ -1004,6 +1156,23 @@ export default function AdminPage() {
                     placeholder="Ej: Amaoto Craft"
                     className="w-full px-3.5 py-2 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B]"
                   />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-[#2B2B2B] flex items-center gap-1.5">
+                    <Phone className="w-3.5 h-3.5 text-[#3BB578]" />
+                    <span>WhatsApp / Teléfono de contacto (Opcional)</span>
+                  </label>
+                  <input
+                    type="tel"
+                    value={newPhone}
+                    onChange={(e) => setNewPhone(e.target.value)}
+                    placeholder="Ej: 11 2345 6789 o 341 555 1234"
+                    className="w-full px-3.5 py-2 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B]"
+                  />
+                  <p className="text-[10px] text-neutral-400">
+                    Permite contactar a la clienta por WhatsApp con un solo clic.
+                  </p>
                 </div>
 
                 {/* Configuración del Plan */}
@@ -1270,6 +1439,33 @@ export default function AdminPage() {
                 </div>
 
                 <div className="space-y-1">
+                  <label className="text-xs font-semibold text-[#2B2B2B] flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <Phone className="w-3.5 h-3.5 text-[#3BB578]" />
+                      <span>WhatsApp / Teléfono</span>
+                    </span>
+                    {editPhone && (
+                      <a
+                        href={buildWhatsAppUrl(editPhone, editFullName)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[10px] text-[#1F7A4C] font-bold hover:underline inline-flex items-center gap-1"
+                      >
+                        <MessageCircle className="w-3 h-3 text-[#25D366] fill-[#25D366]" />
+                        <span>Abrir WhatsApp</span>
+                      </a>
+                    )}
+                  </label>
+                  <input
+                    type="tel"
+                    value={editPhone}
+                    onChange={(e) => setEditPhone(e.target.value)}
+                    placeholder="Ej: 11 2345 6789 o 341 555 1234"
+                    className="w-full px-3.5 py-2 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B]"
+                  />
+                </div>
+
+                <div className="space-y-1">
                   <label className="text-xs font-semibold text-[#2B2B2B]">Email de acceso *</label>
                   <input
                     type="email"
@@ -1280,6 +1476,35 @@ export default function AdminPage() {
                     className="w-full px-3.5 py-2 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B]"
                   />
                 </div>
+
+                {/* Resumen Histórico de la Cuenta */}
+                {editModalUser && (() => {
+                  const trialStart = (editModalUser.created_at || "").split("T")[0] || editModalUser.plan_start_date;
+                  const trialEnd = calculatePlanEndDate(trialStart, "prueba");
+                  return (
+                    <div className="p-3 bg-neutral-100/70 border border-neutral-200 rounded-2xl space-y-1.5 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-[11px] text-[#1F7A4C] flex items-center gap-1.5">
+                          <History className="w-3.5 h-3.5 text-[#3BB578]" />
+                          Histórico y Alta en HABA
+                        </span>
+                        <span className="text-[10px] text-neutral-500 font-mono">
+                          Alta: {formatDateDisplay(editModalUser.created_at)}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-[11px] text-neutral-600 pt-1">
+                        <div>
+                          <span className="text-neutral-400 block text-[10px] font-bold uppercase">Prueba inicial (15 días)</span>
+                          <span className="font-semibold text-neutral-800">{formatDateDisplay(trialStart)} al {formatDateDisplay(trialEnd)}</span>
+                        </div>
+                        <div>
+                          <span className="text-neutral-400 block text-[10px] font-bold uppercase">Plan actual</span>
+                          <span className="font-semibold text-neutral-800">Plan {PLAN_NAMES[editModalUser.plan_type || "prueba"]}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Configuración del Plan */}
                 <div className="p-3 bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl space-y-2.5">

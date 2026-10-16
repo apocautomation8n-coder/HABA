@@ -102,6 +102,8 @@ export async function GET(request: Request) {
         authUser?.app_metadata?.account_status ||
         (p.status === "suspended" ? "suspended" : "active");
       const avatarUrl = meta.avatar_url || null;
+      const phone = p.phone || p.business_phone || meta.phone || meta.business_phone || null;
+      const createdAt = p.created_at || authUser?.created_at || new Date().toISOString();
 
       // Recuperar account_number normalizado en formato de 2 dígitos ("01", "02", etc.)
       let accountNumber = p.account_number || meta.account_number;
@@ -119,11 +121,13 @@ export async function GET(request: Request) {
       const isNew =
         meta.is_new !== undefined
           ? Boolean(meta.is_new)
-          : (new Date().getTime() - new Date(p.created_at || authUser?.created_at || 0).getTime()) <
+          : (new Date().getTime() - new Date(createdAt || 0).getTime()) <
             7 * 24 * 60 * 60 * 1000;
 
       return {
         ...p,
+        phone,
+        created_at: createdAt,
         account_number: accountNumber,
         plan_type: planType,
         plan_start_date: planStartDate,
@@ -149,13 +153,14 @@ export async function GET(request: Request) {
       const planEndDate = trusted.plan_end_date;
       const accountStatus = trusted.account_status;
       const accountNumber = meta.account_number || idToSeqMap.get(u.id) || "01";
+      const phone = meta.phone || meta.business_phone || null;
 
       users.push({
         id: u.id,
         email: u.email || "",
         full_name: meta.full_name || null,
         business_name: meta.business_name || null,
-        phone: meta.phone || null,
+        phone,
         account_number: accountNumber,
         role: "user",
         status: "active",
@@ -191,6 +196,7 @@ export async function POST(request: Request) {
       password,
       fullName,
       businessName,
+      phone,
       planType = "prueba",
       planStartDate,
       planEndDate,
@@ -256,6 +262,8 @@ export async function POST(request: Request) {
       registrationSource: "admin",
     });
 
+    const cleanPhone = phone?.trim() || null;
+
     const { data: authData, error: authError } =
       await supabaseAdmin.auth.admin.createUser({
         email: email.trim().toLowerCase(),
@@ -265,6 +273,8 @@ export async function POST(request: Request) {
           account_number: nextAccountNumber,
           full_name: fullName?.trim() || null,
           business_name: businessName?.trim() || null,
+          phone: cleanPhone,
+          business_phone: cleanPhone,
           ...splitPlanMetadata(initialPlanMeta).user,
         },
         // Datos del plan en app_metadata: no editables por la usuaria
@@ -287,6 +297,8 @@ export async function POST(request: Request) {
       email: email.trim().toLowerCase(),
       full_name: fullName?.trim() || null,
       business_name: businessName?.trim() || null,
+      phone: cleanPhone,
+      business_phone: cleanPhone,
       role: "user",
       status: profileStatus,
       updated_at: new Date().toISOString(),
@@ -295,14 +307,19 @@ export async function POST(request: Request) {
     let { error: profileError } = await supabaseAdmin.from("profiles").upsert(profilePayload);
 
     if (profileError) {
-      // Fallback si la columna account_number no existe aún en la tabla
+      // Fallback si la columna account_number o phone no existen aún en la tabla
       delete profilePayload.account_number;
-      const { error: fallbackError } = await supabaseAdmin.from("profiles").upsert(profilePayload);
+      let { error: fallbackError } = await supabaseAdmin.from("profiles").upsert(profilePayload);
       if (fallbackError) {
-        return NextResponse.json(
-          { error: fallbackError.message },
-          { status: 400 }
-        );
+        delete profilePayload.phone;
+        delete profilePayload.business_phone;
+        const { error: minimalError } = await supabaseAdmin.from("profiles").upsert(profilePayload);
+        if (minimalError) {
+          return NextResponse.json(
+            { error: minimalError.message },
+            { status: 400 }
+          );
+        }
       }
     }
 
@@ -311,6 +328,7 @@ export async function POST(request: Request) {
       user: {
         ...authData.user,
         account_number: nextAccountNumber,
+        phone: cleanPhone,
       },
     });
   } catch (err: any) {
@@ -334,6 +352,7 @@ export async function PATCH(request: Request) {
       fullName,
       businessName,
       email,
+      phone,
       planType,
       planStartDate,
       planEndDate,
@@ -371,6 +390,11 @@ export async function PATCH(request: Request) {
     const updatedMetadata = { ...currentMetadata };
     if (fullName !== undefined) updatedMetadata.full_name = fullName?.trim() || null;
     if (businessName !== undefined) updatedMetadata.business_name = businessName?.trim() || null;
+    if (phone !== undefined) {
+      const cleanPhone = phone?.trim() || null;
+      updatedMetadata.phone = cleanPhone;
+      updatedMetadata.business_phone = cleanPhone;
+    }
     if (avatarUrl !== undefined) updatedMetadata.avatar_url = avatarUrl;
 
     // Datos del plan: se guardan en app_metadata (solo el servidor puede escribirlos)
@@ -406,11 +430,26 @@ export async function PATCH(request: Request) {
     if (fullName !== undefined) profileUpdates.full_name = fullName?.trim() || null;
     if (businessName !== undefined) profileUpdates.business_name = businessName?.trim() || null;
     if (email !== undefined && email.trim()) profileUpdates.email = email.trim().toLowerCase();
+    if (phone !== undefined) {
+      const cleanPhone = phone?.trim() || null;
+      profileUpdates.phone = cleanPhone;
+      profileUpdates.business_phone = cleanPhone;
+    }
 
-    const { error: profileError } = await supabaseAdmin
+    let { error: profileError } = await supabaseAdmin
       .from("profiles")
       .update(profileUpdates)
       .eq("id", userId);
+
+    if (profileError && (profileError.message.includes("phone") || profileError.message.includes("column"))) {
+      delete profileUpdates.phone;
+      delete profileUpdates.business_phone;
+      const fallback = await supabaseAdmin
+        .from("profiles")
+        .update(profileUpdates)
+        .eq("id", userId);
+      profileError = fallback.error;
+    }
 
     if (profileError) {
       return NextResponse.json({ error: profileError.message }, { status: 400 });
