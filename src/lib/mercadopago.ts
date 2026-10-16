@@ -62,8 +62,8 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
 
     let preapproval: any = null;
 
-    // 2. Buscar preapproval en Mercado Pago ESTRICTAMENTE por external_reference = userId
-    // REGLA CRÍTICA: Solo se sincronizan suscripciones iniciadas a través de la pasarela oficial de HABA
+    // 2. Buscar preapproval en Mercado Pago:
+    // Prioridad 1: Por external_reference = userId
     try {
       const searchRes = await fetch(
         `https://api.mercadopago.com/preapproval/search?external_reference=${encodeURIComponent(
@@ -76,7 +76,6 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
       if (searchRes.ok) {
         const searchData = await searchRes.json();
         if (Array.isArray(searchData.results) && searchData.results.length > 0) {
-          // Asegurar que el external_reference coincida unívocamente con el usuario
           const matched = searchData.results.find(
             (p: any) => p.external_reference === userId
           );
@@ -87,6 +86,84 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
       }
     } catch (e) {
       console.warn("[Mercado Pago Sync] Error buscando por external_reference:", e);
+    }
+
+    // Prioridad 2: Por ID directo de preapproval si el usuario ya tiene uno guardado
+    const savedPreapprovalId = targetUser.app_metadata?.mp_preapproval_id;
+    if (!preapproval && savedPreapprovalId) {
+      try {
+        const directRes = await fetch(
+          `https://api.mercadopago.com/preapproval/${savedPreapprovalId}`,
+          {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          }
+        );
+        if (directRes.ok) {
+          const directData = await directRes.json();
+          if (directData && (directData.status === "authorized" || directData.status === "paused")) {
+            preapproval = directData;
+          }
+        }
+      } catch (e) {
+        console.warn("[Mercado Pago Sync] Error consultando por preapprovalId guardado:", e);
+      }
+    }
+
+    // Prioridad 3: Fallback para suscripciones históricas (como la de Shirley) por email del pagador
+    if (!preapproval) {
+      const candidateEmails = Array.from(
+        new Set(
+          [
+            targetEmail,
+            targetUser.email,
+            targetUser.user_metadata?.business_email,
+            targetUser.user_metadata?.email,
+          ]
+            .filter(Boolean)
+            .map((e) => (e as string).trim().toLowerCase())
+        )
+      );
+
+      for (const cEmail of candidateEmails) {
+        if (preapproval) break;
+        try {
+          const emailSearchRes = await fetch(
+            `https://api.mercadopago.com/preapproval/search?payer_email=${encodeURIComponent(
+              cEmail
+            )}&status=authorized`,
+            {
+              headers: { Authorization: `Bearer ${accessToken}` },
+            }
+          );
+          if (emailSearchRes.ok) {
+            const emailData = await emailSearchRes.json();
+            if (Array.isArray(emailData.results) && emailData.results.length > 0) {
+              // REGLA ESTRICTA: Solo asociar si no pertenece a otra usuaria distinta
+              const candidate = emailData.results.find(
+                (p: any) => !p.external_reference || p.external_reference === userId
+              );
+              if (candidate) {
+                preapproval = candidate;
+                // Vincular formalmente en Mercado Pago para que quede fijado con el external_reference del usuario
+                try {
+                  fetch(`https://api.mercadopago.com/preapproval/${candidate.id}`, {
+                    method: "PUT",
+                    headers: {
+                      Authorization: `Bearer ${accessToken}`,
+                      "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({ external_reference: userId }),
+                  }).catch(() => {});
+                } catch {
+                  // ignore
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("[Mercado Pago Sync] Error buscando por email fallback:", e);
+        }
+      }
     }
 
     // 4. Si no hay preapproval recurrente, buscar pagos autorizados recientes
