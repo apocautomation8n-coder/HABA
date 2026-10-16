@@ -30,12 +30,39 @@ export async function POST(request: Request) {
     // 1. Integración Oficial API Preapproval (con MP_ACCESS_TOKEN)
     // Ata obligatoriamente external_reference = user.id para trazabilidad unívoca
     if (accessToken) {
-      const planId = process.env.MP_PREAPPROVAL_PLAN_ID || process.env.MP_PLAN_ID;
+      let planId = process.env.MP_PREAPPROVAL_PLAN_ID || process.env.MP_PLAN_ID;
       const amount = process.env.MP_SUBSCRIPTION_AMOUNT
         ? parseFloat(process.env.MP_SUBSCRIPTION_AMOUNT)
         : 7000;
       const currency = process.env.MP_SUBSCRIPTION_CURRENCY || "ARS";
       const title = process.env.MP_SUBSCRIPTION_TITLE || "Haba Mensual";
+
+      // Si no se configuró el ID de plan en variables de entorno, buscar el plan "Haba Mensual" de Gio en Mercado Pago
+      if (!planId) {
+        try {
+          const plansRes = await fetch(
+            "https://api.mercadopago.com/preapproval_plan/search?status=active",
+            {
+              headers: { Authorization: `Bearer ${accessToken}` },
+            }
+          );
+          if (plansRes.ok) {
+            const plansData = await plansRes.json();
+            const plans: any[] = plansData.results || [];
+            const habaPlan = plans.find((p) =>
+              (p.reason || "").toLowerCase().includes("haba")
+            );
+            if (habaPlan?.id) {
+              planId = habaPlan.id;
+              console.log(
+                `[Mercado Pago] Plan detectado automáticamente en MP: "${habaPlan.reason}" (${planId})`
+              );
+            }
+          }
+        } catch (planSearchErr) {
+          console.warn("[Mercado Pago] Error buscando planes existentes en MP:", planSearchErr);
+        }
+      }
 
       const payload: Record<string, any> = {
         external_reference: user.id,
@@ -45,10 +72,10 @@ export async function POST(request: Request) {
       };
 
       if (planId) {
-        // Si se configuró el ID de plan preexistente de Mercado Pago
+        // Vinculación directa al plan "Haba Mensual" en Mercado Pago (el precio se actualiza solo si Gio lo cambia en MP)
         payload.preapproval_plan_id = planId;
       } else {
-        // Creación dinámica recurrente con monto y título oficial de HABA ($7.000)
+        // Creación dinámica recurrente con monto y título oficial ($7.000)
         payload.reason = title;
         payload.auto_recurring = {
           frequency: 1,
@@ -59,7 +86,7 @@ export async function POST(request: Request) {
       }
 
       try {
-        const mpRes = await fetch("https://api.mercadopago.com/preapproval", {
+        let mpRes = await fetch("https://api.mercadopago.com/preapproval", {
           method: "POST",
           headers: {
             Authorization: `Bearer ${accessToken}`,
@@ -68,7 +95,37 @@ export async function POST(request: Request) {
           body: JSON.stringify(payload),
         });
 
-        const mpData = await mpRes.json();
+        let mpData = await mpRes.json();
+
+        // Salvaguarda: si falló al vincular por planId, reintentar con auto_recurring dinámico
+        if (!mpRes.ok && payload.preapproval_plan_id) {
+          console.warn(
+            "[Mercado Pago] Falló suscripción con planId, reintentando con auto_recurring:",
+            mpData
+          );
+          const fallbackPayload: Record<string, any> = {
+            reason: title,
+            external_reference: user.id,
+            payer_email: user.email,
+            back_url: backUrl,
+            notification_url: notificationUrl,
+            auto_recurring: {
+              frequency: 1,
+              frequency_type: "months",
+              transaction_amount: amount,
+              currency_id: currency,
+            },
+          };
+          mpRes = await fetch("https://api.mercadopago.com/preapproval", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(fallbackPayload),
+          });
+          mpData = await mpRes.json();
+        }
 
         if (mpRes.ok) {
           const initPoint = mpData.init_point || mpData.sandbox_init_point;
