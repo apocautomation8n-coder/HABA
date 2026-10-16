@@ -24,7 +24,13 @@ async function handleSync(request: Request) {
     }
 
     const url = new URL(request.url);
-    const requestedUserId = url.searchParams.get("userId");
+    const body = request.method === "POST" ? await request.json().catch(() => ({})) : {};
+
+    const requestedUserId = url.searchParams.get("userId") || body.userId;
+    const explicitPayerEmail =
+      body.payer_email || body.payerEmail || url.searchParams.get("payer_email") || url.searchParams.get("payerEmail");
+    const explicitPreapprovalId =
+      body.preapproval_id || body.preapprovalId || url.searchParams.get("preapproval_id") || url.searchParams.get("preapprovalId");
 
     let targetUserId = user.id;
     let targetEmail = user.email;
@@ -35,12 +41,14 @@ async function handleSync(request: Request) {
         return NextResponse.json({ error: "No autorizado" }, { status: 403 });
       }
       targetUserId = requestedUserId;
-      targetEmail = url.searchParams.get("email") || undefined;
+      targetEmail = url.searchParams.get("email") || body.email || undefined;
     }
 
     const result = await syncUserSubscriptionWithMercadoPago({
       userId: targetUserId,
       email: targetEmail,
+      payerEmail: explicitPayerEmail || undefined,
+      preapprovalId: explicitPreapprovalId || undefined,
     });
 
     return NextResponse.json(result);
