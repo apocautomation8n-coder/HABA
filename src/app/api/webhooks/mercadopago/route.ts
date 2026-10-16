@@ -232,14 +232,14 @@ export async function POST(request: Request) {
 
     if (status === "authorized" || status === "approved") {
       // Suscripción aprobada: activar plan mensual y extender fecha de fin
-      const baseDate =
-        currentPlan.plan_end_date && currentPlan.plan_end_date > today
-          ? currentPlan.plan_end_date
-          : today;
-
-      const newEndDate = nextPaymentDate
+      // Garantizar que la suscripción mensual otorgue al menos 30 días completos desde la fecha de cobro
+      const minMonthEndDate = addDays(today, 30);
+      const mpEndDate = nextPaymentDate
         ? addDays(nextPaymentDate.split("T")[0], PAYMENT_GRACE_DAYS)
-        : addDays(calculatePlanEndDate(baseDate, "mensual"), PAYMENT_GRACE_DAYS);
+        : null;
+
+      const newEndDate =
+        mpEndDate && mpEndDate > minMonthEndDate ? mpEndDate : minMonthEndDate;
 
       // Actualizar datos de Auth (app_metadata y user_metadata)
       const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(targetUserId, {

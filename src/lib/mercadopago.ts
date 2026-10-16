@@ -134,16 +134,16 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
     const currentPlan = getTrustedPlanMeta(targetUser);
     const today = new Date().toISOString().split("T")[0];
 
-    // Extender 30 días (+ días de gracia) o según next_payment_date de MP
     const nextPaymentDate = preapproval?.next_payment_date;
-    const baseDate =
-      currentPlan.plan_end_date && currentPlan.plan_end_date > today
-        ? currentPlan.plan_end_date
-        : today;
-
-    const newEndDate = nextPaymentDate
+    // Garantizar que la suscripción mensual otorgue al menos 30 días completos desde la fecha de cobro
+    const minMonthEndDate = addDays(today, 30);
+    const mpEndDate = nextPaymentDate
       ? addDays(nextPaymentDate.split("T")[0], PAYMENT_GRACE_DAYS)
-      : addDays(calculatePlanEndDate(baseDate, "mensual"), PAYMENT_GRACE_DAYS);
+      : null;
+
+    // Asignar al menos 30 días completos desde el pago
+    const newEndDate =
+      mpEndDate && mpEndDate > minMonthEndDate ? mpEndDate : minMonthEndDate;
 
     const preapprovalId = preapproval?.id || paymentApproved?.metadata?.preapproval_id || null;
 
