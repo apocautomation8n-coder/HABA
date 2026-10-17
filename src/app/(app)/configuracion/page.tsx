@@ -37,7 +37,7 @@ import {
 import { ProfileAvatar, isRealUserAvatar } from "@/components/ProfileAvatar";
 import { HabaMascot } from "@/components/HabaMascot";
 import { WhatsAppIcon } from "@/components/WhatsAppIcon";
-import { buildProfileSupportWhatsAppUrl } from "@/lib/support";
+import { buildProfileSupportWhatsAppUrl, buildSubscriptionWhatsAppUrl } from "@/lib/support";
 import { isTermsEnabled } from "@/lib/terms";
 import { createClient } from "@/lib/supabase/client";
 import { checkIsAdmin } from "@/lib/auth-helpers";
@@ -160,6 +160,14 @@ export default function SettingsPage() {
     businessName,
     fullName,
   });
+
+  const subscriptionWhatsAppUrl =
+    buildSubscriptionWhatsAppUrl({
+      accountNumber,
+      businessName,
+      fullName,
+      email,
+    }) || supportWhatsAppUrl;
 
   useEffect(() => {
     async function loadUser() {
@@ -786,38 +794,36 @@ export default function SettingsPage() {
           )}
 
           {role !== "admin" && (
-            <div className="pt-2.5 border-t border-neutral-200/60 space-y-2">
-              <button
-                type="button"
-                onClick={handleSubscribeMercadoPago}
-                disabled={subscribingMP}
-                className="w-full py-2.5 px-3 bg-[#3BB578] hover:bg-[#2E9E65] active:scale-[0.99] text-white text-xs font-bold rounded-xl transition flex items-center justify-center gap-2 shadow-xs disabled:opacity-75"
-              >
-                {subscribingMP ? (
-                  <>
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    <span>Conectando con Mercado Pago...</span>
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-3.5 h-3.5 text-white" />
-                    <span>
-                      {planType === "mensual" && planStatusInfo.status === "vigente"
-                        ? "Renovar / Extender Plan (+30 días)"
-                        : "Suscribirme al Plan Mensual (Mercado Pago)"}
-                    </span>
-                    <ExternalLink className="w-3 h-3 text-white/80" />
-                  </>
+            <div className="pt-2.5 border-t border-neutral-200/60 space-y-2.5">
+              {/* Aviso de suscripciones pausadas temporalmente */}
+              <div className="p-3 bg-amber-50/90 border border-amber-200 rounded-2xl text-xs text-amber-900 space-y-2">
+                <div className="flex items-center gap-1.5 font-bold text-amber-800">
+                  <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                  <span>Suscripciones online en mantenimiento</span>
+                </div>
+                <p className="text-[11px] text-amber-800 leading-relaxed">
+                  Las suscripciones automáticas por Mercado Pago se encuentran temporalmente pausadas. Si deseás activar o renovar tu plan, comunicate directamente con nosotros por WhatsApp.
+                </p>
+                {subscriptionWhatsAppUrl && (
+                  <a
+                    href={subscriptionWhatsAppUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full py-2.5 px-3 bg-[#3BB578] hover:bg-[#2E9E65] active:scale-[0.99] text-white text-xs font-bold rounded-xl transition flex items-center justify-center gap-2 shadow-2xs"
+                  >
+                    <WhatsAppIcon className="w-3.5 h-3.5 text-white" />
+                    <span>Activar / Renovar por WhatsApp</span>
+                  </a>
                 )}
-              </button>
+              </div>
 
-              <div className="flex items-center justify-between text-xs pt-1 px-1">
-                <span className="text-[11px] text-[#7A7A7A]">¿Ya pagaste tu suscripción?</span>
+              <div className="flex items-center justify-between text-xs pt-0.5 px-1">
+                <span className="text-[11px] text-[#7A7A7A]">¿Ya habías abonado previamente?</span>
                 <button
                   type="button"
                   onClick={() => handleSyncMercadoPago(false)}
                   disabled={syncingMP}
-                  className="text-[11px] font-bold text-[#1F7A4C] hover:text-[#185E3B] inline-flex items-center gap-1.5 px-2 py-1 hover:bg-[#DCF4D7]/50 rounded-lg transition active:scale-95 disabled:opacity-75"
+                  className="text-[11px] font-bold text-[#1F7A4C] hover:text-[#185E3B] inline-flex items-center gap-1.5 px-2 py-1 hover:bg-[#DCF4D7]/50 rounded-lg transition active:scale-95 disabled:opacity-75 cursor-pointer"
                 >
                   <RefreshCw className={`w-3 h-3 ${syncingMP ? "animate-spin" : ""}`} />
                   <span>{syncingMP ? "Verificando..." : "Actualizar mi plan"}</span>

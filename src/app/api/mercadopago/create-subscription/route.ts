@@ -1,7 +1,21 @@
 import { NextResponse } from "next/server";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 
+const IS_MP_SUBSCRIPTIONS_PAUSED: boolean = true;
+
 export async function POST(request: Request) {
+  // Suscripciones por Mercado Pago pausadas temporalmente
+  if (IS_MP_SUBSCRIPTIONS_PAUSED) {
+    return NextResponse.json(
+      {
+        error:
+          "Las suscripciones por Mercado Pago se encuentran temporalmente pausadas por mantenimiento. Por favor comunicate con el equipo de soporte para coordinar tu activación.",
+        paused: true,
+      },
+      { status: 503 }
+    );
+  }
+
   try {
     const supabase = await createServerClient();
     const {

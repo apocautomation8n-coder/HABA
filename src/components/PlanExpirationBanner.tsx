@@ -1,8 +1,11 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import Link from "next/link";
 import { X, Clock, Sparkles, RefreshCw } from "lucide-react";
 import { isPlanExpiringSoon, isPlanExpired, formatDateDisplay } from "@/lib/plan-helpers";
+import { WhatsAppIcon } from "@/components/WhatsAppIcon";
+import { buildSubscriptionWhatsAppUrl } from "@/lib/support";
 
 export function PlanExpirationBanner() {
   const [profile, setProfile] = useState<any>(null);
@@ -67,23 +70,6 @@ export function PlanExpirationBanner() {
     }
   };
 
-  const handleSubscribe = async () => {
-    try {
-      setSubscribing(true);
-      const res = await fetch("/api/mercadopago/create-subscription", { method: "POST" });
-      const data = await res.json();
-      if (data.init_point) {
-        window.location.href = data.init_point;
-      } else {
-        alert(data.error || "No se pudo iniciar el pago en Mercado Pago.");
-        setSubscribing(false);
-      }
-    } catch {
-      alert("Error de conexión con la pasarela de pago.");
-      setSubscribing(false);
-    }
-  };
-
   const isTrial = (profile.plan_type || "prueba") === "prueba";
   const formattedDate = formatDateDisplay(profile.plan_end_date);
   const dayText =
@@ -97,6 +83,13 @@ export function PlanExpirationBanner() {
     ? `Recordatorio: Tu período de prueba finaliza ${dayText} (el ${formattedDate}).`
     : `Recordatorio: Tu suscripción finaliza ${dayText} (el ${formattedDate}).`;
 
+  const subWhatsAppUrl = buildSubscriptionWhatsAppUrl({
+    accountNumber: profile.account_number,
+    businessName: profile.business_name,
+    fullName: profile.full_name,
+    email: profile.email,
+  });
+
   return (
     <div className="w-full bg-amber-50 border-b border-amber-200/90 text-amber-900 px-3.5 py-2.5 text-xs flex items-center justify-between gap-3 shadow-2xs animate-in slide-in-from-top-1">
       <div className="flex items-start sm:items-center gap-2 min-w-0 flex-1">
@@ -104,35 +97,35 @@ export function PlanExpirationBanner() {
         <p className="text-[11px] sm:text-xs leading-relaxed text-amber-900">
           <span className="font-bold">{bannerText}</span>{" "}
           <span className="text-amber-800 hidden sm:inline">
-            Activá tu suscripción mensual para no interrumpir tu trabajo.
+            Comunicate por WhatsApp para renovar tu suscripción sin interrumpir tu trabajo.
           </span>
         </p>
       </div>
 
       <div className="flex items-center gap-2 flex-shrink-0">
-        <button
-          type="button"
-          onClick={handleSubscribe}
-          disabled={subscribing}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#1F7A4C] hover:bg-[#185E3B] active:scale-95 text-white font-bold rounded-xl text-[10px] sm:text-[11px] transition shadow-xs disabled:opacity-75"
-        >
-          {subscribing ? (
-            <>
-              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-              <span>Conectando...</span>
-            </>
-          ) : (
-            <>
-              <Sparkles className="w-3.5 h-3.5 text-white" />
-              <span>Suscribirme</span>
-            </>
-          )}
-        </button>
+        {subWhatsAppUrl ? (
+          <a
+            href={subWhatsAppUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#1F7A4C] hover:bg-[#185E3B] active:scale-95 text-white font-bold rounded-xl text-[10px] sm:text-[11px] transition shadow-xs"
+          >
+            <WhatsAppIcon className="w-3.5 h-3.5 text-white" />
+            <span>Renovar por WhatsApp</span>
+          </a>
+        ) : (
+          <Link
+            href="/configuracion"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#1F7A4C] hover:bg-[#185E3B] active:scale-95 text-white font-bold rounded-xl text-[10px] sm:text-[11px] transition shadow-xs"
+          >
+            <span>Ver mi Plan</span>
+          </Link>
+        )}
 
         <button
           type="button"
           onClick={handleDismiss}
-          className="p-1 text-amber-700 hover:text-amber-900 hover:bg-amber-100 rounded-lg transition"
+          className="p-1 text-amber-700 hover:text-amber-900 hover:bg-amber-100 rounded-lg transition cursor-pointer"
           title="Descartar aviso"
         >
           <X className="w-3.5 h-3.5" />
