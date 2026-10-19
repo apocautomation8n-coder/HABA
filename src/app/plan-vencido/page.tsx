@@ -20,6 +20,7 @@ import { WhatsAppIcon } from "@/components/WhatsAppIcon";
 import { createClient } from "@/lib/supabase/client";
 import { buildPlanExpiredSupportWhatsAppUrl } from "@/lib/support";
 import { isPlanExpired } from "@/lib/plan-helpers";
+import { SubscriptionModal } from "@/components/SubscriptionModal";
 
 function PlanVencidoContent() {
   const router = useRouter();
@@ -34,6 +35,7 @@ function PlanVencidoContent() {
     email?: string | null;
   } | null>(null);
   const [subscribing, setSubscribing] = useState(false);
+  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [verifyingPayment, setVerifyingPayment] = useState(false);
@@ -272,23 +274,14 @@ function PlanVencidoContent() {
           {/* Botón Principal: Suscribirme al Plan Mensual (Mercado Pago) */}
           <button
             type="button"
-            onClick={handleSubscribe}
-            disabled={subscribing || loading}
+            onClick={() => setShowSubscriptionModal(true)}
+            disabled={loading}
             id="btn-suscribirme-plan-vencido"
             className="w-full py-3.5 px-4 bg-[#3BB578] hover:bg-[#2E9E65] active:scale-[0.99] text-white font-bold rounded-2xl shadow-sm hover:shadow transition flex items-center justify-center gap-2 text-xs disabled:opacity-75 disabled:cursor-not-allowed cursor-pointer"
           >
-            {subscribing ? (
-              <>
-                <RefreshCw className="w-4 h-4 text-white animate-spin" />
-                <span>Conectando con Mercado Pago...</span>
-              </>
-            ) : (
-              <>
-                <Sparkles className="w-4 h-4 text-white" />
-                <span>Suscribirme al Plan Mensual</span>
-                <ExternalLink className="w-3.5 h-3.5 text-white/80" />
-              </>
-            )}
+            <Sparkles className="w-4 h-4 text-white" />
+            <span>Suscribirme al Plan Mensual</span>
+            <ExternalLink className="w-3.5 h-3.5 text-white/80" />
           </button>
 
           {/* Botón Secundario: WhatsApp Soporte (Gio) */}
@@ -335,6 +328,14 @@ function PlanVencidoContent() {
       <div className="mt-6 text-center text-xs text-neutral-400">
         Vos contame qué hacés. Haba hace las cuentas. 🌱
       </div>
+
+      {/* Modal de Suscripción con soporte para email de Mercado Pago personalizado */}
+      <SubscriptionModal
+        isOpen={showSubscriptionModal}
+        onClose={() => setShowSubscriptionModal(false)}
+        defaultEmail={profile?.email || ""}
+        returnUrl="/plan-vencido?status=approved"
+      />
     </div>
   );
 }
