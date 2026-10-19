@@ -116,13 +116,14 @@ function PlanVencidoContent() {
       });
 
       const data = await res.json();
+      const redirectUrl = data.url || data.init_point;
 
-      if (!res.ok || !data.init_point) {
+      if (!res.ok || !redirectUrl) {
         throw new Error(data.error || "No se pudo iniciar el proceso de suscripción.");
       }
 
       // Redirigir al checkout oficial de Mercado Pago
-      window.location.href = data.init_point;
+      window.location.href = redirectUrl;
     } catch (err: any) {
       console.error("Error al suscribirse:", err);
       setErrorMessage(

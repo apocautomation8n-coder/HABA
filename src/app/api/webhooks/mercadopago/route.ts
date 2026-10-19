@@ -169,18 +169,17 @@ export async function POST(request: Request) {
     let targetUserId: string | null = null;
     let targetUser: any = null;
 
-    // 1. Prioridad 1: external_reference directo como UUID en Supabase Auth
+    // 1. Prioridad 1: external_reference directo como UUID en Supabase Auth o profiles.id
     if (externalRef) {
       const { data: userById } = await supabaseAdmin.auth.admin.getUserById(externalRef);
       if (userById?.user) {
         targetUserId = userById.user.id;
         targetUser = userById.user;
       } else {
-        // Buscar en profiles por ID o por account_number
         const { data: profile } = await supabaseAdmin
           .from("profiles")
           .select("id")
-          .or(`id.eq.${externalRef},account_number.eq.${externalRef}`)
+          .eq("id", externalRef)
           .maybeSingle();
 
         if (profile?.id) {
@@ -193,10 +192,27 @@ export async function POST(request: Request) {
       }
     }
 
-    // 2. Fallback de contingencia: solo si NO vino external_reference y hay payerEmail
+    // 2. Fallback por profiles.mp_preapproval_id = resourceId
+    if (!targetUserId && preapprovalId) {
+      const { data: profileByPreapproval } = await supabaseAdmin
+        .from("profiles")
+        .select("id")
+        .eq("mp_preapproval_id", preapprovalId)
+        .maybeSingle();
+
+      if (profileByPreapproval?.id) {
+        const { data: userFromProfile } = await supabaseAdmin.auth.admin.getUserById(profileByPreapproval.id);
+        if (userFromProfile?.user) {
+          targetUserId = userFromProfile.user.id;
+          targetUser = userFromProfile.user;
+        }
+      }
+    }
+
+    // 3. Fallback adicional por email si aún no se localizó
     if (!targetUserId && payerEmail) {
       console.warn(
-        `[Webhook Mercado Pago] ADVERTENCIA: external_reference ausente. Buscando como fallback por email: ${payerEmail}`
+        `[Webhook Mercado Pago] ADVERTENCIA: external_reference y mp_preapproval_id ausentes. Buscando como fallback por email: ${payerEmail}`
       );
       const { data: listData } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
       const found = listData?.users?.find((u) => (u.email || "").toLowerCase() === payerEmail);
@@ -222,52 +238,56 @@ export async function POST(request: Request) {
 
     if (!targetUserId || !targetUser) {
       console.warn(
-        `[Webhook Mercado Pago] No se encontró usuario en HABA para ref '${externalRef}' ni email '${payerEmail}'`
+        `[Webhook Mercado Pago] No se encontró usuario en HABA para ref '${externalRef}', preapproval '${preapprovalId}' ni email '${payerEmail}'`
       );
-      return NextResponse.json({ received: true, matchedUser: false });
+      return NextResponse.json({ received: true, matchedUser: false }, { status: 200 });
     }
 
     const currentPlan = getTrustedPlanMeta(targetUser);
     const today = new Date().toISOString().split("T")[0];
 
     if (status === "authorized" || status === "approved") {
-      // Suscripción aprobada: activar plan mensual y extender fecha de fin
-      const isNewPreapproval = Boolean(
-        preapprovalId &&
-          currentPlan.mp_preapproval_id &&
-          preapprovalId !== currentPlan.mp_preapproval_id
-      );
-      const isAdditionalPayment = isRecurringPayment || isStandardPayment;
-      const hasActiveFuturePlan = Boolean(
-        currentPlan.plan_end_date && currentPlan.plan_end_date > today
-      );
+      // Suscripción aprobada: activar plan mensual y extender fecha de fin por 30 días
+      const newEndDate = addDays(today, 30);
 
-      // Si el usuario ya contaba con días pagos vigentes, acumular sobre la fecha de fin existente (suma otro mes)
-      const baseDate =
-        hasActiveFuturePlan && (isNewPreapproval || isAdditionalPayment)
-          ? currentPlan.plan_end_date!
-          : today;
+      // Actualizar en tabla profiles:
+      // - plan_type = 'mensual'
+      // - account_status = 'activa'
+      // - mp_status = 'authorized'
+      // - mp_preapproval_id = resourceId
+      // - plan_end_date = fecha_actual + 30 dias
+      try {
+        await supabaseAdmin
+          .from("profiles")
+          .update({
+            plan_type: "mensual",
+            account_status: "activa",
+            status: "active",
+            mp_status: "authorized",
+            mp_preapproval_id: preapprovalId,
+            plan_end_date: newEndDate,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", targetUserId);
+      } catch (err: any) {
+        // Fallback seguro si la tabla aún no cuenta con alguna columna
+        try {
+          await supabaseAdmin
+            .from("profiles")
+            .update({
+              status: "active",
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", targetUserId);
+        } catch {}
+      }
 
-      const minMonthEndDate = addDays(baseDate, 30);
-      const mpEndDate = nextPaymentDate
-        ? addDays(nextPaymentDate.split("T")[0], PAYMENT_GRACE_DAYS)
-        : null;
-
-      const calculatedEndDate =
-        mpEndDate && mpEndDate > minMonthEndDate ? mpEndDate : minMonthEndDate;
-
-      // Salvaguarda: nunca acortar una vigencia ya acreditada
-      const newEndDate =
-        currentPlan.plan_end_date && currentPlan.plan_end_date > calculatedEndDate
-          ? currentPlan.plan_end_date
-          : calculatedEndDate;
-
-      // Actualizar datos de Auth (app_metadata y user_metadata)
+      // Actualizar datos de Auth (app_metadata y user_metadata) para consistencia global
       const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(targetUserId, {
         app_metadata: {
           ...targetUser.app_metadata,
           plan_type: "mensual",
-          plan_start_date: currentPlan.plan_type === "mensual" ? currentPlan.plan_start_date : today,
+          plan_start_date: today,
           plan_end_date: newEndDate,
           account_status: "active",
           mp_status: "authorized",
@@ -276,28 +296,16 @@ export async function POST(request: Request) {
         user_metadata: {
           ...(targetUser.user_metadata || {}),
           plan_type: "mensual",
-          plan_start_date: currentPlan.plan_type === "mensual" ? currentPlan.plan_start_date : today,
+          plan_start_date: today,
           plan_end_date: newEndDate,
           account_status: "active",
+          mp_preapproval_id: preapprovalId || currentPlan.mp_preapproval_id,
         },
       });
 
       if (updateError) {
         console.error("[Webhook Mercado Pago] No se pudo activar el plan en Auth:", updateError.message);
         return NextResponse.json({ error: updateError.message }, { status: 500 });
-      }
-
-      // Actualizar tabla profiles
-      try {
-        await supabaseAdmin
-          .from("profiles")
-          .update({
-            status: "active",
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", targetUserId);
-      } catch (err: any) {
-        console.warn("[Webhook Mercado Pago] No se pudo actualizar tabla profiles:", err?.message);
       }
 
       console.log(
@@ -319,7 +327,7 @@ export async function POST(request: Request) {
       console.log(`[Webhook Mercado Pago] Suscripción ${status} para usuario ${targetUserId}`);
     }
 
-    return NextResponse.json({ success: true, status, userId: targetUserId });
+    return NextResponse.json({ success: true, status, userId: targetUserId }, { status: 200 });
   } catch (err: any) {
     console.error("[Webhook Mercado Pago] Error inesperado en webhook:", err);
     return NextResponse.json({ error: err.message }, { status: 500 });
