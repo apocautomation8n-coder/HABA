@@ -267,29 +267,40 @@ function PlanVencidoContent() {
         </div>
 
         {/* Acciones principales */}
-        <div className="w-full space-y-3 pt-1">
-          {/* Aviso de suscripciones pausadas temporalmente */}
-          <div className="w-full bg-amber-50 border border-amber-200/90 rounded-2xl p-4 text-xs text-amber-900 text-left space-y-2">
-            <div className="flex items-center gap-1.5 font-bold text-amber-800">
-              <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
-              <span>Suscripciones online en mantenimiento</span>
-            </div>
-            <p className="text-[11.5px] text-amber-800 leading-relaxed">
-              El cobro automático por Mercado Pago se encuentra temporalmente pausado por mantenimiento. Para activar tu cuenta y recuperar acceso inmediato a tus presupuestos, contactanos por WhatsApp.
-            </p>
-          </div>
+        <div className="w-full space-y-2.5 pt-1">
+          {/* Botón Principal: Suscribirme al Plan Mensual (Mercado Pago) */}
+          <button
+            type="button"
+            onClick={handleSubscribe}
+            disabled={subscribing || loading}
+            id="btn-suscribirme-plan-vencido"
+            className="w-full py-3.5 px-4 bg-[#3BB578] hover:bg-[#2E9E65] active:scale-[0.99] text-white font-bold rounded-2xl shadow-sm hover:shadow transition flex items-center justify-center gap-2 text-xs disabled:opacity-75 disabled:cursor-not-allowed cursor-pointer"
+          >
+            {subscribing ? (
+              <>
+                <RefreshCw className="w-4 h-4 text-white animate-spin" />
+                <span>Conectando con Mercado Pago...</span>
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-4 h-4 text-white" />
+                <span>Suscribirme al Plan Mensual</span>
+                <ExternalLink className="w-3.5 h-3.5 text-white/80" />
+              </>
+            )}
+          </button>
 
-          {/* Botón Principal: WhatsApp Soporte (Gio) */}
+          {/* Botón Secundario: WhatsApp Soporte (Gio) */}
           {supportWhatsAppUrl && (
             <a
               href={supportWhatsAppUrl}
               target="_blank"
               rel="noopener noreferrer"
               id="btn-soporte-plan-vencido"
-              className="w-full py-3.5 px-4 bg-[#3BB578] hover:bg-[#2E9E65] text-white font-bold rounded-2xl transition flex items-center justify-center gap-2 text-xs shadow-sm active:scale-[0.99]"
+              className="w-full py-3 px-4 bg-[#DCF4D7] hover:bg-[#C3EBC0] text-[#1F7A4C] font-bold rounded-2xl transition flex items-center justify-center gap-2 text-xs active:scale-[0.99]"
             >
-              <WhatsAppIcon className="w-4 h-4 text-white" />
-              <span>Activar mi cuenta por WhatsApp</span>
+              <WhatsAppIcon className="w-4 h-4 text-[#25D366]" />
+              <span>Contactar a soporte HABA</span>
             </a>
           )}
 

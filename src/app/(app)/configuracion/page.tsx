@@ -113,9 +113,14 @@ export default function SettingsPage() {
   const handleSubscribeMercadoPago = async () => {
     try {
       setSubscribingMP(true);
+      const { data: { session } } = await supabase.auth.getSession();
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (session?.access_token) {
+        headers["Authorization"] = `Bearer ${session.access_token}`;
+      }
       const res = await fetch("/api/mercadopago/create-subscription", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ return_url: "/configuracion?status=approved" }),
       });
       const data = await res.json();
@@ -808,31 +813,33 @@ export default function SettingsPage() {
           )}
 
           {role !== "admin" && (
-            <div className="pt-2.5 border-t border-neutral-200/60 space-y-2.5">
-              {/* Aviso de suscripciones pausadas temporalmente */}
-              <div className="p-3 bg-amber-50/90 border border-amber-200 rounded-2xl text-xs text-amber-900 space-y-2">
-                <div className="flex items-center gap-1.5 font-bold text-amber-800">
-                  <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
-                  <span>Suscripciones online en mantenimiento</span>
-                </div>
-                <p className="text-[11px] text-amber-800 leading-relaxed">
-                  Las suscripciones automáticas por Mercado Pago se encuentran temporalmente pausadas. Si deseás activar o renovar tu plan, comunicate directamente con nosotros por WhatsApp.
-                </p>
-                {subscriptionWhatsAppUrl && (
-                  <a
-                    href={subscriptionWhatsAppUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="w-full py-2.5 px-3 bg-[#3BB578] hover:bg-[#2E9E65] active:scale-[0.99] text-white text-xs font-bold rounded-xl transition flex items-center justify-center gap-2 shadow-2xs"
-                  >
-                    <WhatsAppIcon className="w-3.5 h-3.5 text-white" />
-                    <span>Activar / Renovar por WhatsApp</span>
-                  </a>
+            <div className="pt-2.5 border-t border-neutral-200/60 space-y-2">
+              <button
+                type="button"
+                onClick={handleSubscribeMercadoPago}
+                disabled={subscribingMP}
+                className="w-full py-2.5 px-3 bg-[#3BB578] hover:bg-[#2E9E65] active:scale-[0.99] text-white text-xs font-bold rounded-xl transition flex items-center justify-center gap-2 shadow-xs disabled:opacity-75 cursor-pointer"
+              >
+                {subscribingMP ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Conectando con Mercado Pago...</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-3.5 h-3.5 text-white" />
+                    <span>
+                      {planType === "mensual" && planStatusInfo.status === "vigente"
+                        ? "Renovar / Extender Plan (+30 días)"
+                        : "Suscribirme al Plan Mensual (Mercado Pago)"}
+                    </span>
+                    <ExternalLink className="w-3 h-3 text-white/80" />
+                  </>
                 )}
-              </div>
+              </button>
 
-              <div className="flex items-center justify-between text-xs pt-0.5 px-1">
-                <span className="text-[11px] text-[#7A7A7A]">¿Ya habías abonado previamente?</span>
+              <div className="flex items-center justify-between text-xs pt-1 px-1">
+                <span className="text-[11px] text-[#7A7A7A]">¿Ya pagaste tu suscripción?</span>
                 <button
                   type="button"
                   onClick={() => handleSyncMercadoPago(false)}

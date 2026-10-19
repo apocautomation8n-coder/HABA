@@ -1,29 +1,44 @@
 import { NextResponse } from "next/server";
 import { createClient as createServerClient } from "@/lib/supabase/server";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 
-const IS_MP_SUBSCRIPTIONS_PAUSED: boolean = true;
+export const dynamic = "force-dynamic";
+
+function getAdminClient() {
+  return createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    }
+  );
+}
 
 export async function POST(request: Request) {
-  // Suscripciones por Mercado Pago pausadas temporalmente
-  if (IS_MP_SUBSCRIPTIONS_PAUSED) {
-    return NextResponse.json(
-      {
-        error:
-          "Las suscripciones por Mercado Pago se encuentran temporalmente pausadas por mantenimiento. Por favor comunicate con el equipo de soporte para coordinar tu activación.",
-        paused: true,
-      },
-      { status: 503 }
-    );
-  }
-
   try {
-    const supabase = await createServerClient();
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
+    let user: any = null;
 
-    if (userError || !user) {
+    // Priorizar Bearer token de Authorization header
+    const authHeader = request.headers.get("Authorization");
+    if (authHeader?.startsWith("Bearer ")) {
+      const token = authHeader.substring(7);
+      const admin = getAdminClient();
+      const { data } = await admin.auth.getUser(token);
+      if (data?.user) {
+        user = data.user;
+      }
+    }
+
+    if (!user) {
+      const supabase = await createServerClient();
+      const { data } = await supabase.auth.getUser();
+      user = data.user;
+    }
+
+    if (!user) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 });
     }
 
@@ -80,7 +95,6 @@ export async function POST(request: Request) {
 
       const payload: Record<string, any> = {
         external_reference: user.id,
-        payer_email: user.email,
         back_url: backUrl,
         notification_url: notificationUrl,
       };
@@ -120,7 +134,6 @@ export async function POST(request: Request) {
           const fallbackPayload: Record<string, any> = {
             reason: title,
             external_reference: user.id,
-            payer_email: user.email,
             back_url: backUrl,
             notification_url: notificationUrl,
             auto_recurring: {
