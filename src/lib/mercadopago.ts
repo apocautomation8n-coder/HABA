@@ -172,24 +172,39 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
           if (emailSearchRes.ok) {
             const emailData = await emailSearchRes.json();
             if (Array.isArray(emailData.results) && emailData.results.length > 0) {
-              // REGLA ESTRICTA: Solo asociar si no pertenece a otra usuaria distinta
-              const candidate = emailData.results.find(
-                (p: any) => !p.external_reference || p.external_reference === userId
-              );
+              // REGLA ESTRICTA: El payer_email DEBE coincidir con el correo del usuario,
+              // y no debe tener un external_reference de otro usuario.
+              const candidate = emailData.results.find((p: any) => {
+                const payerEmail = (p.payer_email || "").trim().toLowerCase();
+                const matchesEmail = payerEmail === cEmail;
+                const matchesRef = !p.external_reference || p.external_reference === userId;
+                return matchesEmail && matchesRef;
+              });
+
               if (candidate) {
-                preapproval = candidate;
-                // Vincular formalmente en Mercado Pago para que quede fijado con el external_reference del usuario
-                try {
-                  fetch(`https://api.mercadopago.com/preapproval/${candidate.id}`, {
-                    method: "PUT",
-                    headers: {
-                      Authorization: `Bearer ${accessToken}`,
-                      "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({ external_reference: userId }),
-                  }).catch(() => {});
-                } catch {
-                  // ignore
+                // Verificar además que este candidate.id no esté asignado a otro usuario en Supabase
+                const { data: profilesWithThisId } = await supabaseAdmin
+                  .from("profiles")
+                  .select("id")
+                  .eq("mp_preapproval_id", candidate.id)
+                  .neq("id", userId)
+                  .limit(1);
+
+                if (!profilesWithThisId || profilesWithThisId.length === 0) {
+                  preapproval = candidate;
+                  // Vincular formalmente en Mercado Pago para que quede fijado con el external_reference del usuario
+                  try {
+                    fetch(`https://api.mercadopago.com/preapproval/${candidate.id}`, {
+                      method: "PUT",
+                      headers: {
+                        Authorization: `Bearer ${accessToken}`,
+                        "Content-Type": "application/json",
+                      },
+                      body: JSON.stringify({ external_reference: userId }),
+                    }).catch(() => {});
+                  } catch {
+                    // ignore
+                  }
                 }
               }
             }
@@ -224,45 +239,59 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
     }
 
     if (!preapproval && !paymentApproved) {
-      return { synced: false, error: "No se encontró suscripción autorizada en Mercado Pago" };
+      return { synced: false, error: "No se encontró suscripción autorizada en Mercado Pago para este usuario." };
     }
 
     const currentPlan = getTrustedPlanMeta(targetUser);
     const today = new Date().toISOString().split("T")[0];
     const preapprovalId = preapproval?.id || paymentApproved?.metadata?.preapproval_id || null;
 
-    // Detectar si se trata de una NUEVA suscripción o cobro recurrente adicional
-    const isNewPreapproval = Boolean(
-      preapprovalId &&
-        currentPlan.mp_preapproval_id &&
-        preapprovalId !== currentPlan.mp_preapproval_id
-    );
-    const hasActiveFuturePlan = Boolean(
-      currentPlan.plan_end_date && currentPlan.plan_end_date > today
-    );
+    let newEndDate: string;
 
-    // Si el usuario ya tenía días pagos vigentes y realizó una nueva suscripción o cobro adicional, es ACUMULATIVO
-    const baseDate =
-      hasActiveFuturePlan && (isNewPreapproval || paymentApproved)
-        ? currentPlan.plan_end_date!
-        : today;
-
-    const nextPaymentDate = preapproval?.next_payment_date;
-    // Garantizar que la suscripción mensual otorgue al menos 30 días completos desde la fecha base
-    const minMonthEndDate = addDays(baseDate, 30);
-    const mpEndDate = nextPaymentDate
-      ? addDays(nextPaymentDate.split("T")[0], PAYMENT_GRACE_DAYS)
+    const nextPaymentDateStr = preapproval?.next_payment_date
+      ? preapproval.next_payment_date.split("T")[0]
       : null;
 
-    // Asignar al menos 30 días completos (acumulativos si aplica)
-    const calculatedEndDate =
-      mpEndDate && mpEndDate > minMonthEndDate ? mpEndDate : minMonthEndDate;
+    if (currentPlan.plan_type === "mensual") {
+      const isSamePreapproval = Boolean(
+        preapprovalId &&
+          currentPlan.mp_preapproval_id &&
+          preapprovalId === currentPlan.mp_preapproval_id
+      );
 
-    // Salvaguarda: una sincronización NUNCA debe reducir o acortar una vigencia ya acreditada
-    const newEndDate =
-      currentPlan.plan_end_date && currentPlan.plan_end_date > calculatedEndDate
-        ? currentPlan.plan_end_date
-        : calculatedEndDate;
+      if (isSamePreapproval) {
+        // Sincronización rutinaria de la misma suscripción:
+        // Solo extender si Mercado Pago ya procesó el débito del nuevo ciclo y avanzó next_payment_date
+        if (
+          nextPaymentDateStr &&
+          currentPlan.plan_end_date &&
+          nextPaymentDateStr > currentPlan.plan_end_date
+        ) {
+          newEndDate = nextPaymentDateStr;
+        } else {
+          // Si continúa en el mismo ciclo vigente, PRESERVAR exactamente los días restantes
+          newEndDate = currentPlan.plan_end_date || nextPaymentDateStr || addDays(today, 30);
+        }
+      } else if (paymentApproved) {
+        // Pago aprobado adicional detectado
+        const base =
+          currentPlan.plan_end_date && currentPlan.plan_end_date > today
+            ? currentPlan.plan_end_date
+            : today;
+        newEndDate = addDays(base, 30);
+      } else {
+        // Nueva suscripción autorizada con ID diferente
+        newEndDate = nextPaymentDateStr || addDays(today, 30);
+      }
+    } else {
+      // Primera activación al Plan Mensual desde prueba o vencido
+      newEndDate = nextPaymentDateStr || addDays(today, 30);
+    }
+
+    // Salvaguarda: una sincronización nunca acorta una vigencia ya acreditada
+    if (currentPlan.plan_end_date && currentPlan.plan_end_date > newEndDate) {
+      newEndDate = currentPlan.plan_end_date;
+    }
 
     // 5. Impactar en Supabase Auth (app_metadata y user_metadata)
     const { error: updateAuthErr } = await supabaseAdmin.auth.admin.updateUserById(userId, {
