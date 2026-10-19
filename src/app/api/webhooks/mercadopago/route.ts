@@ -215,7 +215,17 @@ export async function POST(request: Request) {
         `[Webhook Mercado Pago] ADVERTENCIA: external_reference y mp_preapproval_id ausentes. Buscando como fallback por email: ${payerEmail}`
       );
       const { data: listData } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
-      const found = listData?.users?.find((u) => (u.email || "").toLowerCase() === payerEmail);
+      const found = listData?.users?.find((u: any) => {
+        const matchesEmail = (u.email || "").toLowerCase() === payerEmail;
+        if (!matchesEmail) return false;
+        const existingPreapproval = u.app_metadata?.mp_preapproval_id;
+        // Si el usuario ya tiene OTRA suscripción activa distinta asignada, NO atribuirle este nuevo preapproval
+        // (indica que pagó una cuenta secundaria de HABA con su mismo MP personal)
+        if (existingPreapproval && preapprovalId && existingPreapproval !== preapprovalId) {
+          return false;
+        }
+        return true;
+      });
       if (found) {
         targetUserId = found.id;
         targetUser = found;

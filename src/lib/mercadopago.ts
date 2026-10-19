@@ -41,8 +41,9 @@ export interface SyncSubscriptionResult {
 export async function syncUserSubscriptionWithMercadoPago(options: {
   userId: string;
   email?: string | null;
+  preapprovalId?: string | null;
 }): Promise<SyncSubscriptionResult> {
-  const { userId, email } = options;
+  const { userId, email, preapprovalId: explicitPreapprovalId } = options;
   const accessToken = process.env.MP_ACCESS_TOKEN;
 
   if (!accessToken || !userId) {
@@ -62,30 +63,63 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
 
     let preapproval: any = null;
 
-    // 2. Buscar preapproval en Mercado Pago:
-    // Prioridad 1: Por external_reference = userId
-    try {
-      const searchRes = await fetch(
-        `https://api.mercadopago.com/preapproval/search?external_reference=${encodeURIComponent(
-          userId
-        )}&status=authorized`,
-        {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        }
-      );
-      if (searchRes.ok) {
-        const searchData = await searchRes.json();
-        if (Array.isArray(searchData.results) && searchData.results.length > 0) {
-          const matched = searchData.results.find(
-            (p: any) => p.external_reference === userId
-          );
-          if (matched) {
-            preapproval = matched;
+    // Prioridad 0: Si viene un preapprovalId explícito (por ejemplo al volver de Mercado Pago en la URL)
+    if (explicitPreapprovalId) {
+      try {
+        const directRes = await fetch(
+          `https://api.mercadopago.com/preapproval/${explicitPreapprovalId}`,
+          {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          }
+        );
+        if (directRes.ok) {
+          const directData = await directRes.json();
+          if (directData && (directData.status === "authorized" || directData.status === "paused")) {
+            preapproval = directData;
+            // Fijar external_reference en Mercado Pago para este usuario
+            try {
+              fetch(`https://api.mercadopago.com/preapproval/${directData.id}`, {
+                method: "PUT",
+                headers: {
+                  Authorization: `Bearer ${accessToken}`,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ external_reference: userId }),
+              }).catch(() => {});
+            } catch {}
           }
         }
+      } catch (e) {
+        console.warn("[Mercado Pago Sync] Error consultando por preapprovalId explícito:", e);
       }
-    } catch (e) {
-      console.warn("[Mercado Pago Sync] Error buscando por external_reference:", e);
+    }
+
+    // 2. Buscar preapproval en Mercado Pago:
+    // Prioridad 1: Por external_reference = userId
+    if (!preapproval) {
+      try {
+        const searchRes = await fetch(
+          `https://api.mercadopago.com/preapproval/search?external_reference=${encodeURIComponent(
+            userId
+          )}&status=authorized`,
+          {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          }
+        );
+        if (searchRes.ok) {
+          const searchData = await searchRes.json();
+          if (Array.isArray(searchData.results) && searchData.results.length > 0) {
+            const matched = searchData.results.find(
+              (p: any) => p.external_reference === userId
+            );
+            if (matched) {
+              preapproval = matched;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("[Mercado Pago Sync] Error buscando por external_reference:", e);
+      }
     }
 
     // Prioridad 2: Por ID directo de preapproval si el usuario ya tiene uno guardado

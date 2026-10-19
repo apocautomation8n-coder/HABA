@@ -138,11 +138,15 @@ export default function SettingsPage() {
     }
   };
 
-  const handleSyncMercadoPago = async (silent = false) => {
+  const handleSyncMercadoPago = async (silent = false, explicitPreapprovalId?: string | null) => {
     try {
       if (!silent) setSyncingMP(true);
       setSyncNotice(null);
-      const res = await fetch("/api/mercadopago/sync", { method: "POST" });
+      const res = await fetch("/api/mercadopago/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ preapproval_id: explicitPreapprovalId || undefined }),
+      });
       const data = await res.json();
       if (data.synced) {
         if (data.plan_type) setPlanType(data.plan_type);
@@ -299,18 +303,24 @@ export default function SettingsPage() {
               if (data.profile?.account_status) setAccountStatus(data.profile.account_status);
               if (data.profile?.account_number) setAccountNumber(data.profile.account_number);
 
-              // Si volvio de abonar en Mercado Pago, sincronizar automaticamente y limpiar URL
-              if (
+              // Si volvió de abonar en Mercado Pago, sincronizar automáticamente y limpiar URL
+              const urlParams =
+                typeof window !== "undefined"
+                  ? new URLSearchParams(window.location.search)
+                  : null;
+              const preapprovalFromUrl = urlParams?.get("preapproval_id");
+              const isApproved =
                 typeof window !== "undefined" &&
                 (window.location.search.includes("status=approved") ||
-                  window.location.search.includes("preapproval_id"))
-              ) {
+                  Boolean(preapprovalFromUrl));
+
+              if (isApproved) {
                 try {
                   window.history.replaceState({}, document.title, window.location.pathname);
                 } catch {
                   // ignore
                 }
-                handleSyncMercadoPago(true);
+                handleSyncMercadoPago(true, preapprovalFromUrl);
               }
             }
           } catch {

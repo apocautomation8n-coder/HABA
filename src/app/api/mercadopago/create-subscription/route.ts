@@ -81,11 +81,18 @@ export async function POST(request: Request) {
 
     const payerEmail = (body.payer_email || user.email || "").trim().toLowerCase();
 
-    const payload: Record<string, any> = {
-      preapproval_plan_id: preapprovalPlanId,
+    // Intento 1: Creación dinámica con auto_recurring (asocia unívocamente external_reference = user.id en MP)
+    const dynamicPayload: Record<string, any> = {
+      reason: "Haba Mensual",
       external_reference: user.id,
       payer_email: payerEmail,
       back_url: backUrl,
+      auto_recurring: {
+        frequency: 1,
+        frequency_type: "months",
+        transaction_amount: 7000,
+        currency_id: "ARS",
+      },
     };
 
     let mpRes = await fetch("https://api.mercadopago.com/preapproval", {
@@ -94,10 +101,30 @@ export async function POST(request: Request) {
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(dynamicPayload),
     });
 
     let mpData = await mpRes.json();
+
+    // Intento 2: Si falló, probar con preapproval_plan_id
+    if (!mpRes.ok) {
+      console.warn("[Mercado Pago] Aviso: Intento auto_recurring retornó:", mpData);
+      const planPayload = {
+        preapproval_plan_id: preapprovalPlanId,
+        external_reference: user.id,
+        payer_email: payerEmail,
+        back_url: backUrl,
+      };
+      mpRes = await fetch("https://api.mercadopago.com/preapproval", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(planPayload),
+      });
+      mpData = await mpRes.json();
+    }
 
     let initPoint = mpData.init_point || mpData.sandbox_init_point;
     let subscriptionId = mpData.id || null;

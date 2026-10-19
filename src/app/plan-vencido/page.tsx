@@ -62,8 +62,16 @@ function PlanVencidoContent() {
           return;
         }
 
-        // Si volvió de Mercado Pago con status=approved, verificar si el webhook ya activó la cuenta
-        if (isApprovedReturn) {
+        const preapprovalFromUrl = searchParams.get("preapproval_id");
+        // Si volvió de Mercado Pago con status=approved o preapproval_id, sincronizar de inmediato
+        if (isApprovedReturn || Boolean(preapprovalFromUrl)) {
+          try {
+            await fetch("/api/mercadopago/sync", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ preapproval_id: preapprovalFromUrl || undefined }),
+            });
+          } catch {}
           const res = await fetch("/api/user/profile");
           if (res.ok) {
             const data = await res.json();
@@ -138,8 +146,13 @@ function PlanVencidoContent() {
   const handleVerifyStatus = async () => {
     try {
       setVerifyingPayment(true);
+      const preapprovalFromUrl = searchParams.get("preapproval_id");
       try {
-        await fetch("/api/mercadopago/sync", { method: "POST" });
+        await fetch("/api/mercadopago/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ preapproval_id: preapprovalFromUrl || undefined }),
+        });
       } catch {}
       const res = await fetch("/api/user/profile");
       if (res.ok) {
