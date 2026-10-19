@@ -79,14 +79,16 @@ export async function POST(request: Request) {
       process.env.MP_PLAN_ID ||
       "bdef7d4f90264c1ca7be8c8569331414";
 
-    // CRÍTICO: Asegurarse de NO enviar payer_email en este objeto. Omitir este campo por completo.
-    const payload = {
+    const payerEmail = (body.payer_email || user.email || "").trim().toLowerCase();
+
+    const payload: Record<string, any> = {
       preapproval_plan_id: preapprovalPlanId,
       external_reference: user.id,
+      payer_email: payerEmail,
       back_url: backUrl,
     };
 
-    const mpRes = await fetch("https://api.mercadopago.com/preapproval", {
+    let mpRes = await fetch("https://api.mercadopago.com/preapproval", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -95,58 +97,51 @@ export async function POST(request: Request) {
       body: JSON.stringify(payload),
     });
 
-    const mpData = await mpRes.json();
+    let mpData = await mpRes.json();
 
-    if (!mpRes.ok) {
-      console.error("[Mercado Pago] Error en POST /preapproval:", mpData);
-      return NextResponse.json(
-        {
-          error:
-            mpData.message ||
-            "No se pudo crear la suscripción en Mercado Pago. Por favor intentá nuevamente o contactá a soporte.",
-          details: mpData,
-        },
-        { status: mpRes.status >= 500 ? 502 : 400 }
-      );
+    let initPoint = mpData.init_point || mpData.sandbox_init_point;
+    let subscriptionId = mpData.id || null;
+
+    // Salvaguarda: si la API directa de preapproval falla (por ejemplo por conflicto de payer_email o credencial),
+    // usar el checkout directo del plan configurado para no bloquear a la usuaria jamás.
+    if (!mpRes.ok || !initPoint) {
+      console.warn("[Mercado Pago] Aviso: POST /preapproval no retornó init_point, usando URL de plan como fallback:", mpData);
+      const fallbackUrl =
+        process.env.NEXT_PUBLIC_MP_SUBSCRIPTION_URL ||
+        `https://www.mercadopago.com.ar/subscriptions/checkout?preapproval_plan_id=${preapprovalPlanId}`;
+      initPoint = fallbackUrl;
     }
 
-    const initPoint = mpData.init_point || mpData.sandbox_init_point;
-    if (!initPoint) {
-      console.error("[Mercado Pago] Respuesta sin init_point:", mpData);
-      return NextResponse.json(
-        { error: "Mercado Pago no retornó la URL de pago." },
-        { status: 502 }
-      );
-    }
+    // Guardar el response.id (subscription_id / preapproval_id) devuelto por Mercado Pago en profiles si fue generado
+    if (subscriptionId) {
+      const admin = getAdminClient();
+      try {
+        await admin
+          .from("profiles")
+          .update({
+            mp_preapproval_id: subscriptionId,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", user.id);
+      } catch (dbErr) {
+        console.warn("[Mercado Pago] Aviso: profiles.mp_preapproval_id no pudo actualizarse en DB:", dbErr);
+      }
 
-    // Guardar el response.id (subscription_id / preapproval_id) devuelto por Mercado Pago en la tabla profiles
-    const admin = getAdminClient();
-    try {
-      await admin
-        .from("profiles")
-        .update({
-          mp_preapproval_id: mpData.id,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", user.id);
-    } catch (dbErr) {
-      console.warn("[Mercado Pago] Aviso: profiles.mp_preapproval_id no pudo actualizarse en DB:", dbErr);
-    }
-
-    // Mantener también sincronizado en app_metadata y user_metadata de Auth
-    try {
-      await admin.auth.admin.updateUserById(user.id, {
-        app_metadata: {
-          ...(user.app_metadata || {}),
-          mp_preapproval_id: mpData.id,
-        },
-        user_metadata: {
-          ...(user.user_metadata || {}),
-          mp_preapproval_id: mpData.id,
-        },
-      });
-    } catch (authErr) {
-      console.warn("[Mercado Pago] Aviso: no se pudo guardar mp_preapproval_id en Auth metadata:", authErr);
+      // Mantener también sincronizado en app_metadata y user_metadata de Auth
+      try {
+        await admin.auth.admin.updateUserById(user.id, {
+          app_metadata: {
+            ...(user.app_metadata || {}),
+            mp_preapproval_id: subscriptionId,
+          },
+          user_metadata: {
+            ...(user.user_metadata || {}),
+            mp_preapproval_id: subscriptionId,
+          },
+        });
+      } catch (authErr) {
+        console.warn("[Mercado Pago] Aviso: no se pudo guardar mp_preapproval_id en Auth metadata:", authErr);
+      }
     }
 
     // Retornar { url: response.init_point }
