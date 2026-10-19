@@ -72,8 +72,9 @@ export function PlanExpirationBanner() {
       setSubscribing(true);
       const res = await fetch("/api/mercadopago/create-subscription", { method: "POST" });
       const data = await res.json();
-      if (data.init_point) {
-        window.location.href = data.init_point;
+      const redirectUrl = data.url || data.init_point;
+      if (redirectUrl) {
+        window.location.href = redirectUrl;
       } else {
         alert(data.error || "No se pudo iniciar el pago en Mercado Pago.");
         setSubscribing(false);

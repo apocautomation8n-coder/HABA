@@ -247,15 +247,17 @@ export async function POST(request: Request) {
     const today = new Date().toISOString().split("T")[0];
 
     if (status === "authorized" || status === "approved") {
-      // Suscripción aprobada: activar plan mensual y extender fecha de fin por 30 días
-      const newEndDate = addDays(today, 30);
+      // Suscripción aprobada: fijar nueva fecha de vencimiento a exactamente 30 días desde el pago
+      // utilizando next_payment_date de Mercado Pago para sincronía total o fallback a 30 días exactos
+      const newEndDate =
+        nextPaymentDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
       // Actualizar en tabla profiles:
       // - plan_type = 'mensual'
       // - account_status = 'activa'
       // - mp_status = 'authorized'
       // - mp_preapproval_id = resourceId
-      // - plan_end_date = fecha_actual + 30 dias
+      // - plan_end_date = newEndDate
       try {
         await supabaseAdmin
           .from("profiles")
@@ -289,7 +291,8 @@ export async function POST(request: Request) {
           plan_type: "mensual",
           plan_start_date: today,
           plan_end_date: newEndDate,
-          account_status: "active",
+          account_status: "activa",
+          status: "active",
           mp_status: "authorized",
           mp_preapproval_id: preapprovalId || currentPlan.mp_preapproval_id,
         },
@@ -298,7 +301,8 @@ export async function POST(request: Request) {
           plan_type: "mensual",
           plan_start_date: today,
           plan_end_date: newEndDate,
-          account_status: "active",
+          account_status: "activa",
+          status: "active",
           mp_preapproval_id: preapprovalId || currentPlan.mp_preapproval_id,
         },
       });

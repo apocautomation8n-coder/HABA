@@ -260,7 +260,12 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
       await supabaseAdmin
         .from("profiles")
         .update({
+          plan_type: "mensual",
+          account_status: "activa",
           status: "active",
+          mp_status: "authorized",
+          mp_preapproval_id: preapprovalId,
+          plan_end_date: newEndDate,
           updated_at: new Date().toISOString(),
         })
         .eq("id", userId);

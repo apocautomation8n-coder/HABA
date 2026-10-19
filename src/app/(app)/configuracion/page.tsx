@@ -124,8 +124,9 @@ export default function SettingsPage() {
         body: JSON.stringify({ return_url: "/configuracion?status=approved" }),
       });
       const data = await res.json();
-      if (data.init_point) {
-        window.location.href = data.init_point;
+      const redirectUrl = data.url || data.init_point;
+      if (redirectUrl) {
+        window.location.href = redirectUrl;
       } else {
         alert(data.error || "No se pudo conectar con Mercado Pago.");
         setSubscribingMP(false);

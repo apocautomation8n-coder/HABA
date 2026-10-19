@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
-import { getTrustedPlanMeta, isPlanExpired } from "@/lib/plan-helpers";
 import { checkIsAdmin } from "@/lib/auth-helpers";
 
 export const dynamic = "force-dynamic";
@@ -54,20 +53,8 @@ export async function POST(request: Request) {
       );
     }
 
-    // Validar que el plan esté efectivamente vencido o suspendido (no permitir pago si la prueba está vigente)
-    const trustedPlan = getTrustedPlanMeta(user);
-    const expired = isPlanExpired(trustedPlan.plan_end_date, trustedPlan.account_status);
-    const isSuspended = trustedPlan.account_status === "suspended";
-
-    if (trustedPlan.plan_type === "prueba" && !expired && !isSuspended) {
-      return NextResponse.json(
-        {
-          error:
-            "Tu período de prueba aún se encuentra vigente. Podrás activar tu suscripción mensual al momento de su vencimiento.",
-        },
-        { status: 403 }
-      );
-    }
+    // Nota de negocio: Los usuarios con "Plan Prueba" activo pueden suscribirse y pagar el Plan Mensual
+    // anticipadamente en cualquier momento. Al realizar el pago, el ciclo mensual formal comienza de inmediato.
 
     const accessToken = process.env.MP_ACCESS_TOKEN;
     if (!accessToken) {
