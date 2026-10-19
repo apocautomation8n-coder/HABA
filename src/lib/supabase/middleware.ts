@@ -105,6 +105,17 @@ export async function updateSession(request: NextRequest) {
       return supabaseResponse;
     }
 
+    // Si la usuaria no es admin (Gio) e intenta acceder a la ruta de administración (/admin), redirigir a /dashboard
+    if (!isAdmin && pathname.startsWith("/admin")) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/dashboard";
+      const redirectResponse = NextResponse.redirect(url);
+      supabaseResponse.cookies.getAll().forEach((cookie) => {
+        redirectResponse.cookies.set(cookie.name, cookie.value, cookie);
+      });
+      return redirectResponse;
+    }
+
     // 2. Control de expiración para usuarias regulares (T6)
     const trustedPlan = getTrustedPlanMeta(user);
     const hasExpired = isPlanExpired(trustedPlan.plan_end_date, trustedPlan.account_status);

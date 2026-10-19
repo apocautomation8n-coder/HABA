@@ -189,31 +189,29 @@ export default function AdminPage() {
         return;
       }
 
-      // Validar rol de admin
-      let hasAdmin = checkIsAdmin(user);
-
-      if (!hasAdmin) {
-        try {
-          const resProfile = await fetch("/api/user/profile");
-          if (resProfile.ok) {
-            const profileData = await resProfile.json();
-            if (profileData.isAdmin) hasAdmin = true;
-          }
-        } catch {
-          // ignore
-        }
-      }
+      // Validar rol de admin: Únicamente Gio tiene acceso a este panel
+      const hasAdmin = checkIsAdmin(user);
 
       if (!hasAdmin) {
         setIsAdmin(false);
         setLoading(false);
+        router.replace("/dashboard");
         return;
       }
 
       setIsAdmin(true);
 
       // Cargar perfiles y planes mediante API segura
-      const res = await fetch("/api/admin/users");
+      const { data: { session } } = await supabase.auth.getSession();
+      const headers: HeadersInit = { "Cache-Control": "no-cache" };
+      if (session?.access_token) {
+        headers["Authorization"] = `Bearer ${session.access_token}`;
+      }
+
+      const res = await fetch("/api/admin/users", {
+        cache: "no-store",
+        headers,
+      });
       if (res.ok) {
         const data = await res.json();
         if (data.users) {

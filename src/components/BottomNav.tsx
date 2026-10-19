@@ -43,33 +43,58 @@ export const BottomNav: React.FC = () => {
           const name = getUserDisplayName(user).split(" ")[0];
           setUserName(name);
 
-          // 1. Verificación inmediata por email o metadata de Auth
-          if (checkIsAdmin(user)) {
-            setIsAdmin(true);
+          // 1. Verificación estricta: solo Gio puede ser admin
+          const userIsAdmin = checkIsAdmin(user);
+          setIsAdmin(userIsAdmin);
+
+          if (!userIsAdmin) {
+            setIsAdmin(false);
           } else {
-            // 2. Verificación por endpoint seguro con service role
+            // 2. Verificación secundaria por endpoint seguro con service role
             try {
-              const res = await fetch("/api/user/profile");
+              const { data: { session } } = await supabase.auth.getSession();
+              const headers: HeadersInit = { "Cache-Control": "no-cache" };
+              if (session?.access_token) {
+                headers["Authorization"] = `Bearer ${session.access_token}`;
+              }
+              const res = await fetch("/api/user/profile", {
+                cache: "no-store",
+                headers,
+              });
               if (res.ok) {
                 const data = await res.json();
-                if (data.isAdmin) {
-                  setIsAdmin(true);
-                }
+                setIsAdmin(Boolean(data.isAdmin));
               }
             } catch {
-              // Ignorar error de red secundario
+              // Mantener userIsAdmin en caso de fallo de red secundario
             }
           }
 
           // Cargar cantidad de alertas en productos (Punto H)
           const alertCount = await getOutdatedProductsCount(supabase);
           setProductAlertsCount(alertCount);
+        } else {
+          setIsAdmin(false);
         }
       } catch (err) {
         console.error("Error checking role in BottomNav:", err);
       }
     }
     checkAdminAndAlerts();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session?.user) {
+        setIsAdmin(false);
+      } else {
+        setIsAdmin(checkIsAdmin(session.user));
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, [supabase, pathname]);
 
   const navItems = isAdmin

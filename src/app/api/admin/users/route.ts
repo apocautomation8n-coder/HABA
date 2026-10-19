@@ -5,6 +5,9 @@ import { checkIsAdmin } from "@/lib/auth-helpers";
 import { calculatePlanEndDate, PlanType, buildInitialUserMetadata, getTrustedPlanMeta, splitPlanMetadata } from "@/lib/plan-helpers";
 import { formatAccountNumber, parseAccountNumber, getNextAccountNumberFromList } from "@/lib/account";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 function getAdminClient() {
   return createSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -20,23 +23,35 @@ function getAdminClient() {
 
 async function verifyAdminCaller(request: Request) {
   try {
-    const supabase = await createServerClient();
-    let { data: { user } } = await supabase.auth.getUser();
+    let user: any = null;
 
-    if (!user) {
-      const authHeader = request.headers.get("Authorization");
-      if (authHeader?.startsWith("Bearer ")) {
-        const token = authHeader.substring(7);
-        const admin = getAdminClient();
-        const { data } = await admin.auth.getUser(token);
+    // Priorizar Bearer token de Authorization header
+    const authHeader = request.headers.get("Authorization");
+    if (authHeader?.startsWith("Bearer ")) {
+      const token = authHeader.substring(7);
+      const admin = getAdminClient();
+      const { data } = await admin.auth.getUser(token);
+      if (data?.user) {
         user = data.user;
       }
     }
 
     if (!user) {
+      const supabase = await createServerClient();
+      const { data } = await supabase.auth.getUser();
+      user = data.user;
+    }
+
+    if (!user) {
       return {
         authorized: false as const,
-        response: NextResponse.json({ error: "No autenticado" }, { status: 401 }),
+        response: NextResponse.json(
+          { error: "No autenticado" },
+          {
+            status: 401,
+            headers: { "Cache-Control": "no-store, max-age=0" },
+          }
+        ),
       };
     }
 

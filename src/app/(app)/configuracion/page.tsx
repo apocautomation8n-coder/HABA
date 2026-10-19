@@ -181,9 +181,8 @@ export default function SettingsPage() {
           setUserId(user.id);
           setEmail(user.email || "");
 
-          if (checkIsAdmin(user)) {
-            setRole("admin");
-          }
+          const userIsAdmin = checkIsAdmin(user);
+          setRole(userIsAdmin ? "admin" : "user");
 
           if (user.user_metadata?.full_name) {
             setFullName(user.user_metadata.full_name);
@@ -243,10 +242,23 @@ export default function SettingsPage() {
 
           // Cargar perfil desde API segura (bypasea RLS recursivo)
           try {
-            const res = await fetch("/api/user/profile");
+            const { data: { session } } = await supabase.auth.getSession();
+            const headers: HeadersInit = { "Cache-Control": "no-cache" };
+            if (session?.access_token) {
+              headers["Authorization"] = `Bearer ${session.access_token}`;
+            }
+
+            const res = await fetch("/api/user/profile", {
+              cache: "no-store",
+              headers,
+            });
             if (res.ok) {
               const data = await res.json();
-              if (data.isAdmin) setRole("admin");
+              if (userIsAdmin && data.isAdmin) {
+                setRole("admin");
+              } else {
+                setRole("user");
+              }
               if (data.profile?.currency) setCurrency(data.profile.currency);
               if (data.profile?.number_locale) setNumberLocale(data.profile.number_locale);
               if (typeof data.profile?.decimals === "number") setDecimals(data.profile.decimals);
@@ -270,7 +282,9 @@ export default function SettingsPage() {
               if (data.profile?.address) {
                 setAddress(data.profile.address);
               }
-              if (data.profile?.role) setRole(data.profile.role);
+              if (userIsAdmin && data.profile?.role === "admin") {
+                setRole("admin");
+              }
               if (data.profile?.avatar_url) setAvatarUrl(data.profile.avatar_url);
               if (data.profile?.plan_type) setPlanType(data.profile.plan_type);
               if (data.profile?.plan_start_date) setPlanStartDate(data.profile.plan_start_date);

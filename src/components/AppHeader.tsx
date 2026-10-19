@@ -42,9 +42,8 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
         data: { user },
       } = await supabase.auth.getUser();
       if (user) {
-        if (checkIsAdmin(user)) {
-          setIsAdmin(true);
-        }
+        const userIsAdmin = checkIsAdmin(user);
+        setIsAdmin(userIsAdmin);
 
         // Carga inmediata de user_metadata
         if (user.user_metadata?.business_name) {
@@ -58,12 +57,20 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
 
         // Carga complementaria por API segura
         try {
-          const res = await fetch("/api/user/profile");
+          const { data: { session } } = await supabase.auth.getSession();
+          const headers: HeadersInit = { "Cache-Control": "no-cache" };
+          if (session?.access_token) {
+            headers["Authorization"] = `Bearer ${session.access_token}`;
+          }
+
+          const res = await fetch("/api/user/profile", {
+            cache: "no-store",
+            headers,
+          });
           if (res.ok) {
             const data = await res.json();
-            if (data.isAdmin) {
-              setIsAdmin(true);
-            }
+            // Regla estricta: Solo si la cuenta actual es Gio, activar admin
+            setIsAdmin(userIsAdmin && Boolean(data.isAdmin));
             if (data.profile?.business_name) {
               setBusinessName(data.profile.business_name);
             } else if (data.profile?.full_name) {
@@ -99,9 +106,26 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
         } catch {
           // ignore
         }
+      } else {
+        setIsAdmin(false);
       }
     }
+
     loadProfileAndAlerts();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session?.user) {
+        setIsAdmin(false);
+      } else {
+        setIsAdmin(checkIsAdmin(session.user));
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, [supabase]);
 
   const navItems = [

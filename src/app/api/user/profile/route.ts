@@ -18,25 +18,43 @@ function getAdminClient() {
   );
 }
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 // GET: Obtener perfil del usuario actual (bypasseando RLS para evitar recursión)
 export async function GET(request: Request) {
   try {
-    const supabase = await createServerClient();
-    let { data: { user } } = await supabase.auth.getUser();
+    let user: any = null;
 
-    // Fallback: si viene Authorization header
-    if (!user) {
-      const authHeader = request.headers.get("Authorization");
-      if (authHeader?.startsWith("Bearer ")) {
-        const token = authHeader.substring(7);
-        const admin = getAdminClient();
-        const { data } = await admin.auth.getUser(token);
+    // 1. Si viene Authorization header Bearer token, SIEMPRE usarlo prioritariamente
+    // para evitar desfases de cookies entre pestañas o cuentas cerradas
+    const authHeader = request.headers.get("Authorization");
+    if (authHeader?.startsWith("Bearer ")) {
+      const token = authHeader.substring(7);
+      const admin = getAdminClient();
+      const { data } = await admin.auth.getUser(token);
+      if (data?.user) {
         user = data.user;
       }
     }
 
+    // 2. Si no vino Authorization header o falló, usar la sesión de cookies
     if (!user) {
-      return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+      const supabase = await createServerClient();
+      const { data } = await supabase.auth.getUser();
+      user = data.user;
+    }
+
+    if (!user) {
+      return NextResponse.json(
+        { error: "No autenticado" },
+        {
+          status: 401,
+          headers: {
+            "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
+          },
+        }
+      );
     }
 
     const admin = getAdminClient();
@@ -130,13 +148,28 @@ export async function GET(request: Request) {
     };
 
 
-    return NextResponse.json({
-      user,
-      profile: fullProfile,
-      isAdmin,
-    });
+    return NextResponse.json(
+      {
+        user,
+        profile: fullProfile,
+        isAdmin,
+      },
+      {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
+        },
+      }
+    );
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json(
+      { error: err.message },
+      {
+        status: 500,
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
+        },
+      }
+    );
   }
 }
 
