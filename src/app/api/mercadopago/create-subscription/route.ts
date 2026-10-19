@@ -83,7 +83,9 @@ export async function POST(request: Request) {
     const proto =
       request.headers.get("x-forwarded-proto") || (host.includes("localhost") ? "http" : "https");
     const appUrl = (process.env.NEXT_PUBLIC_APP_URL || `${proto}://${host}`).replace(/\/$/, "");
-    const backUrl = `${appUrl}/plan-vencido?status=approved`;
+    const body = await request.json().catch(() => ({}));
+    const returnPath = body.return_url || "/plan-vencido?status=approved";
+    const backUrl = `${appUrl}${returnPath.startsWith("/") ? returnPath : `/${returnPath}`}`;
 
     const preapprovalPlanId =
       process.env.MP_PREAPPROVAL_PLAN_ID ||
