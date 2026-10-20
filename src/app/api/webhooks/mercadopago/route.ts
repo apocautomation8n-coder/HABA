@@ -272,26 +272,12 @@ export async function POST(request: Request) {
         await supabaseAdmin
           .from("profiles")
           .update({
-            plan_type: "mensual",
-            account_status: "activa",
             status: "active",
-            mp_status: "authorized",
-            mp_preapproval_id: preapprovalId,
-            plan_end_date: newEndDate,
             updated_at: new Date().toISOString(),
           })
           .eq("id", targetUserId);
       } catch (err: any) {
-        // Fallback seguro si la tabla aún no cuenta con alguna columna
-        try {
-          await supabaseAdmin
-            .from("profiles")
-            .update({
-              status: "active",
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", targetUserId);
-        } catch {}
+        console.warn("[Webhook Mercado Pago] Aviso actualizando profiles:", err?.message);
       }
 
       // Actualizar datos de Auth (app_metadata y user_metadata) para consistencia global

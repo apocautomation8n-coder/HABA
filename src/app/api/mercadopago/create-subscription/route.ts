@@ -81,6 +81,10 @@ export async function POST(request: Request) {
 
     const payerEmail = (body.payer_email || user.email || "").trim().toLowerCase();
 
+    const webhookUrl = appUrl.startsWith("https://")
+      ? `${appUrl}/api/webhooks/mercadopago`
+      : undefined;
+
     // Intento 1: Creación dinámica con auto_recurring (asocia unívocamente external_reference = user.id en MP)
     const dynamicPayload: Record<string, any> = {
       reason: "Haba Mensual",
@@ -93,6 +97,7 @@ export async function POST(request: Request) {
         transaction_amount: 7000,
         currency_id: "ARS",
       },
+      ...(webhookUrl ? { notification_url: webhookUrl } : {}),
     };
 
     let mpRes = await fetch("https://api.mercadopago.com/preapproval", {
@@ -109,11 +114,12 @@ export async function POST(request: Request) {
     // Intento 2: Si falló, probar con preapproval_plan_id
     if (!mpRes.ok) {
       console.warn("[Mercado Pago] Aviso: Intento auto_recurring retornó:", mpData);
-      const planPayload = {
+      const planPayload: Record<string, any> = {
         preapproval_plan_id: preapprovalPlanId,
         external_reference: user.id,
         payer_email: payerEmail,
         back_url: backUrl,
+        ...(webhookUrl ? { notification_url: webhookUrl } : {}),
       };
       mpRes = await fetch("https://api.mercadopago.com/preapproval", {
         method: "POST",
