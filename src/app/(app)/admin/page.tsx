@@ -171,11 +171,12 @@ function exportUsersToCSV(usersToExport: UserProfile[]): void {
     ];
   });
 
-  // Agregar el BOM UTF-8 (\uFEFF) para caracteres especiales y usar punto y coma (;)
-  // como delimitador estándar para que Microsoft Excel en español/Latinoamérica separe en columnas automáticamente
+  // Agregar el BOM UTF-8 (\uFEFF) e instrucción explícita sep=; para forzar a Microsoft Excel
+  // a reconocer el delimitador de punto y coma en cualquier versión o configuración de Windows
   const BOM = "\uFEFF";
   const csvContent =
     BOM +
+    "sep=;\r\n" +
     [headers.map(escapeCSV).join(";"), ...rows.map((r) => r.join(";"))].join("\r\n");
 
   const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
@@ -184,7 +185,9 @@ function exportUsersToCSV(usersToExport: UserProfile[]): void {
   const day = String(today.getDate()).padStart(2, "0");
   const month = String(today.getMonth() + 1).padStart(2, "0");
   const year = today.getFullYear();
-  const fileName = `usuarios_haba_${day}_${month}_${year}.csv`;
+  const hours = String(today.getHours()).padStart(2, "0");
+  const minutes = String(today.getMinutes()).padStart(2, "0");
+  const fileName = `usuarios_haba_${day}_${month}_${year}_${hours}${minutes}.csv`;
 
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
