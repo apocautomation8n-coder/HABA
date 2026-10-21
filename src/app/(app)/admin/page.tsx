@@ -31,6 +31,8 @@ import {
   SlidersHorizontal,
   RotateCcw,
   FilterX,
+  Download,
+  FileSpreadsheet,
 } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { isRealUserAvatar } from "@/components/ProfileAvatar";
@@ -94,6 +96,106 @@ export type FilterStatus = "todos" | "active" | "suspended";
 
 type QuickFilter = "todos" | "activos" | "proximos" | "vencidos" | "desactivados";
 
+/**
+ * Exporta el listado de usuarias a un archivo CSV formateado con UTF-8 BOM
+ * para visualización nativa y correcta de acentos y caracteres especiales en Microsoft Excel.
+ */
+function exportUsersToCSV(usersToExport: UserProfile[]): void {
+  if (!usersToExport || usersToExport.length === 0) return;
+
+  const headers = [
+    "N° Cuenta",
+    "Nombre / Emprendimiento",
+    "Email",
+    "Plan",
+    "Estado Cuenta",
+    "Fecha Inicio",
+    "Fecha Vencimiento",
+    "Vigencia",
+  ];
+
+  const escapeCSV = (value: any): string => {
+    if (value === null || value === undefined) return '""';
+    const str = String(value).replace(/"/g, '""');
+    return `"${str}"`;
+  };
+
+  const rows = usersToExport.map((u) => {
+    // 1. N° Cuenta
+    const accountNumber = u.account_number || "-";
+
+    // 2. Nombre / Emprendimiento
+    const fullName = (u.full_name || "").trim();
+    const businessName = (u.business_name || "").trim();
+    let nameAndBusiness = fullName;
+    if (businessName) {
+      nameAndBusiness = fullName ? `${fullName} (${businessName})` : businessName;
+    }
+    if (!nameAndBusiness) nameAndBusiness = u.email;
+
+    // 3. Email
+    const email = u.email || "";
+
+    // 4. Plan
+    const planName = PLAN_NAMES[u.plan_type || "prueba"] || u.plan_type || "Plan Prueba";
+
+    // 5. Estado Cuenta
+    const effectiveAccountStatus =
+      u.account_status || (u.status === "suspended" ? "suspended" : "active");
+    const accountStatusName =
+      ACCOUNT_STATUS_NAMES[effectiveAccountStatus] ||
+      (effectiveAccountStatus === "active" ? "Activa" : "Suspendida");
+
+    // 6. Fecha Inicio (DD/MM/AAAA)
+    const startDate = u.plan_start_date || u.created_at?.split("T")[0] || "";
+    const startDateFormatted = formatDateDisplay(startDate);
+
+    // 7. Fecha Vencimiento (DD/MM/AAAA)
+    const endDateFormatted = formatDateDisplay(u.plan_end_date);
+
+    // 8. Vigencia
+    const info = getPlanStatusInfo(u.plan_end_date);
+    const vigenciaText = !u.plan_end_date
+      ? "Sin fecha"
+      : `${info.label} (${info.rowText})`;
+
+    return [
+      escapeCSV(accountNumber),
+      escapeCSV(nameAndBusiness),
+      escapeCSV(email),
+      escapeCSV(planName),
+      escapeCSV(accountStatusName),
+      escapeCSV(startDateFormatted),
+      escapeCSV(endDateFormatted),
+      escapeCSV(vigenciaText),
+    ];
+  });
+
+  // Agregar el BOM UTF-8 (\uFEFF) para que Microsoft Excel en español reconozca tildes y caracteres especiales
+  const BOM = "\uFEFF";
+  const csvContent =
+    BOM +
+    [headers.map(escapeCSV).join(","), ...rows.map((r) => r.join(","))].join("\r\n");
+
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+
+  const today = new Date();
+  const day = String(today.getDate()).padStart(2, "0");
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const year = today.getFullYear();
+  const fileName = `usuarios_haba_${day}_${month}_${year}.csv`;
+
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.setAttribute("href", url);
+  link.setAttribute("download", fileName);
+  link.style.visibility = "hidden";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
 export default function AdminPage() {
   const router = useRouter();
   const supabase = createClient();
@@ -109,6 +211,7 @@ export default function AdminPage() {
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("todos");
   const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false);
   const [expandedHistoryUserId, setExpandedHistoryUserId] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Modal para dar de alta nueva usuaria
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -279,6 +382,19 @@ export default function AdminPage() {
   };
 
   const [syncingUserId, setSyncingUserId] = useState<string | null>(null);
+
+  const handleExportCSV = () => {
+    if (filteredUsers.length === 0) return;
+    try {
+      exportUsersToCSV(filteredUsers);
+      setToastMessage("Listado exportado con éxito");
+      setTimeout(() => {
+        setToastMessage(null);
+      }, 3000);
+    } catch (err: any) {
+      alert("Error al exportar CSV: " + err.message);
+    }
+  };
 
   const syncUserMercadoPago = async (targetUser: UserProfile) => {
     try {
@@ -644,25 +760,50 @@ export default function AdminPage() {
           </div>
         </div>
 
-        <button
-          onClick={() => {
-            const today = new Date().toISOString().split("T")[0];
-            setNewEmail("");
-            setNewPassword("");
-            setNewFullName("");
-            setNewBusinessName("");
-            setNewPlanType("prueba");
-            setNewPlanStartDate(today);
-            setNewPlanEndDate(calculatePlanEndDate(today, "prueba"));
-            setNewAccountStatus("active");
-            setCreateError(null);
-            setIsCreateModalOpen(true);
-          }}
-          className="py-2.5 px-3.5 bg-[#3BB578] hover:bg-[#2E9E65] text-white rounded-2xl shadow-xs transition flex items-center gap-1.5 text-xs font-bold active:scale-[0.98]"
-        >
-          <UserPlus className="w-4 h-4" />
-          <span>Alta Usuaria</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Botón Exportar CSV */}
+          <button
+            type="button"
+            onClick={handleExportCSV}
+            disabled={filteredUsers.length === 0}
+            title={
+              filteredUsers.length === 0
+                ? "No hay usuarias para exportar"
+                : isAnyFilterActive
+                ? `Exportar ${filteredUsers.length} usuarias filtradas a CSV`
+                : `Exportar todas las usuarias (${filteredUsers.length}) a CSV`
+            }
+            className="py-2.5 px-3.5 bg-white hover:bg-neutral-50 text-[#2B2B2B] border border-[#EAF0E8] rounded-2xl shadow-xs transition flex items-center gap-1.5 text-xs font-bold active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white disabled:active:scale-100 cursor-pointer"
+          >
+            <Download className="w-4 h-4 text-[#3BB578]" />
+            <span>Exportar CSV</span>
+            {filteredUsers.length > 0 && (
+              <span className="text-[10px] bg-[#DCF4D7] text-[#1F7A4C] px-1.5 py-0.2 rounded-full font-bold ml-0.5">
+                {filteredUsers.length}
+              </span>
+            )}
+          </button>
+
+          <button
+            onClick={() => {
+              const today = new Date().toISOString().split("T")[0];
+              setNewEmail("");
+              setNewPassword("");
+              setNewFullName("");
+              setNewBusinessName("");
+              setNewPlanType("prueba");
+              setNewPlanStartDate(today);
+              setNewPlanEndDate(calculatePlanEndDate(today, "prueba"));
+              setNewAccountStatus("active");
+              setCreateError(null);
+              setIsCreateModalOpen(true);
+            }}
+            className="py-2.5 px-3.5 bg-[#3BB578] hover:bg-[#2E9E65] text-white rounded-2xl shadow-xs transition flex items-center gap-1.5 text-xs font-bold active:scale-[0.98]"
+          >
+            <UserPlus className="w-4 h-4" />
+            <span>Alta Usuaria</span>
+          </button>
+        </div>
       </div>
 
       {/* Buscador de Usuarias */}
@@ -829,6 +970,19 @@ export default function AdminPage() {
               Mostrando <strong className="text-[#2B2B2B] font-bold">{filteredUsers.length}</strong> de{" "}
               <span>{users.length}</span> usuarias
             </span>
+
+            {/* Acceso rápido para exportar CSV desde la barra de filtros */}
+            {filteredUsers.length > 0 && (
+              <button
+                type="button"
+                onClick={handleExportCSV}
+                className="hidden sm:inline-flex items-center gap-1 text-[11px] font-bold text-[#1F7A4C] hover:text-[#185E3A] bg-[#DCF4D7]/70 hover:bg-[#DCF4D7] border border-[#C3EBC0] px-2.5 py-1 rounded-xl transition cursor-pointer"
+                title={`Exportar ${filteredUsers.length} usuarias a CSV`}
+              >
+                <Download className="w-3 h-3" />
+                <span>CSV</span>
+              </button>
+            )}
 
             {/* Botón Restablecer filtros */}
             {isAnyFilterActive && (
@@ -1831,6 +1985,14 @@ export default function AdminPage() {
           </div>,
           document.body
         )}
+
+      {/* Toast de confirmación de exportación */}
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 bg-[#1F7A4C] text-white text-xs font-bold px-4 py-3 rounded-2xl shadow-xl flex items-center gap-2 animate-in fade-in slide-in-from-bottom-3 duration-200 border border-[#2E9E65]">
+          <Check className="w-4 h-4 text-white shrink-0" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
     </div>
   );
 }
