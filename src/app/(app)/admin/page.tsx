@@ -171,11 +171,12 @@ function exportUsersToCSV(usersToExport: UserProfile[]): void {
     ];
   });
 
-  // Agregar el BOM UTF-8 (\uFEFF) para que Microsoft Excel en español reconozca tildes y caracteres especiales
+  // Agregar el BOM UTF-8 (\uFEFF) para caracteres especiales y usar punto y coma (;)
+  // como delimitador estándar para que Microsoft Excel en español/Latinoamérica separe en columnas automáticamente
   const BOM = "\uFEFF";
   const csvContent =
     BOM +
-    [headers.map(escapeCSV).join(","), ...rows.map((r) => r.join(","))].join("\r\n");
+    [headers.map(escapeCSV).join(";"), ...rows.map((r) => r.join(";"))].join("\r\n");
 
   const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
 
