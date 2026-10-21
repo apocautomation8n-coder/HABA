@@ -1,8 +1,10 @@
 {
+  "id": "/",
   "name": "HABA — Costeo y Presupuestos",
   "short_name": "HABA",
   "description": "App de costeo, precios multicanal y presupuestos para emprendedoras.",
   "start_url": "/dashboard",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#F6F7F2",
   "theme_color": "#3BB578",
