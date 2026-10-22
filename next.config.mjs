@@ -48,7 +48,16 @@ const nextConfig = {
       },
       {
         // El manifest debe refrescarse rápidamente ante cambios
-        source: "/manifest:ext*",
+        source: "/manifest.json",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "no-cache, no-store, must-revalidate",
+          },
+        ],
+      },
+      {
+        source: "/manifest.webmanifest",
         headers: [
           {
             key: "Cache-Control",

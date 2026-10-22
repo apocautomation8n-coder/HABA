@@ -256,22 +256,12 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
 
     if (currentPlan.plan_type === "mensual") {
       // REGLA CRÍTICA DE NEGOCIO:
-      // Si la usuaria YA tiene el Plan Mensual vigente, la sincronización NO DEBE SUMAR DÍAS.
-      // Únicamente se actualiza si Mercado Pago provee una fecha formal posterior
-      // (ej: si ocurrió el cobro recurrente automático del siguiente mes y next_payment_date avanzó).
-      if (
-        nextPaymentDateStr &&
-        currentPlan.plan_end_date &&
-        nextPaymentDateStr > currentPlan.plan_end_date
-      ) {
-        newEndDate = nextPaymentDateStr;
-      } else {
-        // Preservar estrictamente la fecha de fin que ya tiene (no sumar días)
-        newEndDate = currentPlan.plan_end_date || nextPaymentDateStr || addDays(today, 30);
-      }
+      // Si la usuaria YA tiene el Plan Mensual vigente, la sincronización NUNCA DEBE SUMAR DÍAS.
+      // Preservar estrictamente la fecha de fin que ya tiene.
+      newEndDate = currentPlan.plan_end_date || addDays(today, 30);
     } else {
       // Solo en caso de que el plan NO muestre mensual (estaba en prueba o vencido):
-      // Activar el plan mensual por primera vez (30 días o fecha formal de MP)
+      // Activar el plan mensual por primera vez (30 días exactos desde hoy o fecha formal de MP)
       newEndDate = nextPaymentDateStr || addDays(today, 30);
     }
 
