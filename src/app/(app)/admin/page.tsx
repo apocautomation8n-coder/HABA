@@ -400,14 +400,17 @@ export default function AdminPage() {
     }
   };
 
-  const syncUserMercadoPago = async (targetUser: UserProfile) => {
+  const syncUserMercadoPago = async (targetUser: UserProfile, customEmail?: string) => {
     try {
       setSyncingUserId(targetUser.id);
+      const emailToUse = customEmail || targetUser.email || "";
       const res = await fetch(
-        `/api/mercadopago/sync?userId=${targetUser.id}&email=${encodeURIComponent(
-          targetUser.email || ""
-        )}`,
-        { method: "POST" }
+        `/api/mercadopago/sync?userId=${targetUser.id}&email=${encodeURIComponent(emailToUse)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: targetUser.id, email: emailToUse }),
+        }
       );
       const data = await res.json();
       if (data.synced) {
@@ -418,6 +421,14 @@ export default function AdminPage() {
         );
         await loadUsers();
       } else {
+        if (!customEmail) {
+          const altEmail = window.prompt(
+            `No se detectó un cobro con el correo principal (${targetUser.email}).\n\nSi ${targetUser.full_name || "la usuaria"} abonó desde una cuenta de Mercado Pago con otro e-mail (ej: de un familiar, personal o secundario), ingresalo acá para asociarlo a su cuenta:`
+          );
+          if (altEmail && altEmail.trim().includes("@")) {
+            return syncUserMercadoPago(targetUser, altEmail.trim().toLowerCase());
+          }
+        }
         alert(
           data.error ||
             "No se detectó un cobro o suscripción autorizada en Mercado Pago para esta usuaria todavía."
