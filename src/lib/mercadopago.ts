@@ -109,35 +109,9 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
       )
     );
 
-    // 2. Buscar preapproval en Mercado Pago:
-    // Prioridad 1: Por external_reference = userId
-    if (!preapproval) {
-      try {
-        const searchRes = await fetch(
-          `https://api.mercadopago.com/preapproval/search?external_reference=${encodeURIComponent(
-            userId
-          )}&status=authorized`,
-          {
-            headers: { Authorization: `Bearer ${accessToken}` },
-          }
-        );
-        if (searchRes.ok) {
-          const searchData = await searchRes.json();
-          if (Array.isArray(searchData.results) && searchData.results.length > 0) {
-            const matched = searchData.results.find(
-              (p: any) => p.external_reference === userId
-            );
-            if (matched) {
-              preapproval = matched;
-            }
-          }
-        }
-      } catch (e) {
-        console.warn("[Mercado Pago Sync] Error buscando por external_reference:", e);
-      }
-    }
+    // 2. Buscar preapproval o pago en Mercado Pago:
 
-    // Prioridad 2: Por ID directo de preapproval si el usuario ya tiene uno guardado
+    // A. Prioridad 0: Por ID directo de preapproval si el usuario ya tiene uno guardado
     const savedPreapprovalId = targetUser.app_metadata?.mp_preapproval_id;
     if (!preapproval && savedPreapprovalId) {
       try {
@@ -149,7 +123,7 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
         );
         if (directRes.ok) {
           const directData = await directRes.json();
-          if (directData && (directData.status === "authorized" || directData.status === "paused")) {
+          if (directData && (directData.status === "authorized" || directData.status === "paused" || directData.status === "pending")) {
             preapproval = directData;
           }
         }
@@ -158,7 +132,75 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
       }
     }
 
-    // Prioridad 3: Buscar en las suscripciones del Plan Maestro en Mercado Pago
+    // B. Prioridad 1: Por external_reference = userId
+    if (!preapproval) {
+      try {
+        const searchRes = await fetch(
+          `https://api.mercadopago.com/preapproval/search?external_reference=${encodeURIComponent(userId)}`,
+          {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          }
+        );
+        if (searchRes.ok) {
+          const searchData = await searchRes.json();
+          if (Array.isArray(searchData.results) && searchData.results.length > 0) {
+            const matched = searchData.results.find(
+              (p: any) =>
+                p.external_reference === userId &&
+                (p.status === "authorized" || p.status === "pending" || p.status === "paused")
+            );
+            if (matched) {
+              preapproval = matched;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("[Mercado Pago Sync] Error buscando por external_reference:", e);
+      }
+    }
+
+    // C. Prioridad 2: Buscar directamente por payer_email de la usuaria en Mercado Pago
+    if (!preapproval) {
+      for (const cEmail of candidateEmails) {
+        if (preapproval) break;
+        try {
+          const emailRes = await fetch(
+            `https://api.mercadopago.com/preapproval/search?payer_email=${encodeURIComponent(cEmail)}&limit=20`,
+            {
+              headers: { Authorization: `Bearer ${accessToken}` },
+            }
+          );
+          if (emailRes.ok) {
+            const emailData = await emailRes.json();
+            if (Array.isArray(emailData.results) && emailData.results.length > 0) {
+              const matched = emailData.results.find((p: any) => {
+                const validStatus =
+                  p.status === "authorized" || p.status === "pending" || p.status === "paused";
+                const matchesRef = !p.external_reference || p.external_reference === userId;
+                return validStatus && matchesRef;
+              });
+              if (matched) {
+                preapproval = matched;
+                try {
+                  fetch(`https://api.mercadopago.com/preapproval/${matched.id}`, {
+                    method: "PUT",
+                    headers: {
+                      Authorization: `Bearer ${accessToken}`,
+                      "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({ external_reference: userId }),
+                  }).catch(() => {});
+                } catch {}
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("[Mercado Pago Sync] Error buscando por payer_email:", e);
+        }
+      }
+    }
+
+    // D. Prioridad 3: Buscar en las suscripciones del Plan Maestro de HABA
     const masterPlanId =
       process.env.MP_PREAPPROVAL_PLAN_ID ||
       process.env.MP_PLAN_ID ||
@@ -166,42 +208,48 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
 
     if (!preapproval && masterPlanId) {
       try {
-        const planSearchRes = await fetch(
-          `https://api.mercadopago.com/preapproval/search?preapproval_plan_id=${encodeURIComponent(
-            masterPlanId
-          )}&status=authorized&sort=date_created&criteria=desc&limit=20`,
+        const planRes = await fetch(
+          `https://api.mercadopago.com/preapproval/search?preapproval_plan_id=${encodeURIComponent(masterPlanId)}&limit=50`,
           {
             headers: { Authorization: `Bearer ${accessToken}` },
           }
         );
-        if (planSearchRes.ok) {
-          const planData = await planSearchRes.json();
+        if (planRes.ok) {
+          const planData = await planRes.json();
           if (Array.isArray(planData.results) && planData.results.length > 0) {
-            // A. Coincidencia por external_reference
-            let matched = planData.results.find((p: any) => p.external_reference === userId);
+            // 1. Por external_reference
+            let matched = planData.results.find(
+              (p: any) =>
+                p.external_reference === userId &&
+                (p.status === "authorized" || p.status === "pending" || p.status === "paused")
+            );
 
-            // B. Coincidencia por email del pagador
+            // 2. Por email de pagador
             if (!matched) {
               matched = planData.results.find((p: any) => {
                 const pEmail = (p.payer_email || "").trim().toLowerCase();
-                return candidateEmails.includes(pEmail);
+                const validStatus =
+                  p.status === "authorized" || p.status === "pending" || p.status === "paused";
+                const matchesRef = !p.external_reference || p.external_reference === userId;
+                return validStatus && matchesRef && candidateEmails.includes(pEmail);
               });
             }
 
-            // C. Suscripción recién abonada en este plan (últimos 90 minutos) sin external_reference de otro usuario
+            // 3. Suscripción reciente (últimas 24 horas) sin asociar a otro usuario
             if (!matched) {
               const nowMs = Date.now();
-              const ninetyMinMs = 90 * 60 * 1000;
+              const dayMs = 24 * 60 * 60 * 1000;
               matched = planData.results.find((p: any) => {
                 if (p.external_reference && p.external_reference !== userId) return false;
+                const validStatus =
+                  p.status === "authorized" || p.status === "pending" || p.status === "paused";
                 const createdTime = p.date_created ? new Date(p.date_created).getTime() : 0;
-                return nowMs - createdTime < ninetyMinMs;
+                return validStatus && nowMs - createdTime < dayMs;
               });
             }
 
             if (matched) {
               preapproval = matched;
-              // Vincular formalmente en Mercado Pago
               try {
                 fetch(`https://api.mercadopago.com/preapproval/${matched.id}`, {
                   method: "PUT",
@@ -216,99 +264,122 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
           }
         }
       } catch (e) {
-        console.warn("[Mercado Pago Sync] Error buscando por masterPlanId:", e);
+        console.warn("[Mercado Pago Sync] Error buscando por plan maestro:", e);
       }
     }
 
-    // Prioridad 4: Fallback por email del pagador en toda la cuenta de Mercado Pago
-    if (!preapproval) {
-      for (const cEmail of candidateEmails) {
-        if (preapproval) break;
-        try {
-          const emailSearchRes = await fetch(
-            `https://api.mercadopago.com/preapproval/search?payer_email=${encodeURIComponent(
-              cEmail
-            )}&status=authorized`,
-            {
-              headers: { Authorization: `Bearer ${accessToken}` },
-            }
-          );
-          if (emailSearchRes.ok) {
-            const emailData = await emailSearchRes.json();
-            if (Array.isArray(emailData.results) && emailData.results.length > 0) {
-              const candidate = emailData.results.find((p: any) => {
-                const payerEmail = (p.payer_email || "").trim().toLowerCase();
-                const matchesEmail = payerEmail === cEmail;
-                const matchesRef = !p.external_reference || p.external_reference === userId;
-                return matchesEmail && matchesRef;
-              });
-
-              if (candidate) {
-                preapproval = candidate;
-                try {
-                  fetch(`https://api.mercadopago.com/preapproval/${candidate.id}`, {
-                    method: "PUT",
-                    headers: {
-                      Authorization: `Bearer ${accessToken}`,
-                      "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({ external_reference: userId }),
-                  }).catch(() => {});
-                } catch {}
-              }
-            }
-          }
-        } catch (e) {
-          console.warn("[Mercado Pago Sync] Error buscando por email fallback:", e);
-        }
-      }
-    }
-
-    // 5. Si no hay preapproval recurrente, buscar pagos autorizados recientes
-    let paymentApproved: any = null;
+    // E. Prioridad 4: Escanear las suscripciones más recientes de toda la cuenta MP
     if (!preapproval) {
       try {
-        const paySearchRes = await fetch(
-          `https://api.mercadopago.com/v1/payments/search?external_reference=${encodeURIComponent(
-            userId
-          )}&status=approved&sort=date_created&criteria=desc`,
+        const recentRes = await fetch(
+          `https://api.mercadopago.com/preapproval/search?limit=50`,
           {
             headers: { Authorization: `Bearer ${accessToken}` },
           }
         );
-        if (paySearchRes.ok) {
-          const payData = await paySearchRes.json();
-          if (Array.isArray(payData.results) && payData.results.length > 0) {
-            paymentApproved = payData.results[0];
+        if (recentRes.ok) {
+          const recentData = await recentRes.json();
+          if (Array.isArray(recentData.results) && recentData.results.length > 0) {
+            // 1. Coincidencia por external_reference
+            let matched = recentData.results.find(
+              (p: any) =>
+                p.external_reference === userId &&
+                (p.status === "authorized" || p.status === "pending" || p.status === "paused")
+            );
+
+            // 2. Coincidencia por correo del pagador
+            if (!matched) {
+              matched = recentData.results.find((p: any) => {
+                const pEmail = (p.payer_email || "").trim().toLowerCase();
+                const validStatus =
+                  p.status === "authorized" || p.status === "pending" || p.status === "paused";
+                const matchesRef = !p.external_reference || p.external_reference === userId;
+                return validStatus && matchesRef && candidateEmails.includes(pEmail);
+              });
+            }
+
+            // 3. Suscripción recién abonada en las últimas 24 horas sin external_reference de otro usuario
+            if (!matched) {
+              const nowMs = Date.now();
+              const dayMs = 24 * 60 * 60 * 1000;
+              matched = recentData.results.find((p: any) => {
+                if (p.external_reference && p.external_reference !== userId) return false;
+                const validStatus =
+                  p.status === "authorized" || p.status === "pending" || p.status === "paused";
+                const createdTime = p.date_created ? new Date(p.date_created).getTime() : 0;
+                return validStatus && nowMs - createdTime < dayMs;
+              });
+            }
+
+            if (matched) {
+              preapproval = matched;
+              try {
+                fetch(`https://api.mercadopago.com/preapproval/${matched.id}`, {
+                  method: "PUT",
+                  headers: {
+                    Authorization: `Bearer ${accessToken}`,
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({ external_reference: userId }),
+                }).catch(() => {});
+              } catch {}
+            }
           }
         }
       } catch (e) {
-        console.warn("[Mercado Pago Sync] Error buscando pagos por external_reference:", e);
+        console.warn("[Mercado Pago Sync] Error buscando suscripciones globales:", e);
       }
     }
 
-    // Fallback de pagos por email de pagador
-    if (!preapproval && !paymentApproved) {
-      for (const cEmail of candidateEmails) {
-        if (paymentApproved) break;
-        try {
-          const payEmailRes = await fetch(
-            `https://api.mercadopago.com/v1/payments/search?payer.email=${encodeURIComponent(
-              cEmail
-            )}&status=approved&sort=date_created&criteria=desc&limit=5`,
-            {
-              headers: { Authorization: `Bearer ${accessToken}` },
+    // D. Prioridad 3: Escanear los cobros y pagos más recientes de Mercado Pago (/v1/payments)
+    let paymentApproved: any = null;
+    if (!preapproval) {
+      try {
+        const payRes = await fetch(
+          `https://api.mercadopago.com/v1/payments/search?sort=date_created&criteria=desc&limit=50`,
+          {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          }
+        );
+        if (payRes.ok) {
+          const payData = await payRes.json();
+          if (Array.isArray(payData.results) && payData.results.length > 0) {
+            // 1. Coincidencia por external_reference
+            let matchedPay = payData.results.find(
+              (p: any) =>
+                p.external_reference === userId &&
+                (p.status === "approved" || p.status === "authorized")
+            );
+
+            // 2. Coincidencia por correo del pagador
+            if (!matchedPay) {
+              matchedPay = payData.results.find((p: any) => {
+                const pEmail = (p.payer?.email || "").trim().toLowerCase();
+                const validStatus = p.status === "approved" || p.status === "authorized";
+                const matchesRef = !p.external_reference || p.external_reference === userId;
+                return validStatus && matchesRef && candidateEmails.includes(pEmail);
+              });
             }
-          );
-          if (payEmailRes.ok) {
-            const payEmailData = await payEmailRes.json();
-            if (Array.isArray(payEmailData.results) && payEmailData.results.length > 0) {
-              paymentApproved = payEmailData.results[0];
+
+            // 3. Pago reciente en las últimas 2 horas
+            if (!matchedPay) {
+              const nowMs = Date.now();
+              const twoHoursMs = 2 * 60 * 60 * 1000;
+              matchedPay = payData.results.find((p: any) => {
+                if (p.external_reference && p.external_reference !== userId) return false;
+                const validStatus = p.status === "approved" || p.status === "authorized";
+                const createdTime = p.date_created ? new Date(p.date_created).getTime() : 0;
+                return validStatus && nowMs - createdTime < twoHoursMs;
+              });
+            }
+
+            if (matchedPay) {
+              paymentApproved = matchedPay;
             }
           }
-        } catch (e) {
-          console.warn("[Mercado Pago Sync] Error buscando pagos por email:", e);
         }
+      } catch (e) {
+        console.warn("[Mercado Pago Sync] Error buscando pagos recientes:", e);
       }
     }
 

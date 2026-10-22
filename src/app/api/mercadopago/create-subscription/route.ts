@@ -86,10 +86,23 @@ export async function POST(request: Request) {
       process.env.NEXT_PUBLIC_MP_SUBSCRIPTION_URL ||
       `https://www.mercadopago.com.ar/subscriptions/checkout?preapproval_plan_id=${preapprovalPlanId}`;
 
+    // Determinar la URL base de la app para el retorno post-pago
+    const host = request.headers.get("x-forwarded-host") || request.headers.get("host") || "haba.app";
+    const proto =
+      request.headers.get("x-forwarded-proto") || (host.includes("localhost") ? "http" : "https");
+    const appUrl = (process.env.NEXT_PUBLIC_APP_URL || `${proto}://${host}`).replace(/\/$/, "");
+    const returnPath = body.return_url || "/configuracion?status=approved";
+    const backUrl = `${appUrl}${returnPath.startsWith("/") ? returnPath : `/${returnPath}`}`;
+
     // Vincular external_reference al user.id para trazabilidad unívoca si el link no lo incluye aún
     if (!initPoint.includes("external_reference=")) {
       const sep = initPoint.includes("?") ? "&" : "?";
       initPoint = `${initPoint}${sep}external_reference=${encodeURIComponent(user.id)}`;
+    }
+
+    if (!initPoint.includes("back_url=")) {
+      const sep = initPoint.includes("?") ? "&" : "?";
+      initPoint = `${initPoint}${sep}back_url=${encodeURIComponent(backUrl)}`;
     }
 
     // Retornar { url: initPoint }

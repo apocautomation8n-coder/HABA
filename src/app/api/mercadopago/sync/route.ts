@@ -29,7 +29,7 @@ async function handleSync(request: Request) {
     const preapprovalId = body.preapproval_id || url.searchParams.get("preapproval_id") || undefined;
 
     let targetUserId = user.id;
-    let targetEmail = user.email;
+    let targetEmail = body.email || url.searchParams.get("email") || user.email;
 
     // Solo un administrador puede sincronizar a otro usuario
     if (requestedUserId && requestedUserId !== user.id) {
