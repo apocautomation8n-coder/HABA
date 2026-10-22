@@ -121,7 +121,11 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
     const isValidMatch = async (p: any): Promise<boolean> => {
       if (!p) return false;
       const validStatus =
-        p.status === "authorized" || p.status === "pending" || p.status === "paused" || p.status === "approved";
+        p.status === "authorized" ||
+        p.status === "pending" ||
+        p.status === "paused" ||
+        p.status === "approved" ||
+        p.status === "in_process";
       if (!validStatus) return false;
 
       // REGLA DE SEGURIDAD 2: Si la suscripción en Mercado Pago ya tiene external_reference de otro usuario de HABA:
@@ -140,17 +144,32 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
         return false;
       }
 
-      let pEmail = (p.payer_email || p.payer?.email || "").trim().toLowerCase();
+      let pEmail = (
+        p.payer_email ||
+        p.payer?.email ||
+        p.additional_info?.payer?.email ||
+        ""
+      ).trim().toLowerCase();
 
       // Si p no trae email directo en el objeto pero tiene id, consultar el detalle completo de Mercado Pago
       if (!pEmail && p.id) {
         try {
-          const detailRes = await fetch(`https://api.mercadopago.com/preapproval/${p.id}`, {
+          const isNumeric = /^\d+$/.test(String(p.id));
+          const detailUrl = isNumeric
+            ? `https://api.mercadopago.com/v1/payments/${p.id}`
+            : `https://api.mercadopago.com/preapproval/${p.id}`;
+
+          const detailRes = await fetch(detailUrl, {
             headers: { Authorization: `Bearer ${accessToken}` },
           });
           if (detailRes.ok) {
             const detailData = await detailRes.json();
-            pEmail = (detailData.payer_email || detailData.payer?.email || "").trim().toLowerCase();
+            pEmail = (
+              detailData.payer_email ||
+              detailData.payer?.email ||
+              detailData.additional_info?.payer?.email ||
+              ""
+            ).trim().toLowerCase();
           }
         } catch {}
       }
@@ -307,7 +326,7 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
     if (!preapproval && masterPlanId) {
       try {
         const planRes = await fetch(
-          `https://api.mercadopago.com/preapproval/search?preapproval_plan_id=${encodeURIComponent(masterPlanId)}&limit=50`,
+          `https://api.mercadopago.com/preapproval/search?preapproval_plan_id=${encodeURIComponent(masterPlanId)}&limit=100`,
           {
             headers: { Authorization: `Bearer ${accessToken}` },
           }
@@ -342,7 +361,7 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
     if (!preapproval) {
       try {
         const recentRes = await fetch(
-          `https://api.mercadopago.com/preapproval/search?limit=50`,
+          `https://api.mercadopago.com/preapproval/search?limit=100`,
           {
             headers: { Authorization: `Bearer ${accessToken}` },
           }
@@ -378,7 +397,7 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
     if (!preapproval) {
       try {
         const payRes = await fetch(
-          `https://api.mercadopago.com/v1/payments/search?sort=date_created&criteria=desc&limit=50`,
+          `https://api.mercadopago.com/v1/payments/search?sort=date_created&criteria=desc&limit=100`,
           {
             headers: { Authorization: `Bearer ${accessToken}` },
           }
