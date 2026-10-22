@@ -63,6 +63,43 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
 
     let preapproval: any = null;
 
+    // 1. Obtener listado de usuarios de Supabase para verificaciones de seguridad cruzadas
+    const { data: allUsersRes } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    const allUsers = allUsersRes?.users || [];
+
+    // Mapeo de suscripciones ya activas en Supabase: mp_preapproval_id -> userId
+    const existingSubOwners: Record<string, string> = {};
+    for (const u of allUsers) {
+      if (u.id === userId) continue;
+      const activePreapproval =
+        u.app_metadata?.plan_type === "mensual"
+          ? u.app_metadata?.mp_preapproval_id || u.user_metadata?.mp_preapproval_id
+          : null;
+      if (activePreapproval) {
+        existingSubOwners[activePreapproval] = u.id;
+      }
+    }
+
+    // REGLA DE SEGURIDAD 1: Si la usuaria proporcionó un email alternativo en la sincronización,
+    // comprobar que ese email no pertenezca a otra usuaria de HABA que ya tiene Plan Mensual activo.
+    if (email && email.trim().toLowerCase() !== targetUser.email?.trim().toLowerCase()) {
+      const altClean = email.trim().toLowerCase();
+      const otherActiveUser = allUsers.find(
+        (u) =>
+          u.id !== userId &&
+          (u.email?.trim().toLowerCase() === altClean ||
+            u.user_metadata?.email?.trim().toLowerCase() === altClean ||
+            u.user_metadata?.business_email?.trim().toLowerCase() === altClean) &&
+          u.app_metadata?.plan_type === "mensual"
+      );
+      if (otherActiveUser) {
+        return {
+          synced: false,
+          error: `El correo "${altClean}" ya pertenece a otra cuenta activa en HABA. Cada suscripción mensual es individual y no puede transferirse ni compartirse.`,
+        };
+      }
+    }
+
     const candidateEmails = Array.from(
       new Set(
         [
@@ -80,13 +117,28 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
 
     // Función de seguridad estricta:
     // Una suscripción o pago SOLO es válido para este usuario si el correo del pagador
-    // coincide con candidateEmails.
-    // Si tiene un email que pertenece a otra persona o no se puede verificar, NO SE ASOCIA.
+    // coincide con candidateEmails y no pertenece a otro usuario de HABA.
     const isValidMatch = async (p: any): Promise<boolean> => {
       if (!p) return false;
       const validStatus =
         p.status === "authorized" || p.status === "pending" || p.status === "paused" || p.status === "approved";
       if (!validStatus) return false;
+
+      // REGLA DE SEGURIDAD 2: Si la suscripción en Mercado Pago ya tiene external_reference de otro usuario de HABA:
+      if (p.external_reference && p.external_reference !== userId) {
+        console.warn(
+          `[Mercado Pago Sync] Suscripción ${p.id} pertenece a otro usuario (${p.external_reference}). Rechazada para ${userId}.`
+        );
+        return false;
+      }
+
+      // REGLA DE SEGURIDAD 3: Si la suscripción ya está asignada a otra cuenta de HABA en Supabase:
+      if (existingSubOwners[p.id] && existingSubOwners[p.id] !== userId) {
+        console.warn(
+          `[Mercado Pago Sync] Suscripción ${p.id} ya está activa en otra cuenta de Supabase (${existingSubOwners[p.id]}). Rechazada para ${userId}.`
+        );
+        return false;
+      }
 
       let pEmail = (p.payer_email || p.payer?.email || "").trim().toLowerCase();
 
@@ -361,6 +413,15 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
       targetUser.user_metadata?.mp_preapproval_id ||
       currentPlan.mp_preapproval_id ||
       null;
+
+    // REGLA DE SEGURIDAD 4: Salvaguarda final contra reasignación de suscripciones activas
+    if (preapprovalId && existingSubOwners[preapprovalId] && existingSubOwners[preapprovalId] !== userId) {
+      const ownerUser = allUsers.find((u) => u.id === existingSubOwners[preapprovalId]);
+      return {
+        synced: false,
+        error: `Esta suscripción ya se encuentra activa en la cuenta de ${ownerUser?.email || "otro usuario"}. Cada suscripción mensual es individual y válida para una sola cuenta.`,
+      };
+    }
 
     let newEndDate: string;
 
