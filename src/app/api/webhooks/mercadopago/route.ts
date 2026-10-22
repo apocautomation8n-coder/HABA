@@ -263,10 +263,23 @@ export async function POST(request: Request) {
     const today = new Date().toISOString().split("T")[0];
 
     if (status === "authorized" || status === "approved") {
-      // Suscripción aprobada: fijar nueva fecha de vencimiento a exactamente 30 días desde el pago
-      // utilizando next_payment_date de Mercado Pago para sincronía total o fallback a 30 días exactos
-      const newEndDate =
-        nextPaymentDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      let newEndDate: string;
+      const nextDateStr = nextPaymentDate ? nextPaymentDate.split("T")[0] : null;
+
+      if (currentPlan.plan_type === "mensual") {
+        if (nextDateStr && currentPlan.plan_end_date && nextDateStr > currentPlan.plan_end_date) {
+          newEndDate = nextDateStr;
+        } else {
+          newEndDate =
+            currentPlan.plan_end_date ||
+            nextDateStr ||
+            new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+        }
+      } else {
+        newEndDate =
+          nextDateStr ||
+          new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+      }
 
       // Actualizar en tabla profiles:
       // - plan_type = 'mensual'

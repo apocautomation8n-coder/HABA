@@ -255,38 +255,23 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
       : null;
 
     if (currentPlan.plan_type === "mensual") {
-      const isSamePreapproval = Boolean(
-        preapprovalId &&
-          currentPlan.mp_preapproval_id &&
-          preapprovalId === currentPlan.mp_preapproval_id
-      );
-
-      if (isSamePreapproval) {
-        // Sincronización rutinaria de la misma suscripción:
-        // Solo extender si Mercado Pago ya procesó el débito del nuevo ciclo y avanzó next_payment_date
-        if (
-          nextPaymentDateStr &&
-          currentPlan.plan_end_date &&
-          nextPaymentDateStr > currentPlan.plan_end_date
-        ) {
-          newEndDate = nextPaymentDateStr;
-        } else {
-          // Si continúa en el mismo ciclo vigente, PRESERVAR exactamente los días restantes
-          newEndDate = currentPlan.plan_end_date || nextPaymentDateStr || addDays(today, 30);
-        }
-      } else if (paymentApproved) {
-        // Pago aprobado adicional detectado
-        const base =
-          currentPlan.plan_end_date && currentPlan.plan_end_date > today
-            ? currentPlan.plan_end_date
-            : today;
-        newEndDate = addDays(base, 30);
+      // REGLA CRÍTICA DE NEGOCIO:
+      // Si la usuaria YA tiene el Plan Mensual vigente, la sincronización NO DEBE SUMAR DÍAS.
+      // Únicamente se actualiza si Mercado Pago provee una fecha formal posterior
+      // (ej: si ocurrió el cobro recurrente automático del siguiente mes y next_payment_date avanzó).
+      if (
+        nextPaymentDateStr &&
+        currentPlan.plan_end_date &&
+        nextPaymentDateStr > currentPlan.plan_end_date
+      ) {
+        newEndDate = nextPaymentDateStr;
       } else {
-        // Nueva suscripción autorizada con ID diferente
-        newEndDate = nextPaymentDateStr || addDays(today, 30);
+        // Preservar estrictamente la fecha de fin que ya tiene (no sumar días)
+        newEndDate = currentPlan.plan_end_date || nextPaymentDateStr || addDays(today, 30);
       }
     } else {
-      // Primera activación al Plan Mensual desde prueba o vencido
+      // Solo en caso de que el plan NO muestre mensual (estaba en prueba o vencido):
+      // Activar el plan mensual por primera vez (30 días o fecha formal de MP)
       newEndDate = nextPaymentDateStr || addDays(today, 30);
     }
 
