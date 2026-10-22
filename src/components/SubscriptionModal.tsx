@@ -1,7 +1,17 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { X, Sparkles, Mail, AlertCircle, Loader2, ExternalLink, ShieldCheck, CreditCard } from "lucide-react";
+import {
+  Sparkles,
+  CreditCard,
+  Mail,
+  AlertCircle,
+  ExternalLink,
+  Loader2,
+  X,
+  CheckCircle2,
+  HelpCircle,
+} from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useModalThemeColor } from "@/hooks/useModalThemeColor";
 
@@ -25,17 +35,19 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
   const supabase = createClient();
   useModalThemeColor(isOpen);
 
-  const [mpEmail, setMpEmail] = useState<string>(defaultEmail);
+  const [mpEmail, setMpEmail] = useState<string>("");
+  const [showEmailInput, setShowEmailInput] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen) {
-      setMpEmail(defaultEmail);
+      setMpEmail("");
+      setShowEmailInput(false);
       setError(null);
       setLoading(false);
     }
-  }, [isOpen, defaultEmail]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -43,8 +55,8 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
     e.preventDefault();
     const cleanEmail = mpEmail.trim().toLowerCase();
 
-    if (!cleanEmail || !cleanEmail.includes("@")) {
-      setError("Por favor ingresá un correo electrónico válido de Mercado Pago.");
+    if (cleanEmail && !cleanEmail.includes("@")) {
+      setError("Por favor ingresá un formato de correo electrónico válido.");
       return;
     }
 
@@ -65,7 +77,7 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
         method: "POST",
         headers,
         body: JSON.stringify({
-          payer_email: cleanEmail,
+          payer_email: cleanEmail || undefined,
           return_url: returnUrl,
         }),
       });
@@ -104,7 +116,7 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
               <h2 id="modal-subscription-title" className="text-sm font-bold text-neutral-800">
                 Suscribirme al Plan Mensual
               </h2>
-              <p className="text-[11px] text-neutral-500">Pasarela oficial de Mercado Pago</p>
+              <p className="text-[11px] text-neutral-500">Pasarela oficial y segura de Mercado Pago</p>
             </div>
           </div>
           <button
@@ -128,48 +140,70 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
 
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
           {/* Tarjeta de Resumen del Plan */}
-          <div className="p-3.5 bg-gradient-to-br from-[#F6FBF7] to-[#EDF8F0] border border-[#CDEBD3] rounded-2xl space-y-2">
+          <div className="p-4 bg-gradient-to-br from-[#F6FBF7] to-[#EDF8F0] border border-[#CDEBD3] rounded-2xl space-y-2.5">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <CreditCard className="w-4 h-4 text-[#1F7A4C]" />
                 <span className="text-xs font-bold text-neutral-800">{planTitle}</span>
               </div>
-              <span className="text-xs font-extrabold text-[#1F7A4C] bg-white px-2 py-0.5 rounded-lg border border-[#C3EBC0]">
+              <span className="text-xs font-extrabold text-[#1F7A4C] bg-white px-2.5 py-0.5 rounded-lg border border-[#C3EBC0]">
                 {planAmount} / mes
               </span>
             </div>
             <p className="text-[11px] text-neutral-600 leading-relaxed">
-              Cobro mensual automático cada 30 días. Podés cancelar o pausar tu suscripción en cualquier momento.
+              Cobro mensual automático cada 30 días. Podés cancelar o pausar en cualquier momento.
             </p>
+            <div className="pt-1 border-t border-[#CDEBD3]/60 flex items-center gap-2 text-[11px] text-[#1F7A4C] font-semibold">
+              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+              <span>Podés pagar con tu Mercado Pago, el de un familiar o con tarjeta.</span>
+            </div>
           </div>
 
-          {/* Campo: Email de Mercado Pago */}
-          <div className="space-y-1.5">
-            <label htmlFor="mp-payer-email" className="text-xs font-bold text-neutral-700 flex items-center justify-between">
-              <span>Email de tu cuenta en Mercado Pago</span>
-              <span className="text-[10px] font-normal text-neutral-400">Requerido por MP</span>
-            </label>
-            <div className="relative">
-              <Mail className="w-4 h-4 text-neutral-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <input
-                id="mp-payer-email"
-                type="email"
-                value={mpEmail}
-                onChange={(e) => setMpEmail(e.target.value)}
-                placeholder="ejemplo@correo.com"
-                required
-                disabled={loading}
-                className="w-full pl-9 pr-3.5 py-2.5 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] focus:ring-2 focus:ring-[#DCF4D7] outline-none transition disabled:opacity-60"
-              />
-            </div>
-
-            {/* Tip explicativo */}
-            <div className="p-2.5 bg-blue-50/60 border border-blue-100 rounded-xl text-[11px] text-blue-800 leading-snug flex items-start gap-2">
-              <ShieldCheck className="w-3.5 h-3.5 text-blue-600 shrink-0 mt-0.5" />
-              <span>
-                <strong>¿Pagás varias cuentas de HABA desde el mismo Mercado Pago?</strong> Ingresá acá el email con el que iniciás sesión en Mercado Pago. La suscripción se asociará automáticamente a este usuario de HABA sin importar de qué correo sea tu MP.
-              </span>
-            </div>
+          {/* Sección opcional: ¿Pagas con otro email? */}
+          <div className="space-y-2">
+            {!showEmailInput ? (
+              <button
+                type="button"
+                onClick={() => setShowEmailInput(true)}
+                className="text-[11px] text-[#1F7A4C] hover:text-[#185E3B] font-bold flex items-center gap-1.5 hover:underline cursor-pointer transition"
+              >
+                <HelpCircle className="w-3.5 h-3.5" />
+                <span>¿Tu cuenta de Mercado Pago tiene otro e-mail? (Opcional)</span>
+              </button>
+            ) : (
+              <div className="space-y-1.5 animate-in fade-in duration-200">
+                <div className="flex items-center justify-between">
+                  <label htmlFor="mp-payer-email" className="text-xs font-bold text-neutral-700">
+                    Email de tu cuenta en Mercado Pago
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowEmailInput(false);
+                      setMpEmail("");
+                    }}
+                    className="text-[10px] text-neutral-400 hover:text-neutral-600"
+                  >
+                    Ocultar
+                  </button>
+                </div>
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-neutral-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    id="mp-payer-email"
+                    type="email"
+                    value={mpEmail}
+                    onChange={(e) => setMpEmail(e.target.value)}
+                    placeholder="ej: otrocorreo@gmail.com"
+                    disabled={loading}
+                    className="w-full pl-9 pr-3.5 py-2.5 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] focus:ring-2 focus:ring-[#DCF4D7] outline-none transition disabled:opacity-60"
+                  />
+                </div>
+                <p className="text-[10px] text-neutral-500 leading-tight">
+                  Tu cuenta de HABA ({defaultEmail || "actual"}) quedará vinculada automáticamente aunque en Mercado Pago utilices otro correo.
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Botones de Acción */}

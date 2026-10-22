@@ -53,9 +53,6 @@ export async function POST(request: Request) {
       );
     }
 
-    // Nota de negocio: Los usuarios con "Plan Prueba" activo pueden suscribirse y pagar el Plan Mensual
-    // anticipadamente en cualquier momento. Al realizar el pago, el ciclo mensual formal comienza de inmediato.
-
     const accessToken = process.env.MP_ACCESS_TOKEN;
     if (!accessToken) {
       console.error("[Mercado Pago] Falta configurar MP_ACCESS_TOKEN en el servidor");
@@ -79,49 +76,48 @@ export async function POST(request: Request) {
       process.env.MP_PLAN_ID ||
       "bdef7d4f90264c1ca7be8c8569331414";
 
-    const payerEmail = (body.payer_email || user.email || "").trim().toLowerCase();
+    const customPayerEmail = (body.payer_email || "").trim().toLowerCase();
+
+    // Si la usuaria indicó un email de Mercado Pago opcional, guardarlo para trazabilidad y webhook
+    if (customPayerEmail) {
+      const admin = getAdminClient();
+      try {
+        await admin.auth.admin.updateUserById(user.id, {
+          user_metadata: {
+            ...(user.user_metadata || {}),
+            mp_payer_email: customPayerEmail,
+          },
+        });
+      } catch (saveErr) {
+        console.warn("[Mercado Pago] Aviso al guardar mp_payer_email en user_metadata:", saveErr);
+      }
+    }
 
     const webhookUrl = appUrl.startsWith("https://")
       ? `${appUrl}/api/webhooks/mercadopago`
       : undefined;
 
-    // Intento 1: Creación dinámica con auto_recurring (asocia unívocamente external_reference = user.id en MP)
-    const dynamicPayload: Record<string, any> = {
-      reason: "Haba Mensual",
-      external_reference: user.id,
-      payer_email: payerEmail,
-      back_url: backUrl,
-      auto_recurring: {
-        frequency: 1,
-        frequency_type: "months",
-        transaction_amount: 7000,
-        currency_id: "ARS",
-      },
-      ...(webhookUrl ? { notification_url: webhookUrl } : {}),
-    };
+    let initPoint: string | null = null;
+    let subscriptionPlanId: string | null = null;
 
-    let mpRes = await fetch("https://api.mercadopago.com/preapproval", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(dynamicPayload),
-    });
-
-    let mpData = await mpRes.json();
-
-    // Intento 2: Si falló, probar con preapproval_plan_id
-    if (!mpRes.ok) {
-      console.warn("[Mercado Pago] Aviso: Intento auto_recurring retornó:", mpData);
+    // Intento 1: Creación de un Plan de Suscripción dinámico (/preapproval_plan) con external_reference = user.id
+    // REGLA CRÍTICA: NO enviamos payer_email. Esto garantiza que la usuaria pueda pagar con
+    // CUALQUIER cuenta de Mercado Pago o tarjeta sin que la pasarela bloquee con "Tu e-mail no coincide".
+    try {
       const planPayload: Record<string, any> = {
-        preapproval_plan_id: preapprovalPlanId,
+        reason: "Haba Mensual",
         external_reference: user.id,
-        payer_email: payerEmail,
         back_url: backUrl,
+        auto_recurring: {
+          frequency: 1,
+          frequency_type: "months",
+          transaction_amount: 7000,
+          currency_id: "ARS",
+        },
         ...(webhookUrl ? { notification_url: webhookUrl } : {}),
       };
-      mpRes = await fetch("https://api.mercadopago.com/preapproval", {
+
+      const planRes = await fetch("https://api.mercadopago.com/preapproval_plan", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -129,59 +125,51 @@ export async function POST(request: Request) {
         },
         body: JSON.stringify(planPayload),
       });
-      mpData = await mpRes.json();
+
+      if (planRes.ok) {
+        const planData = await planRes.json();
+        if (planData.init_point) {
+          initPoint = planData.init_point;
+          subscriptionPlanId = planData.id;
+        }
+      } else {
+        const errData = await planRes.json().catch(() => ({}));
+        console.warn("[Mercado Pago] Aviso: POST /preapproval_plan retornó:", errData);
+      }
+    } catch (planErr) {
+      console.warn("[Mercado Pago] Error en POST /preapproval_plan:", planErr);
     }
 
-    let initPoint = mpData.init_point || mpData.sandbox_init_point;
-    let subscriptionId = mpData.id || null;
-
-    // Salvaguarda: si la API directa de preapproval falla (por ejemplo por conflicto de payer_email o credencial),
-    // usar el checkout directo del plan configurado para no bloquear a la usuaria jamás.
-    if (!mpRes.ok || !initPoint) {
-      console.warn("[Mercado Pago] Aviso: POST /preapproval no retornó init_point, usando URL de plan como fallback:", mpData);
-      const fallbackUrl =
+    // Intento 2 (Fallback estándar confiable): Si el endpoint dinámico no retornó link,
+    // usar el checkout directo del plan oficial de Mercado Pago.
+    // Este checkout tampoco valida ni bloquea emails de usuario, permitiendo pagar con cualquier cuenta.
+    if (!initPoint) {
+      initPoint =
         process.env.NEXT_PUBLIC_MP_SUBSCRIPTION_URL ||
         `https://www.mercadopago.com.ar/subscriptions/checkout?preapproval_plan_id=${preapprovalPlanId}`;
-      initPoint = fallbackUrl;
     }
 
-    // Guardar el response.id (subscription_id / preapproval_id) devuelto por Mercado Pago en profiles si fue generado
-    if (subscriptionId) {
+    // Guardar referencia en profiles si se generó un plan dinámico
+    if (subscriptionPlanId) {
       const admin = getAdminClient();
       try {
         await admin
           .from("profiles")
           .update({
-            mp_preapproval_id: subscriptionId,
+            mp_preapproval_id: subscriptionPlanId,
             updated_at: new Date().toISOString(),
           })
           .eq("id", user.id);
       } catch (dbErr) {
         console.warn("[Mercado Pago] Aviso: profiles.mp_preapproval_id no pudo actualizarse en DB:", dbErr);
       }
-
-      // Mantener también sincronizado en app_metadata y user_metadata de Auth
-      try {
-        await admin.auth.admin.updateUserById(user.id, {
-          app_metadata: {
-            ...(user.app_metadata || {}),
-            mp_preapproval_id: subscriptionId,
-          },
-          user_metadata: {
-            ...(user.user_metadata || {}),
-            mp_preapproval_id: subscriptionId,
-          },
-        });
-      } catch (authErr) {
-        console.warn("[Mercado Pago] Aviso: no se pudo guardar mp_preapproval_id en Auth metadata:", authErr);
-      }
     }
 
-    // Retornar { url: response.init_point }
+    // Retornar { url: initPoint }
     return NextResponse.json({
       url: initPoint,
       init_point: initPoint,
-      id: mpData.id,
+      id: subscriptionPlanId,
       success: true,
     });
   } catch (err: any) {

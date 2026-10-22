@@ -138,14 +138,17 @@ export default function SettingsPage() {
     }
   };
 
-  const handleSyncMercadoPago = async (silent = false, explicitPreapprovalId?: string | null) => {
+  const handleSyncMercadoPago = async (silent = false, explicitPreapprovalId?: string | null, customEmail?: string) => {
     try {
       if (!silent) setSyncingMP(true);
       setSyncNotice(null);
       const res = await fetch("/api/mercadopago/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ preapproval_id: explicitPreapprovalId || undefined }),
+        body: JSON.stringify({
+          preapproval_id: explicitPreapprovalId || undefined,
+          email: customEmail || undefined,
+        }),
       });
       const data = await res.json();
       if (data.synced) {
@@ -153,6 +156,16 @@ export default function SettingsPage() {
         if (data.plan_end_date) setPlanEndDate(data.plan_end_date);
         setSyncNotice("¡Tu suscripción mensual fue verificada y activada con éxito!");
       } else if (!silent) {
+        if (!customEmail) {
+          const altEmail = typeof window !== "undefined"
+            ? window.prompt(
+                "No detectamos un cobro con el correo de tu cuenta HABA.\n\nSi pagaste desde una cuenta de Mercado Pago con otro e-mail (ej: de un familiar o tu mail personal), ingresalo acá para asociarlo a tu cuenta:"
+              )
+            : null;
+          if (altEmail && altEmail.trim().includes("@")) {
+            return handleSyncMercadoPago(false, null, altEmail.trim().toLowerCase());
+          }
+        }
         alert(
           data.error ||
             "Aún no detectamos la aprobación del cobro en Mercado Pago. Si acabás de pagar, por favor aguardá 1 minuto y volvé a presionar el botón."

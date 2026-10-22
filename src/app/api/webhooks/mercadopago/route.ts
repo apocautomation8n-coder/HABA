@@ -216,7 +216,13 @@ export async function POST(request: Request) {
       );
       const { data: listData } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
       const found = listData?.users?.find((u: any) => {
-        const matchesEmail = (u.email || "").toLowerCase() === payerEmail;
+        const userEmail = (u.email || "").toLowerCase();
+        const userMpEmail = (u.user_metadata?.mp_payer_email || "").toLowerCase();
+        const businessEmail = (u.user_metadata?.business_email || "").toLowerCase();
+        const matchesEmail =
+          userEmail === payerEmail ||
+          userMpEmail === payerEmail ||
+          businessEmail === payerEmail;
         if (!matchesEmail) return false;
         const existingPreapproval = u.app_metadata?.mp_preapproval_id;
         // Si el usuario ya tiene OTRA suscripción activa distinta asignada, NO atribuirle este nuevo preapproval
@@ -291,6 +297,7 @@ export async function POST(request: Request) {
           status: "active",
           mp_status: "authorized",
           mp_preapproval_id: preapprovalId || currentPlan.mp_preapproval_id,
+          mp_payer_email: payerEmail || targetUser.app_metadata?.mp_payer_email,
         },
         user_metadata: {
           ...(targetUser.user_metadata || {}),
@@ -300,6 +307,7 @@ export async function POST(request: Request) {
           account_status: "activa",
           status: "active",
           mp_preapproval_id: preapprovalId || currentPlan.mp_preapproval_id,
+          mp_payer_email: payerEmail || targetUser.user_metadata?.mp_payer_email,
         },
       });
 

@@ -143,7 +143,8 @@ function PlanVencidoContent() {
     }
   };
 
-  const handleVerifyStatus = async () => {
+  const handleVerifyStatus = async (customEmail?: string | React.MouseEvent) => {
+    const emailParam = typeof customEmail === "string" ? customEmail : undefined;
     try {
       setVerifyingPayment(true);
       const preapprovalFromUrl = searchParams.get("preapproval_id");
@@ -151,7 +152,10 @@ function PlanVencidoContent() {
         await fetch("/api/mercadopago/sync", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ preapproval_id: preapprovalFromUrl || undefined }),
+          body: JSON.stringify({
+            preapproval_id: preapprovalFromUrl || undefined,
+            email: emailParam || undefined,
+          }),
         });
       } catch {}
       const res = await fetch("/api/user/profile");
@@ -161,6 +165,16 @@ function PlanVencidoContent() {
         if (p && !isPlanExpired(p.plan_end_date, p.account_status)) {
           window.location.href = "/dashboard";
           return;
+        }
+      }
+      if (!emailParam) {
+        const altEmail = typeof window !== "undefined"
+          ? window.prompt(
+              "No detectamos un cobro con el correo de tu cuenta HABA.\n\nSi pagaste desde una cuenta de Mercado Pago con otro e-mail (ej: de un familiar o tu mail personal), ingresalo acá para asociarlo a tu cuenta:"
+            )
+          : null;
+        if (altEmail && altEmail.trim().includes("@")) {
+          return handleVerifyStatus(altEmail.trim().toLowerCase());
         }
       }
       setErrorMessage(

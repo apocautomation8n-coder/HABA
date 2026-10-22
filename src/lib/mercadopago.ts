@@ -152,6 +152,8 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
             targetUser.email,
             targetUser.user_metadata?.business_email,
             targetUser.user_metadata?.email,
+            targetUser.user_metadata?.mp_payer_email,
+            targetUser.app_metadata?.mp_payer_email,
           ]
             .filter(Boolean)
             .map((e) => (e as string).trim().toLowerCase())
@@ -303,6 +305,7 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
         account_status: "active",
         mp_status: "authorized",
         mp_preapproval_id: preapprovalId || currentPlan.mp_preapproval_id,
+        mp_payer_email: preapproval?.payer_email || targetUser.app_metadata?.mp_payer_email,
       },
       user_metadata: {
         ...(targetUser.user_metadata || {}),
@@ -310,6 +313,9 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
         plan_start_date: currentPlan.plan_type === "mensual" ? currentPlan.plan_start_date : today,
         plan_end_date: newEndDate,
         account_status: "active",
+        mp_status: "authorized",
+        mp_preapproval_id: preapprovalId || currentPlan.mp_preapproval_id,
+        mp_payer_email: preapproval?.payer_email || targetUser.user_metadata?.mp_payer_email,
       },
     });
 
