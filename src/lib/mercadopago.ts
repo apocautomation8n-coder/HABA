@@ -80,25 +80,7 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
       }
     }
 
-    // REGLA DE SEGURIDAD 1: Si la usuaria proporcionó un email alternativo en la sincronización,
-    // comprobar que ese email no pertenezca a otra usuaria de HABA que ya tiene Plan Mensual activo.
-    if (email && email.trim().toLowerCase() !== targetUser.email?.trim().toLowerCase()) {
-      const altClean = email.trim().toLowerCase();
-      const otherActiveUser = allUsers.find(
-        (u) =>
-          u.id !== userId &&
-          (u.email?.trim().toLowerCase() === altClean ||
-            u.user_metadata?.email?.trim().toLowerCase() === altClean ||
-            u.user_metadata?.business_email?.trim().toLowerCase() === altClean) &&
-          u.app_metadata?.plan_type === "mensual"
-      );
-      if (otherActiveUser) {
-        return {
-          synced: false,
-          error: `El correo "${altClean}" ya pertenece a otra cuenta activa en HABA. Cada suscripción mensual es individual y no puede transferirse ni compartirse.`,
-        };
-      }
-    }
+
 
     const candidateEmails = Array.from(
       new Set(
