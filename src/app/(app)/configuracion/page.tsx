@@ -142,11 +142,16 @@ export default function SettingsPage() {
     try {
       if (!silent) setSyncingMP(true);
       setSyncNotice(null);
+      const urlPreapproval =
+        explicitPreapprovalId ||
+        (typeof window !== "undefined"
+          ? new URLSearchParams(window.location.search).get("preapproval_id")
+          : null);
       const res = await fetch("/api/mercadopago/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          preapproval_id: explicitPreapprovalId || undefined,
+          preapproval_id: urlPreapproval || undefined,
           email: customEmail || undefined,
         }),
       });
@@ -163,7 +168,7 @@ export default function SettingsPage() {
               )
             : null;
           if (altEmail && altEmail.trim().includes("@")) {
-            return handleSyncMercadoPago(false, null, altEmail.trim().toLowerCase());
+            return handleSyncMercadoPago(false, urlPreapproval, altEmail.trim().toLowerCase());
           }
         }
         alert(
