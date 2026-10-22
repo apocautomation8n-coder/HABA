@@ -261,54 +261,45 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
       }
     }
 
-    // C. Prioridad 2: Buscar directamente por payer_email de la usuaria en Mercado Pago
+    // C. Prioridad 2: Buscar cobros y pagos por cada email candidato en /v1/payments (rápido, indexado y con payer.email directo)
+    let paymentApproved: any = null;
     if (!preapproval) {
       for (const cEmail of candidateEmails) {
-        if (preapproval) break;
+        if (preapproval || paymentApproved) break;
         try {
-          const emailRes = await fetch(
-            `https://api.mercadopago.com/preapproval/search?payer_email=${encodeURIComponent(cEmail)}&limit=20`,
+          const payEmailRes = await fetch(
+            `https://api.mercadopago.com/v1/payments/search?payer.email=${encodeURIComponent(cEmail)}&sort=date_created&criteria=desc&limit=20`,
             {
               headers: { Authorization: `Bearer ${accessToken}` },
             }
           );
-          if (emailRes.ok) {
-            const emailData = await emailRes.json();
-            if (Array.isArray(emailData.results) && emailData.results.length > 0) {
-              for (const p of emailData.results) {
+          if (payEmailRes.ok) {
+            const payData = await payEmailRes.json();
+            if (Array.isArray(payData.results) && payData.results.length > 0) {
+              for (const p of payData.results) {
                 if (await isValidMatch(p)) {
-                  preapproval = p;
-                  try {
-                    fetch(`https://api.mercadopago.com/preapproval/${p.id}`, {
-                      method: "PUT",
-                      headers: {
-                        Authorization: `Bearer ${accessToken}`,
-                        "Content-Type": "application/json",
-                      },
-                      body: JSON.stringify({ external_reference: userId }),
-                    }).catch(() => {});
-                  } catch {}
+                  paymentApproved = p;
                   break;
                 }
               }
             }
           }
         } catch (e) {
-          console.warn("[Mercado Pago Sync] Error buscando por payer_email:", e);
+          console.warn("[Mercado Pago Sync] Error buscando pago por payer.email:", e);
         }
       }
     }
 
-    // D. Prioridad 3: Buscar en las suscripciones del Plan Maestro de HABA
+    // D. Prioridad 3: Buscar en las suscripciones del Plan Maestro de HABA (más recientes primero)
     const masterPlanId =
       process.env.MP_PREAPPROVAL_PLAN_ID ||
       process.env.MP_PLAN_ID ||
       "bdef7d4f90264c1ca7be8c8569331414";
 
-    if (!preapproval && masterPlanId) {
+    if (!preapproval && !paymentApproved && masterPlanId) {
       try {
         const planRes = await fetch(
-          `https://api.mercadopago.com/preapproval/search?preapproval_plan_id=${encodeURIComponent(masterPlanId)}&limit=100`,
+          `https://api.mercadopago.com/preapproval/search?preapproval_plan_id=${encodeURIComponent(masterPlanId)}&sort=date_created&criteria=desc&limit=30`,
           {
             headers: { Authorization: `Bearer ${accessToken}` },
           }
@@ -339,11 +330,11 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
       }
     }
 
-    // E. Prioridad 4: Escanear las suscripciones más recientes de toda la cuenta MP
-    if (!preapproval) {
+    // E. Prioridad 4: Escanear las suscripciones más recientes de toda la cuenta MP (limit 30)
+    if (!preapproval && !paymentApproved) {
       try {
         const recentRes = await fetch(
-          `https://api.mercadopago.com/preapproval/search?limit=100`,
+          `https://api.mercadopago.com/preapproval/search?sort=date_created&criteria=desc&limit=30`,
           {
             headers: { Authorization: `Bearer ${accessToken}` },
           }
@@ -374,12 +365,11 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
       }
     }
 
-    // F. Prioridad 5: Escanear los cobros y pagos más recientes de Mercado Pago (/v1/payments)
-    let paymentApproved: any = null;
-    if (!preapproval) {
+    // F. Prioridad 5: Escanear los cobros y pagos más recientes globales de Mercado Pago (/v1/payments)
+    if (!preapproval && !paymentApproved) {
       try {
         const payRes = await fetch(
-          `https://api.mercadopago.com/v1/payments/search?sort=date_created&criteria=desc&limit=100`,
+          `https://api.mercadopago.com/v1/payments/search?sort=date_created&criteria=desc&limit=30`,
           {
             headers: { Authorization: `Bearer ${accessToken}` },
           }
