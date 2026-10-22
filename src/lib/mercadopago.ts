@@ -63,6 +63,68 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
 
     let preapproval: any = null;
 
+    const candidateEmails = Array.from(
+      new Set(
+        [
+          targetEmail,
+          targetUser.email,
+          targetUser.user_metadata?.business_email,
+          targetUser.user_metadata?.email,
+          targetUser.user_metadata?.mp_payer_email,
+          targetUser.app_metadata?.mp_payer_email,
+        ]
+          .filter(Boolean)
+          .map((e) => (e as string).trim().toLowerCase())
+      )
+    );
+
+    // Función de seguridad estricta:
+    // Una suscripción o pago SOLO es válido para este usuario si el correo del pagador
+    // coincide con candidateEmails, o si no tiene email declarado pero fue generado con external_reference.
+    // Si tiene un email que pertenece a otra persona, NO DEBE ASOCIARSE BAJO NINGUNA CIRCUNSTANCIA.
+    const isValidMatch = (p: any): boolean => {
+      if (!p) return false;
+      const validStatus =
+        p.status === "authorized" || p.status === "pending" || p.status === "paused" || p.status === "approved";
+      if (!validStatus) return false;
+
+      const pEmail = (p.payer_email || p.payer?.email || "").trim().toLowerCase();
+
+      // Si el pagador tiene email y NO coincide con los emails autorizados del usuario:
+      if (pEmail && !candidateEmails.includes(pEmail)) {
+        // Si además tenía un external_reference erróneo de este usuario (heredado de pruebas anteriores),
+        // limpiarlo en Mercado Pago para desvincularlo definitivamente
+        if (p.external_reference === userId) {
+          console.warn(
+            `[Mercado Pago Sync] Desvinculando ${p.id}: external_reference coincide pero payer_email (${pEmail}) no pertenece a ${userId}.`
+          );
+          try {
+            fetch(`https://api.mercadopago.com/preapproval/${p.id}`, {
+              method: "PUT",
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ external_reference: "" }),
+            }).catch(() => {});
+          } catch {}
+        }
+        return false;
+      }
+
+      // Si el email coincide exactamente con candidateEmails
+      if (pEmail && candidateEmails.includes(pEmail)) {
+        return true;
+      }
+
+      // Si no vino email en el objeto pero external_reference coincide estrictamente
+      if (!pEmail && p.external_reference === userId) {
+        return true;
+      }
+
+      return false;
+    };
+
     // Prioridad 0: Si viene un preapprovalId explícito (por ejemplo al volver de Mercado Pago en la URL)
     if (explicitPreapprovalId) {
       try {
@@ -74,9 +136,8 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
         );
         if (directRes.ok) {
           const directData = await directRes.json();
-          if (directData && (directData.status === "authorized" || directData.status === "paused")) {
+          if (isValidMatch(directData)) {
             preapproval = directData;
-            // Fijar external_reference en Mercado Pago para este usuario
             try {
               fetch(`https://api.mercadopago.com/preapproval/${directData.id}`, {
                 method: "PUT",
@@ -94,21 +155,6 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
       }
     }
 
-    const candidateEmails = Array.from(
-      new Set(
-        [
-          targetEmail,
-          targetUser.email,
-          targetUser.user_metadata?.business_email,
-          targetUser.user_metadata?.email,
-          targetUser.user_metadata?.mp_payer_email,
-          targetUser.app_metadata?.mp_payer_email,
-        ]
-          .filter(Boolean)
-          .map((e) => (e as string).trim().toLowerCase())
-      )
-    );
-
     // 2. Buscar preapproval o pago en Mercado Pago:
 
     // A. Prioridad 0: Por ID directo de preapproval si el usuario ya tiene uno guardado
@@ -123,7 +169,7 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
         );
         if (directRes.ok) {
           const directData = await directRes.json();
-          if (directData && (directData.status === "authorized" || directData.status === "paused" || directData.status === "pending")) {
+          if (isValidMatch(directData)) {
             preapproval = directData;
           }
         }
@@ -144,11 +190,7 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
         if (searchRes.ok) {
           const searchData = await searchRes.json();
           if (Array.isArray(searchData.results) && searchData.results.length > 0) {
-            const matched = searchData.results.find(
-              (p: any) =>
-                p.external_reference === userId &&
-                (p.status === "authorized" || p.status === "pending" || p.status === "paused")
-            );
+            const matched = searchData.results.find((p: any) => isValidMatch(p));
             if (matched) {
               preapproval = matched;
             }
@@ -173,13 +215,7 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
           if (emailRes.ok) {
             const emailData = await emailRes.json();
             if (Array.isArray(emailData.results) && emailData.results.length > 0) {
-              const matched = emailData.results.find((p: any) => {
-                const pEmail = (p.payer_email || "").trim().toLowerCase();
-                const validStatus =
-                  p.status === "authorized" || p.status === "pending" || p.status === "paused";
-                const matchesRef = !p.external_reference || p.external_reference === userId;
-                return validStatus && matchesRef && candidateEmails.includes(pEmail);
-              });
+              const matched = emailData.results.find((p: any) => isValidMatch(p));
               if (matched) {
                 preapproval = matched;
                 try {
@@ -218,24 +254,7 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
         if (planRes.ok) {
           const planData = await planRes.json();
           if (Array.isArray(planData.results) && planData.results.length > 0) {
-            // 1. Por external_reference
-            let matched = planData.results.find(
-              (p: any) =>
-                p.external_reference === userId &&
-                (p.status === "authorized" || p.status === "pending" || p.status === "paused")
-            );
-
-            // 2. Por email de pagador
-            if (!matched) {
-              matched = planData.results.find((p: any) => {
-                const pEmail = (p.payer_email || "").trim().toLowerCase();
-                const validStatus =
-                  p.status === "authorized" || p.status === "pending" || p.status === "paused";
-                const matchesRef = !p.external_reference || p.external_reference === userId;
-                return validStatus && matchesRef && candidateEmails.includes(pEmail);
-              });
-            }
-
+            const matched = planData.results.find((p: any) => isValidMatch(p));
             if (matched) {
               preapproval = matched;
               try {
@@ -268,24 +287,7 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
         if (recentRes.ok) {
           const recentData = await recentRes.json();
           if (Array.isArray(recentData.results) && recentData.results.length > 0) {
-            // 1. Coincidencia por external_reference
-            let matched = recentData.results.find(
-              (p: any) =>
-                p.external_reference === userId &&
-                (p.status === "authorized" || p.status === "pending" || p.status === "paused")
-            );
-
-            // 2. Coincidencia por correo del pagador
-            if (!matched) {
-              matched = recentData.results.find((p: any) => {
-                const pEmail = (p.payer_email || "").trim().toLowerCase();
-                const validStatus =
-                  p.status === "authorized" || p.status === "pending" || p.status === "paused";
-                const matchesRef = !p.external_reference || p.external_reference === userId;
-                return validStatus && matchesRef && candidateEmails.includes(pEmail);
-              });
-            }
-
+            const matched = recentData.results.find((p: any) => isValidMatch(p));
             if (matched) {
               preapproval = matched;
               try {
@@ -319,23 +321,7 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
         if (payRes.ok) {
           const payData = await payRes.json();
           if (Array.isArray(payData.results) && payData.results.length > 0) {
-            // 1. Coincidencia por external_reference
-            let matchedPay = payData.results.find(
-              (p: any) =>
-                p.external_reference === userId &&
-                (p.status === "approved" || p.status === "authorized")
-            );
-
-            // 2. Coincidencia por correo del pagador
-            if (!matchedPay) {
-              matchedPay = payData.results.find((p: any) => {
-                const pEmail = (p.payer?.email || "").trim().toLowerCase();
-                const validStatus = p.status === "approved" || p.status === "authorized";
-                const matchesRef = !p.external_reference || p.external_reference === userId;
-                return validStatus && matchesRef && candidateEmails.includes(pEmail);
-              });
-            }
-
+            let matchedPay = payData.results.find((p: any) => isValidMatch(p));
             if (matchedPay) {
               paymentApproved = matchedPay;
             }
