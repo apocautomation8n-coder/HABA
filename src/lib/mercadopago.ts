@@ -174,10 +174,11 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
             const emailData = await emailRes.json();
             if (Array.isArray(emailData.results) && emailData.results.length > 0) {
               const matched = emailData.results.find((p: any) => {
+                const pEmail = (p.payer_email || "").trim().toLowerCase();
                 const validStatus =
                   p.status === "authorized" || p.status === "pending" || p.status === "paused";
                 const matchesRef = !p.external_reference || p.external_reference === userId;
-                return validStatus && matchesRef;
+                return validStatus && matchesRef && candidateEmails.includes(pEmail);
               });
               if (matched) {
                 preapproval = matched;
@@ -235,19 +236,6 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
               });
             }
 
-            // 3. Suscripción reciente (últimas 24 horas) sin asociar a otro usuario
-            if (!matched) {
-              const nowMs = Date.now();
-              const dayMs = 24 * 60 * 60 * 1000;
-              matched = planData.results.find((p: any) => {
-                if (p.external_reference && p.external_reference !== userId) return false;
-                const validStatus =
-                  p.status === "authorized" || p.status === "pending" || p.status === "paused";
-                const createdTime = p.date_created ? new Date(p.date_created).getTime() : 0;
-                return validStatus && nowMs - createdTime < dayMs;
-              });
-            }
-
             if (matched) {
               preapproval = matched;
               try {
@@ -298,19 +286,6 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
               });
             }
 
-            // 3. Suscripción recién abonada en las últimas 24 horas sin external_reference de otro usuario
-            if (!matched) {
-              const nowMs = Date.now();
-              const dayMs = 24 * 60 * 60 * 1000;
-              matched = recentData.results.find((p: any) => {
-                if (p.external_reference && p.external_reference !== userId) return false;
-                const validStatus =
-                  p.status === "authorized" || p.status === "pending" || p.status === "paused";
-                const createdTime = p.date_created ? new Date(p.date_created).getTime() : 0;
-                return validStatus && nowMs - createdTime < dayMs;
-              });
-            }
-
             if (matched) {
               preapproval = matched;
               try {
@@ -331,7 +306,7 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
       }
     }
 
-    // D. Prioridad 3: Escanear los cobros y pagos más recientes de Mercado Pago (/v1/payments)
+    // F. Prioridad 5: Escanear los cobros y pagos más recientes de Mercado Pago (/v1/payments)
     let paymentApproved: any = null;
     if (!preapproval) {
       try {
@@ -358,18 +333,6 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
                 const validStatus = p.status === "approved" || p.status === "authorized";
                 const matchesRef = !p.external_reference || p.external_reference === userId;
                 return validStatus && matchesRef && candidateEmails.includes(pEmail);
-              });
-            }
-
-            // 3. Pago reciente en las últimas 2 horas
-            if (!matchedPay) {
-              const nowMs = Date.now();
-              const twoHoursMs = 2 * 60 * 60 * 1000;
-              matchedPay = payData.results.find((p: any) => {
-                if (p.external_reference && p.external_reference !== userId) return false;
-                const validStatus = p.status === "approved" || p.status === "authorized";
-                const createdTime = p.date_created ? new Date(p.date_created).getTime() : 0;
-                return validStatus && nowMs - createdTime < twoHoursMs;
               });
             }
 
@@ -411,8 +374,8 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
       newEndDate = currentPlan.plan_end_date || addDays(today, 30);
     } else {
       // Solo en caso de que el plan NO muestre mensual (estaba en prueba o vencido):
-      // Activar el plan mensual por primera vez (30 días exactos desde hoy o fecha formal de MP)
-      newEndDate = nextPaymentDateStr || addDays(today, 30);
+      // Activar el plan mensual por primera vez (30 días exactos desde hoy)
+      newEndDate = addDays(today, 30);
     }
 
     // Salvaguarda: una sincronización nunca acorta una vigencia ya acreditada
