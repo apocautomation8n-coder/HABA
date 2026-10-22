@@ -194,8 +194,31 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
         );
         if (directRes.ok) {
           const directData = await directRes.json();
-          if (await isValidMatch(directData)) {
+          const validStatus =
+            directData.status === "authorized" ||
+            directData.status === "pending" ||
+            directData.status === "paused" ||
+            directData.status === "approved" ||
+            directData.status === "in_process";
+
+          const notOwnedByOther =
+            !existingSubOwners[directData.id] ||
+            existingSubOwners[directData.id] === userId;
+
+          const notRefOther =
+            !directData.external_reference ||
+            directData.external_reference === userId;
+
+          if (validStatus && notOwnedByOther && notRefOther) {
             preapproval = directData;
+            const foundEmail = (
+              directData.payer_email ||
+              directData.payer?.email ||
+              ""
+            ).trim().toLowerCase();
+            if (foundEmail && !candidateEmails.includes(foundEmail)) {
+              candidateEmails.push(foundEmail);
+            }
             try {
               fetch(`https://api.mercadopago.com/preapproval/${directData.id}`, {
                 method: "PUT",

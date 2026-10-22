@@ -160,21 +160,23 @@ export default function SettingsPage() {
         if (data.plan_type) setPlanType(data.plan_type);
         if (data.plan_end_date) setPlanEndDate(data.plan_end_date);
         setSyncNotice("¡Tu suscripción mensual fue verificada y activada con éxito!");
-      } else if (!silent) {
+      } else {
         if (!customEmail) {
           const altEmail = typeof window !== "undefined"
             ? window.prompt(
-                "No detectamos un cobro con el correo de tu cuenta HABA.\n\nSi pagaste desde una cuenta de Mercado Pago con otro e-mail (ej: de un familiar o tu mail personal), ingresalo acá para asociarlo a tu cuenta:"
+                "Detectamos tu regreso de Mercado Pago.\n\nSi pagaste desde una cuenta de Mercado Pago con otro e-mail (ej: personal o de un familiar), ingresalo acá para vincular tu plan mensual de inmediato:"
               )
             : null;
           if (altEmail && altEmail.trim().includes("@")) {
             return handleSyncMercadoPago(false, urlPreapproval, altEmail.trim().toLowerCase());
           }
         }
-        alert(
-          data.error ||
-            "Aún no detectamos la aprobación del cobro en Mercado Pago. Si acabás de pagar, por favor aguardá 1 minuto y volvé a presionar el botón."
-        );
+        if (!silent) {
+          alert(
+            data.error ||
+              "Aún no detectamos la aprobación del cobro en Mercado Pago. Si acabás de pagar, por favor aguardá 1 minuto y volvé a presionar el botón."
+          );
+        }
       }
     } catch (err: any) {
       if (!silent) alert("Error al sincronizar con Mercado Pago.");
