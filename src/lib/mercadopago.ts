@@ -184,29 +184,19 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
               });
 
               if (candidate) {
-                // Verificar además que este candidate.id no esté asignado a otro usuario en Supabase
-                const { data: profilesWithThisId } = await supabaseAdmin
-                  .from("profiles")
-                  .select("id")
-                  .eq("mp_preapproval_id", candidate.id)
-                  .neq("id", userId)
-                  .limit(1);
-
-                if (!profilesWithThisId || profilesWithThisId.length === 0) {
-                  preapproval = candidate;
-                  // Vincular formalmente en Mercado Pago para que quede fijado con el external_reference del usuario
-                  try {
-                    fetch(`https://api.mercadopago.com/preapproval/${candidate.id}`, {
-                      method: "PUT",
-                      headers: {
-                        Authorization: `Bearer ${accessToken}`,
-                        "Content-Type": "application/json",
-                      },
-                      body: JSON.stringify({ external_reference: userId }),
-                    }).catch(() => {});
-                  } catch {
-                    // ignore
-                  }
+                preapproval = candidate;
+                // Vincular formalmente en Mercado Pago para que quede fijado con el external_reference del usuario
+                try {
+                  fetch(`https://api.mercadopago.com/preapproval/${candidate.id}`, {
+                    method: "PUT",
+                    headers: {
+                      Authorization: `Bearer ${accessToken}`,
+                      "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({ external_reference: userId }),
+                  }).catch(() => {});
+                } catch {
+                  // ignore
                 }
               }
             }
@@ -246,7 +236,14 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
 
     const currentPlan = getTrustedPlanMeta(targetUser);
     const today = new Date().toISOString().split("T")[0];
-    const preapprovalId = preapproval?.id || paymentApproved?.metadata?.preapproval_id || null;
+    const preapprovalId =
+      preapproval?.id ||
+      paymentApproved?.metadata?.preapproval_id ||
+      (paymentApproved?.id ? String(paymentApproved.id) : null) ||
+      targetUser.app_metadata?.mp_preapproval_id ||
+      targetUser.user_metadata?.mp_preapproval_id ||
+      currentPlan.mp_preapproval_id ||
+      null;
 
     let newEndDate: string;
 

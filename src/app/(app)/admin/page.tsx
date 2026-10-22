@@ -1444,6 +1444,8 @@ export default function AdminPage() {
                           <p className="text-[10px] text-neutral-500 mt-0.5 truncate" title={u.mp_preapproval_id || undefined}>
                             {u.mp_preapproval_id
                               ? `MP ID: ${u.mp_preapproval_id.substring(0, 14)}...`
+                              : u.mp_status === "authorized" || u.mp_status === "approved" || u.plan_type === "mensual"
+                              ? "Suscripción MP vinculada"
                               : "Sin suscripción MP registrada"}
                           </p>
                         </div>

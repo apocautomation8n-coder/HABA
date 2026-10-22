@@ -135,6 +135,8 @@ export async function POST(request: Request) {
         status = payment.status === "approved" ? "authorized" : payment.status;
         if (payment.metadata?.preapproval_id) {
           preapprovalId = String(payment.metadata.preapproval_id);
+        } else if (payment.id) {
+          preapprovalId = String(payment.id);
         }
       }
     }
@@ -192,20 +194,21 @@ export async function POST(request: Request) {
       }
     }
 
-    // 2. Fallback por profiles.mp_preapproval_id = resourceId
+    // 2. Fallback por mp_preapproval_id = resourceId
     if (!targetUserId && preapprovalId) {
-      const { data: profileByPreapproval } = await supabaseAdmin
-        .from("profiles")
-        .select("id")
-        .eq("mp_preapproval_id", preapprovalId)
-        .maybeSingle();
-
-      if (profileByPreapproval?.id) {
-        const { data: userFromProfile } = await supabaseAdmin.auth.admin.getUserById(profileByPreapproval.id);
-        if (userFromProfile?.user) {
-          targetUserId = userFromProfile.user.id;
-          targetUser = userFromProfile.user;
+      try {
+        const { data: authList } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
+        const found = (authList?.users || []).find(
+          (u) =>
+            u.app_metadata?.mp_preapproval_id === preapprovalId ||
+            u.user_metadata?.mp_preapproval_id === preapprovalId
+        );
+        if (found) {
+          targetUserId = found.id;
+          targetUser = found;
         }
+      } catch (authSearchErr) {
+        console.warn("[Webhook Mercado Pago] Error buscando usuario por preapprovalId:", authSearchErr);
       }
     }
 

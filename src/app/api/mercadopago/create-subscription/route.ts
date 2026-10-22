@@ -149,19 +149,22 @@ export async function POST(request: Request) {
         `https://www.mercadopago.com.ar/subscriptions/checkout?preapproval_plan_id=${preapprovalPlanId}`;
     }
 
-    // Guardar referencia en profiles si se generó un plan dinámico
+    // Guardar referencia en Auth metadata si se generó un plan dinámico
     if (subscriptionPlanId) {
       const admin = getAdminClient();
       try {
-        await admin
-          .from("profiles")
-          .update({
+        await admin.auth.admin.updateUserById(user.id, {
+          app_metadata: {
+            ...user.app_metadata,
             mp_preapproval_id: subscriptionPlanId,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", user.id);
-      } catch (dbErr) {
-        console.warn("[Mercado Pago] Aviso: profiles.mp_preapproval_id no pudo actualizarse en DB:", dbErr);
+          },
+          user_metadata: {
+            ...(user.user_metadata || {}),
+            mp_preapproval_id: subscriptionPlanId,
+          },
+        });
+      } catch (authErr) {
+        console.warn("[Mercado Pago] Aviso: auth.mp_preapproval_id no pudo actualizarse:", authErr);
       }
     }
 

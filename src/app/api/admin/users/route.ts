@@ -426,7 +426,10 @@ export async function PATCH(request: Request) {
 
     authUpdates.user_metadata = updatedMetadata;
     if (Object.keys(planUpdates).length > 0) {
-      authUpdates.app_metadata = planUpdates;
+      authUpdates.app_metadata = {
+        ...(userAuthData.user.app_metadata || {}),
+        ...planUpdates,
+      };
     }
 
     const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(userId, authUpdates);

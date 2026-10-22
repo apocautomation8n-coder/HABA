@@ -285,20 +285,21 @@ interface UserWithAppMetadata {
 
 export function getTrustedPlanMeta(user: UserWithAppMetadata | null | undefined): TrustedPlanMeta {
   const app = user?.app_metadata || {};
+  const meta = (user as any)?.user_metadata || {};
   const createdDate =
     (user?.created_at || "").split("T")[0] || new Date().toISOString().split("T")[0];
 
-  const planType: PlanType = app.plan_type || "prueba";
-  const planStart: string = app.plan_start_date || createdDate;
-  const planEnd: string = app.plan_end_date || calculatePlanEndDate(planStart, planType);
+  const planType: PlanType = app.plan_type || meta.plan_type || "prueba";
+  const planStart: string = app.plan_start_date || meta.plan_start_date || createdDate;
+  const planEnd: string = app.plan_end_date || meta.plan_end_date || calculatePlanEndDate(planStart, planType);
 
   return {
     plan_type: planType,
     plan_start_date: planStart,
     plan_end_date: planEnd,
-    account_status: (app.account_status as AccountStatus) || "active",
-    mp_status: app.mp_status || null,
-    mp_preapproval_id: app.mp_preapproval_id || null,
+    account_status: (app.account_status as AccountStatus) || (meta.account_status as AccountStatus) || "active",
+    mp_status: app.mp_status || meta.mp_status || null,
+    mp_preapproval_id: app.mp_preapproval_id || meta.mp_preapproval_id || null,
   };
 }
 
