@@ -703,6 +703,10 @@ export default function NuevoProductoPage() {
         isActive: true,
         yieldValue: yieldValidation.value,
         supplyDimensions,
+        components: selectedComponents.map((c) => ({
+          component_product_id: c.component.id,
+          quantity: typeof c.quantity === "number" ? c.quantity : parseFloat(String(c.quantity)) || 1,
+        })),
       });
 
       // Doble verificación en base de datos de nombre duplicado

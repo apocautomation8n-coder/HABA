@@ -161,6 +161,11 @@ export interface SupplyDimensionMeta {
   totalAreaQuantity?: number;
 }
 
+export interface ComponentMeta {
+  component_product_id: string;
+  quantity: number;
+}
+
 export interface ParsedProductMeta {
   category: string;
   categoryIcon: string;
@@ -170,6 +175,7 @@ export interface ParsedProductMeta {
   lastReviewedAt?: string | null;
   priceSnapshots?: Record<string, number>;
   supplyDimensions?: Record<string, SupplyDimensionMeta>;
+  components?: ComponentMeta[];
 }
 
 /**
@@ -197,6 +203,7 @@ export function parseProductMeta(rawDescription?: string | null, productId?: str
       cleanDescription: "",
       lastReviewedAt,
       priceSnapshots,
+      components: [],
     };
   }
 
@@ -319,7 +326,28 @@ export function parseProductMeta(rawDescription?: string | null, productId?: str
     text = text.replace(dimMatch[0], "");
   }
 
-  // 7. Si no estaban en texto pero están en localStorage, leer de ahí como respaldo
+  // 7. Extraer [Componentes: ...] (Subproductos componentes)
+  const components: ComponentMeta[] = [];
+  const compMatch = text.match(/\[Componentes:\s*([^\]]+)\]/i);
+  if (compMatch) {
+    const rawComps = compMatch[1].trim();
+    const pairs = rawComps.split(";");
+    for (const pair of pairs) {
+      const [cId, qStr] = pair.split("=");
+      if (cId && qStr) {
+        const q = parseFloat(qStr.trim());
+        if (!isNaN(q) && q > 0) {
+          components.push({
+            component_product_id: cId.trim(),
+            quantity: q,
+          });
+        }
+      }
+    }
+    text = text.replace(compMatch[0], "");
+  }
+
+  // 8. Si no estaban en texto pero están en localStorage, leer de ahí como respaldo
   if (typeof window !== "undefined" && productId) {
     try {
       const stored = localStorage.getItem(`haba_product_review_${productId}`);
@@ -335,7 +363,7 @@ export function parseProductMeta(rawDescription?: string | null, productId?: str
     } catch {}
   }
 
-  // 8. Limpiar cualquier tag residual de foto si existiese
+  // 9. Limpiar cualquier tag residual de foto si existiese
   text = text.replace(/\[Foto:\s*[^\]]+\]/gi, "");
 
   return {
@@ -347,6 +375,7 @@ export function parseProductMeta(rawDescription?: string | null, productId?: str
     lastReviewedAt,
     priceSnapshots,
     supplyDimensions,
+    components,
   };
 }
 
@@ -361,6 +390,7 @@ export function serializeProductDescription({
   lastReviewedAt,
   priceSnapshots,
   supplyDimensions,
+  components,
 }: {
   cleanDescription?: string;
   category?: string;
@@ -369,6 +399,7 @@ export function serializeProductDescription({
   lastReviewedAt?: string | null;
   priceSnapshots?: Record<string, number>;
   supplyDimensions?: Record<string, SupplyDimensionMeta>;
+  components?: ComponentMeta[];
 }): string {
   const metaTags: string[] = [];
 
@@ -408,6 +439,16 @@ export function serializeProductDescription({
       .join(";");
     if (serialized) {
       metaTags.push(`[InsumosDim: ${serialized}]`);
+    }
+  }
+
+  if (components && components.length > 0) {
+    const serialized = components
+      .filter((c) => Boolean(c.component_product_id) && c.quantity > 0)
+      .map((c) => `${c.component_product_id}=${c.quantity}`)
+      .join(";");
+    if (serialized) {
+      metaTags.push(`[Componentes: ${serialized}]`);
     }
   }
 
@@ -848,6 +889,10 @@ export async function updateProductCategory(
               category: trimmedNew,
               isActive: meta.isActive,
               yieldValue: meta.yield,
+              lastReviewedAt: meta.lastReviewedAt,
+              priceSnapshots: meta.priceSnapshots,
+              supplyDimensions: meta.supplyDimensions,
+              components: meta.components,
             });
 
             await client
@@ -933,7 +978,7 @@ export async function deleteProductCategory(
 
       if (products && products.length > 0) {
         for (const prod of products) {
-          const meta = parseProductMeta(prod.description);
+          const meta = parseProductMeta(prod.description, prod.id);
           const metaNorm = normalizeCategoryString(meta.category);
           const metaId = getCategoryId(meta.category);
           if (
@@ -946,6 +991,10 @@ export async function deleteProductCategory(
               category: reassignTo,
               isActive: meta.isActive,
               yieldValue: meta.yield,
+              lastReviewedAt: meta.lastReviewedAt,
+              priceSnapshots: meta.priceSnapshots,
+              supplyDimensions: meta.supplyDimensions,
+              components: meta.components,
             });
 
             await client
@@ -1145,17 +1194,29 @@ function calculateOutdatedList(products: any[]): OutdatedProductAlert[] {
       }, 0);
     }
 
+    const meta = parseProductMeta(product.description, product.id);
+
     // 2. Costo de subproductos componentes
-    if (product.product_components && product.product_components.length > 0) {
+    let componentsList = product.product_components || [];
+    if (componentsList.length === 0 && meta.components && meta.components.length > 0) {
+      componentsList = meta.components.map((mc: any) => {
+        const found = products.find((p: any) => p.id === mc.component_product_id);
+        return {
+          ...mc,
+          component: found || { total_cost: 0, direct_cost: 0 },
+        };
+      });
+    }
+
+    if (componentsList && componentsList.length > 0) {
       hasRecipe = true;
-      currentMaterialsCost += product.product_components.reduce((acc: number, pc: any) => {
+      currentMaterialsCost += componentsList.reduce((acc: number, pc: any) => {
         if (!pc.component) return acc;
         const compCost = Number(pc.component.total_cost) || Number(pc.component.direct_cost) || 0;
         return acc + compCost * (Number(pc.quantity) || 0);
       }, 0);
     }
 
-    const meta = parseProductMeta(product.description);
     const productYield = meta.yield > 0 ? meta.yield : 1;
     const unitMaterialsCost = currentMaterialsCost / productYield;
     const roundedUnitCost = Math.round(unitMaterialsCost * 100) / 100;

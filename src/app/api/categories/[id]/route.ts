@@ -59,7 +59,7 @@ export async function PATCH(
     const expectedOldId = getCategoryId(targetOldName);
 
     for (const prod of userProducts || []) {
-      const meta = parseProductMeta(prod.description);
+      const meta = parseProductMeta(prod.description, prod.id);
       const metaNorm = normalizeCategoryString(meta.category);
       const metaId = getCategoryId(meta.category);
 
@@ -75,6 +75,10 @@ export async function PATCH(
           category: trimmedNew,
           isActive: meta.isActive,
           yieldValue: meta.yield,
+          lastReviewedAt: meta.lastReviewedAt,
+          priceSnapshots: meta.priceSnapshots,
+          supplyDimensions: meta.supplyDimensions,
+          components: meta.components,
         });
 
         const { error: updErr } = await supabase
@@ -156,7 +160,7 @@ export async function DELETE(
     const expectedTargetId = getCategoryId(targetName);
 
     for (const prod of userProducts || []) {
-      const meta = parseProductMeta(prod.description);
+      const meta = parseProductMeta(prod.description, prod.id);
       const metaNorm = normalizeCategoryString(meta.category);
       const metaId = getCategoryId(meta.category);
 
@@ -172,6 +176,10 @@ export async function DELETE(
           category: reassignTo,
           isActive: meta.isActive,
           yieldValue: meta.yield,
+          lastReviewedAt: meta.lastReviewedAt,
+          priceSnapshots: meta.priceSnapshots,
+          supplyDimensions: meta.supplyDimensions,
+          components: meta.components,
         });
 
         const { error: updErr } = await supabase

@@ -364,13 +364,10 @@ export default function ProductosPage() {
         setPriceHistory(priceHistoryRes.data);
       }
 
+      let rawProductsList: Product[] = [];
       if (!productsRes.error && productsRes.data) {
-        const sortedProducts = (productsRes.data as Product[]).map((p) => ({
-          ...p,
-          product_prices: sortProductPrices(p.product_prices || []),
-        }));
-        setProducts(sortedProducts);
-      } else if (productsRes.error) {
+        rawProductsList = productsRes.data as Product[];
+      } else {
         // Fallback en caso de que product_components aún no esté creada en Supabase
         const fallbackRes = await supabase
           .from("products")
@@ -399,13 +396,55 @@ export default function ProductosPage() {
           `)
           .order("created_at", { ascending: false });
         if (fallbackRes.data) {
-          const sortedFallback = (fallbackRes.data as Product[]).map((p) => ({
-            ...p,
-            product_prices: sortProductPrices(p.product_prices || []),
-          }));
-          setProducts(sortedFallback);
+          rawProductsList = fallbackRes.data as Product[];
         }
       }
+
+      // Resolver componentes de forma unificada para cada producto:
+      // Si la relación en BD vino con datos, se usa. Si no, se resuelve a partir de [Componentes: ...] en description
+      const processedProducts: Product[] = rawProductsList.map((p) => {
+        const meta = parseProductMeta(p.description, p.id);
+        const hasDbComponents = Array.isArray(p.product_components) && p.product_components.length > 0;
+
+        const resolvedComponents = hasDbComponents
+          ? p.product_components!.map((pc) => {
+              const compProd = rawProductsList.find((rp) => rp.id === pc.component_product_id);
+              return {
+                ...pc,
+                component: pc.component || (compProd ? {
+                  id: compProd.id,
+                  name: compProd.name,
+                  description: compProd.description,
+                  direct_cost: compProd.direct_cost,
+                  total_cost: compProd.total_cost,
+                } : undefined),
+              };
+            })
+          : (meta.components || []).map((mc) => {
+              const compProd = rawProductsList.find((rp) => rp.id === mc.component_product_id);
+              return {
+                id: `comp-meta-${p.id}-${mc.component_product_id}`,
+                parent_product_id: p.id,
+                component_product_id: mc.component_product_id,
+                quantity: mc.quantity,
+                component: compProd ? {
+                  id: compProd.id,
+                  name: compProd.name,
+                  description: compProd.description,
+                  direct_cost: compProd.direct_cost,
+                  total_cost: compProd.total_cost,
+                } : undefined,
+              };
+            });
+
+        return {
+          ...p,
+          product_components: resolvedComponents,
+          product_prices: sortProductPrices(p.product_prices || []),
+        };
+      });
+
+      setProducts(processedProducts);
 
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
@@ -435,11 +474,16 @@ export default function ProductosPage() {
     const nextIsActive = !currentIsActive;
     setTogglingId(product.id);
 
-    const meta = parseProductMeta(product.description);
+    const meta = parseProductMeta(product.description, product.id);
     const newDescription = serializeProductDescription({
       cleanDescription: meta.cleanDescription,
       category: meta.category,
       isActive: nextIsActive,
+      yieldValue: meta.yield,
+      lastReviewedAt: meta.lastReviewedAt,
+      priceSnapshots: meta.priceSnapshots,
+      supplyDimensions: meta.supplyDimensions,
+      components: meta.components,
     });
 
     // Actualización optimista en el estado
@@ -711,12 +755,13 @@ export default function ProductosPage() {
 
     // Cargar subproductos componentes actuales
     const initialComponents: EditComponentLine[] = (product.product_components || []).map((pc) => {
-      const c = pc.component;
+      const compProd = products.find((p) => p.id === pc.component_product_id);
+      const c = pc.component || compProd;
       const unitCost = c ? (Number(c.total_cost) || Number(c.direct_cost) || 0) : 0;
       return {
         id: pc.id,
         component_product_id: pc.component_product_id || c?.id || "",
-        name: c?.name || "Subproducto",
+        name: c?.name || compProd?.name || "Subproducto",
         unit_cost: unitCost,
         quantity: pc.quantity || 1,
       };
@@ -1107,6 +1152,10 @@ export default function ProductosPage() {
         lastReviewedAt: nowIso,
         priceSnapshots,
         supplyDimensions,
+        components: editComponents.map((c) => ({
+          component_product_id: c.component_product_id,
+          quantity: typeof c.quantity === "number" ? c.quantity : parseFloat(String(c.quantity)) || 1,
+        })),
       });
 
       // 1. Actualizar tabla products con sanitización de números
@@ -1301,6 +1350,31 @@ export default function ProductosPage() {
         }))
       );
 
+      // Preparar el estado actualizado de product_components para la UI inmediata
+      const updatedProductComponentsForState = editComponents.map((c, idx) => {
+        const compProd = products.find((prod) => prod.id === c.component_product_id);
+        return {
+          id: c.id || `pc-temp-${idx}`,
+          parent_product_id: editModalProduct.id,
+          component_product_id: c.component_product_id,
+          quantity: typeof c.quantity === "number" ? c.quantity : parseFloat(String(c.quantity)) || 1,
+          component: compProd
+            ? {
+                id: compProd.id,
+                name: compProd.name,
+                description: compProd.description,
+                direct_cost: compProd.direct_cost,
+                total_cost: compProd.total_cost,
+              }
+            : {
+                id: c.component_product_id,
+                name: c.name,
+                direct_cost: c.unit_cost,
+                total_cost: c.unit_cost,
+              },
+        };
+      });
+
       // Actualizar estado local inmediatamente para reactividad instantánea sin desfase de caché
       setProducts((prev) =>
         prev.map((p) => {
@@ -1317,6 +1391,7 @@ export default function ProductosPage() {
             needs_price_review: false,
             updated_at: nowIso,
             product_supplies: updatedProductSuppliesForState as any,
+            product_components: updatedProductComponentsForState,
             product_prices: updatedProductPricesForState,
           };
         })
@@ -1396,6 +1471,8 @@ export default function ProductosPage() {
         yieldValue: meta.yield,
         lastReviewedAt: nowIso,
         priceSnapshots,
+        supplyDimensions: meta.supplyDimensions,
+        components: meta.components,
       });
 
       // 1. Actualizar producto en Supabase con los costos unitarios normalizados
@@ -1516,6 +1593,8 @@ export default function ProductosPage() {
         yieldValue: meta.yield,
         lastReviewedAt: nowIso,
         priceSnapshots,
+        supplyDimensions: meta.supplyDimensions,
+        components: meta.components,
       });
 
       await supabase
