@@ -13,27 +13,38 @@ export async function GET(request: Request) {
 
 async function handleSync(request: Request) {
   try {
-    const supabase = await createServerClient();
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
-
-    if (userError || !user) {
-      return NextResponse.json({ error: "No autenticado" }, { status: 401 });
-    }
-
     const url = new URL(request.url);
     const body = await request.json().catch(() => ({}));
+    const authHeader = request.headers.get("Authorization");
+    const isServiceRole =
+      authHeader &&
+      Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY) &&
+      authHeader === `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`;
+
+    let user: any = null;
+
+    if (!isServiceRole) {
+      const supabase = await createServerClient();
+      const {
+        data: { user: authUser },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !authUser) {
+        return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+      }
+      user = authUser;
+    }
+
     const requestedUserId = url.searchParams.get("userId") || body.userId;
     const preapprovalId = body.preapproval_id || url.searchParams.get("preapproval_id") || undefined;
 
-    let targetUserId = user.id;
-    let targetEmail = body.email || url.searchParams.get("email") || user.email;
+    let targetUserId = user?.id || requestedUserId;
+    let targetEmail = body.email || url.searchParams.get("email") || user?.email;
 
-    // Solo un administrador puede sincronizar a otro usuario
-    if (requestedUserId && requestedUserId !== user.id) {
-      if (!checkIsAdmin(user)) {
+    // Solo un administrador o service_role puede sincronizar a otro usuario
+    if (requestedUserId && requestedUserId !== user?.id) {
+      if (!isServiceRole && !checkIsAdmin(user)) {
         return NextResponse.json({ error: "No autorizado" }, { status: 403 });
       }
       targetUserId = requestedUserId;
