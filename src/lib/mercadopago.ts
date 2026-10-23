@@ -164,8 +164,14 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
         } catch {}
       }
 
+      // Si el external_reference coincide exactamente con este usuario, es suyo aunque MP no devuelva payer_email en el listado de preapprovals
+      if (p.external_reference && p.external_reference === userId) {
+        debugLog.push(`[${p.id}] MATCH APPROVED by external_reference === userId (${pEmail || "unknown"})`);
+        return true;
+      }
+
       // REGLA FUNDAMENTAL DE SEGURIDAD:
-      // Para validar una suscripción, el email del pagador DEBE existir y DEBE coincidir
+      // Para validar una suscripción o pago por email, el correo del pagador DEBE coincidir
       // con alguno de los emails candidatos del usuario (su email de cuenta o el alternativo provisto).
       if (!pEmail || !candidateEmails.includes(pEmail)) {
         debugLog.push(`[${p.id}] email mismatch: found '${pEmail}', expected one of [${candidateEmails.join(", ")}]`);
@@ -252,7 +258,7 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
       }
     }
 
-    // B. Prioridad 1: Por external_reference = userId
+    // B. Prioridad 1: Por external_reference = userId en Mercado Pago
     if (!preapproval) {
       try {
         const searchRes = await fetch(
@@ -277,13 +283,40 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
       }
     }
 
-    // C. Prioridad 2: Buscar en las suscripciones del Plan Maestro de HABA (hasta 50)
+    // C. Prioridad 2: Escanear los cobros y pagos más recientes de Mercado Pago (/v1/payments)
+    // Es el registro más directo y fiable porque contiene payer.email y status de inmediato sin depender de preapproval_email.
+    let paymentApproved: any = null;
+    if (!preapproval) {
+      try {
+        const payRes = await fetch(
+          `https://api.mercadopago.com/v1/payments/search?sort=date_created&criteria=desc&limit=50`,
+          {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          }
+        );
+        if (payRes.ok) {
+          const payData = await payRes.json();
+          if (Array.isArray(payData.results) && payData.results.length > 0) {
+            for (const p of payData.results) {
+              if (await isValidMatch(p)) {
+                paymentApproved = p;
+                break;
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("[Mercado Pago Sync] Error buscando pagos recientes:", e);
+      }
+    }
+
+    // D. Prioridad 3: Buscar en las suscripciones del Plan Maestro de HABA (hasta 50)
     const masterPlanId =
       process.env.MP_PREAPPROVAL_PLAN_ID ||
       process.env.MP_PLAN_ID ||
       "bdef7d4f90264c1ca7be8c8569331414";
 
-    if (!preapproval && masterPlanId) {
+    if (!preapproval && !paymentApproved && masterPlanId) {
       try {
         const planRes = await fetch(
           `https://api.mercadopago.com/preapproval/search?preapproval_plan_id=${encodeURIComponent(masterPlanId)}&limit=50`,
@@ -322,8 +355,8 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
       }
     }
 
-    // D. Prioridad 3: Escanear las suscripciones generales de la cuenta MP (hasta 50)
-    if (!preapproval) {
+    // E. Prioridad 4: Escanear las suscripciones generales de la cuenta MP (hasta 50)
+    if (!preapproval && !paymentApproved) {
       try {
         const recentRes = await fetch(
           `https://api.mercadopago.com/preapproval/search?limit=50`,
@@ -359,32 +392,6 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
         }
       } catch (e) {
         console.warn("[Mercado Pago Sync] Error buscando suscripciones globales:", e);
-      }
-    }
-
-    // E. Prioridad 4: Escanear los cobros y pagos más recientes de Mercado Pago (/v1/payments)
-    let paymentApproved: any = null;
-    if (!preapproval) {
-      try {
-        const payRes = await fetch(
-          `https://api.mercadopago.com/v1/payments/search?sort=date_created&criteria=desc&limit=50`,
-          {
-            headers: { Authorization: `Bearer ${accessToken}` },
-          }
-        );
-        if (payRes.ok) {
-          const payData = await payRes.json();
-          if (Array.isArray(payData.results) && payData.results.length > 0) {
-            for (const p of payData.results) {
-              if (await isValidMatch(p)) {
-                paymentApproved = p;
-                break;
-              }
-            }
-          }
-        }
-      } catch (e) {
-        console.warn("[Mercado Pago Sync] Error buscando pagos recientes:", e);
       }
     }
 
