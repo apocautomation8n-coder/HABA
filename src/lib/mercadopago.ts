@@ -163,8 +163,13 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
               detailData.additional_info?.payer?.email ||
               ""
             ).trim().toLowerCase();
+            debugLog.push(`[${p.id}] detail fetch OK: pEmail='${pEmail}', payerKeys: ${Object.keys(detailData.payer || {}).join(",")}, desc: '${detailData.description || detailData.reason}', extRef: '${detailData.external_reference}'`);
+          } else {
+            debugLog.push(`[${p.id}] detail fetch FAILED HTTP ${detailRes.status}`);
           }
-        } catch {}
+        } catch (e: any) {
+          debugLog.push(`[${p.id}] detail fetch ERROR: ${e.message}`);
+        }
       }
 
       // Si el external_reference coincide exactamente con este usuario, es suyo aunque MP no devuelva payer_email en el listado de preapprovals
