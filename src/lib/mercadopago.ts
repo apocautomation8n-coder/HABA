@@ -43,8 +43,9 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
   userId: string;
   email?: string | null;
   preapprovalId?: string | null;
+  paymentId?: string | null;
 }): Promise<SyncSubscriptionResult> {
-  const { userId, email, preapprovalId: explicitPreapprovalId } = options;
+  const { userId, email, preapprovalId: explicitPreapprovalId, paymentId: explicitPaymentId } = options;
   const accessToken = process.env.MP_ACCESS_TOKEN;
 
   if (!accessToken || !userId) {
@@ -60,9 +61,16 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
       return { synced: false, error: "Usuario no encontrado en Supabase: " + fetchErr?.message };
     }
     const targetUser = userRes.user;
-    const targetEmail = (email || targetUser.email || "").trim().toLowerCase();
+
+    const rawInput = (email || "").trim();
+    const isEmail = rawInput.includes("@");
+    const isOperationId = Boolean(rawInput && !isEmail && /^[0-9a-f-]{6,}$/i.test(rawInput));
+
+    const targetEmail = isEmail ? rawInput.toLowerCase() : (targetUser.email || "").trim().toLowerCase();
+    const directOperationId = explicitPaymentId || (isOperationId ? rawInput : null);
 
     let preapproval: any = null;
+    let paymentApproved: any = null;
 
     // 1. Obtener listado de usuarios de Supabase para verificaciones de seguridad cruzadas
     const { data: allUsersRes } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1000 });
@@ -190,8 +198,122 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
       return true;
     };
 
+    // Prioridad 00: Búsqueda directa por Número de Operación o Cobro de Mercado Pago (ej: 185634306746)
+    if (directOperationId) {
+      try {
+        debugLog.push(`[directOperationId] Querying MP directly for: ${directOperationId}`);
+        // 1. Probar en /v1/payments/{directOperationId}
+        const payRes = await fetch(
+          `https://api.mercadopago.com/v1/payments/${encodeURIComponent(directOperationId)}`,
+          {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          }
+        );
+
+        if (payRes.ok) {
+          const directPay = await payRes.json();
+          const pStatus = directPay.status;
+          debugLog.push(`[directOperationId] Found payment #${directPay.id} with status='${pStatus}'`);
+
+          if (pStatus === "refunded") {
+            return {
+              synced: false,
+              error: `La operación #${directPay.id} figura como REEMBOLSADA / DEVUELTA en Mercado Pago. Como el dinero fue reintegrado, no es válida para activar el plan.`,
+            };
+          }
+          if (pStatus === "cancelled") {
+            return {
+              synced: false,
+              error: `La operación #${directPay.id} figura como CANCELADA en Mercado Pago.`,
+            };
+          }
+          if (pStatus === "rejected") {
+            return {
+              synced: false,
+              error: `La operación #${directPay.id} fue RECHAZADA en Mercado Pago (${directPay.status_detail || "pago no acreditado"}).`,
+            };
+          }
+          if (pStatus === "in_process" || pStatus === "pending") {
+            return {
+              synced: false,
+              error: `La operación #${directPay.id} se encuentra PENDIENTE de acreditación en Mercado Pago.`,
+            };
+          }
+
+          if (pStatus === "approved") {
+            const isUserUuid = (ref: string) =>
+              /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test((ref || "").trim());
+
+            if (directPay.external_reference && isUserUuid(directPay.external_reference) && directPay.external_reference !== userId) {
+              return {
+                synced: false,
+                error: `La operación #${directPay.id} pertenece a otra cuenta de HABA.`,
+              };
+            }
+
+            if (existingSubOwners[String(directPay.id)] && existingSubOwners[String(directPay.id)] !== userId) {
+              const owner = allUsers.find((u) => u.id === existingSubOwners[String(directPay.id)]);
+              return {
+                synced: false,
+                error: `La operación #${directPay.id} ya se encuentra activa en la cuenta de ${owner?.email || "otro usuario"}.`,
+              };
+            }
+
+            paymentApproved = directPay;
+            const payerEmail = (directPay.payer?.email || "").trim().toLowerCase();
+            if (payerEmail && !candidateEmails.includes(payerEmail)) {
+              candidateEmails.push(payerEmail);
+            }
+          }
+        } else if (payRes.status === 404 || !/^\d+$/.test(directOperationId)) {
+          // 2. Si no es un pago v1, probar en /preapproval/{directOperationId}
+          const preRes = await fetch(
+            `https://api.mercadopago.com/preapproval/${encodeURIComponent(directOperationId)}`,
+            {
+              headers: { Authorization: `Bearer ${accessToken}` },
+            }
+          );
+          if (preRes.ok) {
+            const directPre = await preRes.json();
+            const preStatus = directPre.status;
+            debugLog.push(`[directOperationId] Found preapproval #${directPre.id} with status='${preStatus}'`);
+
+            if (preStatus === "cancelled") {
+              return {
+                synced: false,
+                error: `La suscripción #${directPre.id} figura como CANCELADA en Mercado Pago.`,
+              };
+            }
+            if (preStatus === "paused") {
+              return {
+                synced: false,
+                error: `La suscripción #${directPre.id} figura como PAUSADA en Mercado Pago.`,
+              };
+            }
+            if (preStatus === "authorized" || preStatus === "pending") {
+              if (existingSubOwners[directPre.id] && existingSubOwners[directPre.id] !== userId) {
+                const owner = allUsers.find((u) => u.id === existingSubOwners[directPre.id]);
+                return {
+                  synced: false,
+                  error: `La suscripción #${directPre.id} ya se encuentra activa en la cuenta de ${owner?.email || "otro usuario"}.`,
+                };
+              }
+              preapproval = directPre;
+              const payerEmail = (directPre.payer_email || directPre.payer?.email || "").trim().toLowerCase();
+              if (payerEmail && !candidateEmails.includes(payerEmail)) {
+                candidateEmails.push(payerEmail);
+              }
+            }
+          }
+        }
+      } catch (e: any) {
+        console.warn("[Mercado Pago Sync] Error consultando directOperationId:", e);
+        debugLog.push(`[directOperationId] Error: ${e.message}`);
+      }
+    }
+
     // Prioridad 0: Si viene un preapprovalId explícito (por ejemplo al volver de Mercado Pago en la URL)
-    if (explicitPreapprovalId) {
+    if (!preapproval && !paymentApproved && explicitPreapprovalId) {
       try {
         const directRes = await fetch(
           `https://api.mercadopago.com/preapproval/${explicitPreapprovalId}`,
@@ -293,8 +415,7 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
 
     // C. Prioridad 2: Escanear los cobros y pagos más recientes de Mercado Pago (/v1/payments)
     // Es el registro más directo y fiable porque contiene payer.email y status de inmediato sin depender de preapproval_email.
-    let paymentApproved: any = null;
-    if (!preapproval) {
+    if (!preapproval && !paymentApproved) {
       try {
         const payRes = await fetch(
           `https://api.mercadopago.com/v1/payments/search?sort=date_created&criteria=desc&limit=50`,
@@ -467,7 +588,7 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
         account_status: "active",
         mp_status: "authorized",
         mp_preapproval_id: preapprovalId || currentPlan.mp_preapproval_id,
-        mp_payer_email: preapproval?.payer_email || targetUser.app_metadata?.mp_payer_email,
+        mp_payer_email: preapproval?.payer_email || paymentApproved?.payer?.email || targetUser.app_metadata?.mp_payer_email,
       },
       user_metadata: {
         ...(targetUser.user_metadata || {}),
@@ -477,7 +598,7 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
         account_status: "active",
         mp_status: "authorized",
         mp_preapproval_id: preapprovalId || currentPlan.mp_preapproval_id,
-        mp_payer_email: preapproval?.payer_email || targetUser.user_metadata?.mp_payer_email,
+        mp_payer_email: preapproval?.payer_email || paymentApproved?.payer?.email || targetUser.user_metadata?.mp_payer_email,
       },
     });
 

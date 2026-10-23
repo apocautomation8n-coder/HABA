@@ -38,6 +38,12 @@ async function handleSync(request: Request) {
 
     const requestedUserId = url.searchParams.get("userId") || body.userId;
     const preapprovalId = body.preapproval_id || url.searchParams.get("preapproval_id") || undefined;
+    const paymentId =
+      body.payment_id ||
+      url.searchParams.get("payment_id") ||
+      body.collection_id ||
+      url.searchParams.get("collection_id") ||
+      undefined;
 
     let targetUserId = user?.id || requestedUserId;
     let targetEmail = body.email || url.searchParams.get("email") || user?.email;
@@ -55,6 +61,7 @@ async function handleSync(request: Request) {
       userId: targetUserId,
       email: targetEmail,
       preapprovalId,
+      paymentId,
     });
 
     return NextResponse.json(result);

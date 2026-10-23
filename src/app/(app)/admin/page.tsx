@@ -422,11 +422,11 @@ export default function AdminPage() {
         await loadUsers();
       } else {
         if (!customEmail) {
-          const altEmail = window.prompt(
-            `No se detectó un cobro con el correo principal (${targetUser.email}).\n\nSi ${targetUser.full_name || "la usuaria"} abonó desde una cuenta de Mercado Pago con otro e-mail (ej: de un familiar, personal o secundario), ingresalo acá para asociarlo a su cuenta:`
+          const inputVal = window.prompt(
+            `No se detectó un cobro activo con el correo principal (${targetUser.email}).\n\nSi ${targetUser.full_name || "la usuaria"} abonó desde otra cuenta de Mercado Pago o con otro correo, ingresá acá su Correo de Mercado Pago O el Número de Operación de su comprobante (ej: 185634306746):`
           );
-          if (altEmail && altEmail.trim().includes("@")) {
-            return syncUserMercadoPago(targetUser, altEmail.trim().toLowerCase());
+          if (inputVal && inputVal.trim().length >= 3) {
+            return syncUserMercadoPago(targetUser, inputVal.trim());
           }
         }
         alert(

@@ -138,21 +138,31 @@ export default function SettingsPage() {
     }
   };
 
-  const handleSyncMercadoPago = async (silent = false, explicitPreapprovalId?: string | null, customEmail?: string) => {
+  const handleSyncMercadoPago = async (
+    silent = false,
+    explicitPreapprovalId?: string | null,
+    customInput?: string,
+    explicitPaymentId?: string | null
+  ) => {
     try {
       if (!silent) setSyncingMP(true);
       setSyncNotice(null);
+      const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
       const urlPreapproval =
         explicitPreapprovalId ||
-        (typeof window !== "undefined"
-          ? new URLSearchParams(window.location.search).get("preapproval_id")
-          : null);
+        urlParams?.get("preapproval_id");
+      const urlPaymentId =
+        explicitPaymentId ||
+        urlParams?.get("payment_id") ||
+        urlParams?.get("collection_id");
+
       const res = await fetch("/api/mercadopago/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           preapproval_id: urlPreapproval || undefined,
-          email: customEmail || undefined,
+          payment_id: urlPaymentId || undefined,
+          email: customInput || undefined,
         }),
       });
       const data = await res.json();
@@ -161,14 +171,14 @@ export default function SettingsPage() {
         if (data.plan_end_date) setPlanEndDate(data.plan_end_date);
         setSyncNotice("¡Tu suscripción mensual fue verificada y activada con éxito!");
       } else {
-        if (!customEmail) {
-          const altEmail = typeof window !== "undefined"
+        if (!customInput) {
+          const inputVal = typeof window !== "undefined"
             ? window.prompt(
-                "Detectamos tu regreso de Mercado Pago.\n\nSi pagaste desde una cuenta de Mercado Pago con otro e-mail (ej: personal o de un familiar), ingresalo acá para vincular tu plan mensual de inmediato:"
+                "Detectamos tu regreso de Mercado Pago o solicitud de actualización.\n\nSi abonaste desde otra cuenta o con otro correo, ingresá tu Correo de Mercado Pago O el Número de Operación de tu comprobante (ej: 185634306746):"
               )
             : null;
-          if (altEmail && altEmail.trim().includes("@")) {
-            return handleSyncMercadoPago(false, urlPreapproval, altEmail.trim().toLowerCase());
+          if (inputVal && inputVal.trim().length >= 3) {
+            return handleSyncMercadoPago(false, urlPreapproval, inputVal.trim(), urlPaymentId);
           }
         }
         if (!silent) {
@@ -329,10 +339,13 @@ export default function SettingsPage() {
                   ? new URLSearchParams(window.location.search)
                   : null;
               const preapprovalFromUrl = urlParams?.get("preapproval_id");
+              const paymentIdFromUrl = urlParams?.get("payment_id") || urlParams?.get("collection_id");
               const isApproved =
                 typeof window !== "undefined" &&
                 (window.location.search.includes("status=approved") ||
-                  Boolean(preapprovalFromUrl));
+                  window.location.search.includes("collection_status=approved") ||
+                  Boolean(preapprovalFromUrl) ||
+                  Boolean(paymentIdFromUrl));
 
               if (isApproved) {
                 try {
@@ -340,7 +353,7 @@ export default function SettingsPage() {
                 } catch {
                   // ignore
                 }
-                handleSyncMercadoPago(true, preapprovalFromUrl);
+                handleSyncMercadoPago(true, preapprovalFromUrl, undefined, paymentIdFromUrl);
               }
             }
           } catch {
