@@ -116,8 +116,11 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
         return false;
       }
 
-      // REGLA DE SEGURIDAD 2: Si la suscripción en Mercado Pago ya tiene external_reference de otro usuario de HABA:
-      if (p.external_reference && p.external_reference !== userId) {
+      // REGLA DE SEGURIDAD 2: Si la suscripción en Mercado Pago ya tiene external_reference con el UUID de otro usuario de HABA:
+      const isUserUuid = (ref: string) =>
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test((ref || "").trim());
+
+      if (p.external_reference && isUserUuid(p.external_reference) && p.external_reference !== userId) {
         console.warn(
           `[Mercado Pago Sync] Suscripción ${p.id} pertenece a otro usuario (${p.external_reference}). Rechazada para ${userId}.`
         );
