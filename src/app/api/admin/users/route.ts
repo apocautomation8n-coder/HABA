@@ -493,10 +493,52 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: "userId es requerido" }, { status: 400 });
     }
 
-    // 1. Borrar perfil en profiles
+    // 1. Obtener IDs de presupuestos, productos e insumos de la usuaria
+    const [quotesRes, prodsRes, suppsRes] = await Promise.all([
+      supabaseAdmin.from("quotes").select("id").eq("user_id", userId),
+      supabaseAdmin.from("products").select("id").eq("user_id", userId),
+      supabaseAdmin.from("supplies").select("id").eq("user_id", userId),
+    ]);
+
+    const quoteIds = (quotesRes.data || []).map((q: any) => q.id);
+    const productIds = (prodsRes.data || []).map((p: any) => p.id);
+    const supplyIds = (suppsRes.data || []).map((s: any) => s.id);
+
+    // 2. Borrar ítems de presupuestos y presupuestos
+    if (quoteIds.length > 0) {
+      await supabaseAdmin.from("quote_items").delete().in("quote_id", quoteIds);
+      await supabaseAdmin.from("quotes").delete().eq("user_id", userId);
+    }
+
+    // 3. Borrar dependencias relacionales de productos e insumos
+    if (productIds.length > 0) {
+      await supabaseAdmin.from("product_supplies").delete().in("product_id", productIds);
+      try {
+        await supabaseAdmin.from("product_components").delete().in("product_id", productIds);
+        await supabaseAdmin.from("product_components").delete().in("component_product_id", productIds);
+      } catch (_) {}
+    }
+
+    if (supplyIds.length > 0) {
+      await supabaseAdmin.from("product_supplies").delete().in("supply_id", supplyIds);
+      await supabaseAdmin.from("supply_price_history").delete().in("supply_id", supplyIds);
+    }
+
+    // 4. Borrar productos e insumos principales
+    if (productIds.length > 0) {
+      await supabaseAdmin.from("products").delete().eq("user_id", userId);
+    }
+    if (supplyIds.length > 0) {
+      await supabaseAdmin.from("supplies").delete().eq("user_id", userId);
+    }
+
+    // 5. Borrar gastos fijos
+    await supabaseAdmin.from("fixed_expenses").delete().eq("user_id", userId);
+
+    // 6. Borrar perfil en profiles
     await supabaseAdmin.from("profiles").delete().eq("id", userId);
 
-    // 2. Borrar de auth.users
+    // 7. Borrar de auth.users
     const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(userId);
 
     if (deleteError) {
