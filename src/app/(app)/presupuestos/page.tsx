@@ -40,7 +40,7 @@ import {
 
 export default function PresupuestosPage() {
   const supabase = createClient();
-  const { formatMoney } = useFormatPrefs();
+  const { formatMoney, prefs: userFormatPrefs } = useFormatPrefs();
 
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -106,6 +106,10 @@ export default function PresupuestosPage() {
           logo_url: pData?.avatar_url || meta.avatar_url || null,
           business_rubro: pData?.business_rubro || meta.business_rubro || localRubro || null,
           quote_primary_color: pData?.quote_primary_color || meta.quote_primary_color || localColor || null,
+          currency: meta.currency || pData?.currency || userFormatPrefs.currency || "ARS",
+          number_locale: meta.number_locale || meta.numberLocale || pData?.number_locale || pData?.numberLocale || userFormatPrefs.numberLocale || "es-AR",
+          numberLocale: meta.number_locale || meta.numberLocale || pData?.number_locale || pData?.numberLocale || userFormatPrefs.numberLocale || "es-AR",
+          decimals: typeof meta.decimals === "number" ? meta.decimals : (typeof pData?.decimals === "number" ? pData.decimals : userFormatPrefs.decimals),
         };
 
         try {
@@ -159,7 +163,14 @@ export default function PresupuestosPage() {
 
   // Generar mensaje y compartir por Web Share API / WhatsApp
   const shareViaWhatsApp = async (quote: Quote) => {
-    const fullMessage = buildQuoteWhatsAppMessage(quote, userProfile);
+    const effectiveProfile: UserProfile = {
+      ...(userProfile || {}),
+      currency: userProfile?.currency || userFormatPrefs.currency,
+      number_locale: userProfile?.number_locale || userProfile?.numberLocale || userFormatPrefs.numberLocale,
+      numberLocale: userProfile?.number_locale || userProfile?.numberLocale || userFormatPrefs.numberLocale,
+      decimals: typeof userProfile?.decimals === "number" ? userProfile.decimals : userFormatPrefs.decimals,
+    };
+    const fullMessage = buildQuoteWhatsAppMessage(quote, effectiveProfile);
 
     // 1. Intentar con Web Share API primero si el navegador lo soporta
     if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
@@ -192,7 +203,15 @@ export default function PresupuestosPage() {
     const printWindow = window.open("", "_blank");
     if (!printWindow) return;
 
-    const html = generateQuotePrintHtml(quote, userProfile);
+    const effectiveProfile: UserProfile = {
+      ...(userProfile || {}),
+      currency: userProfile?.currency || userFormatPrefs.currency,
+      number_locale: userProfile?.number_locale || userProfile?.numberLocale || userFormatPrefs.numberLocale,
+      numberLocale: userProfile?.number_locale || userProfile?.numberLocale || userFormatPrefs.numberLocale,
+      decimals: typeof userProfile?.decimals === "number" ? userProfile.decimals : userFormatPrefs.decimals,
+    };
+
+    const html = generateQuotePrintHtml(quote, effectiveProfile);
 
     printWindow.document.open();
     printWindow.document.write(html);

@@ -26,6 +26,7 @@ import {
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
 import { formatMoney, FormatPrefs } from "@/lib/units";
+import { useFormatPrefs } from "@/hooks/useFormatPrefs";
 import {
   Quote,
   QuoteItem,
@@ -43,6 +44,7 @@ export default function PresupuestoPreviewPage() {
   const params = useParams();
   const router = useRouter();
   const id = params?.id as string;
+  const { prefs: userFormatPrefs } = useFormatPrefs();
 
   const supabase = createClient();
 
@@ -112,6 +114,10 @@ export default function PresupuestoPreviewPage() {
               logo_url: pData?.avatar_url || meta.avatar_url || null,
               business_rubro: pData?.business_rubro || meta.business_rubro || localRubro || null,
               quote_primary_color: pData?.quote_primary_color || meta.quote_primary_color || localColor || null,
+              currency: meta.currency || pData?.currency || userFormatPrefs.currency || "ARS",
+              number_locale: meta.number_locale || meta.numberLocale || pData?.number_locale || pData?.numberLocale || userFormatPrefs.numberLocale || "es-AR",
+              numberLocale: meta.number_locale || meta.numberLocale || pData?.number_locale || pData?.numberLocale || userFormatPrefs.numberLocale || "es-AR",
+              decimals: typeof meta.decimals === "number" ? meta.decimals : (typeof pData?.decimals === "number" ? pData.decimals : userFormatPrefs.decimals),
             };
 
             try {
@@ -158,10 +164,15 @@ export default function PresupuestoPreviewPage() {
   }, [quote]);
 
   const formatPrefs: FormatPrefs = React.useMemo(() => ({
-    currency: profile?.currency || "ARS",
-    numberLocale: profile?.number_locale || profile?.numberLocale || "es-AR",
-    decimals: typeof profile?.decimals === "number" ? profile.decimals : 2,
-  }), [profile]);
+    currency: profile?.currency || userFormatPrefs.currency || "ARS",
+    numberLocale: profile?.number_locale || profile?.numberLocale || userFormatPrefs.numberLocale || "es-AR",
+    decimals:
+      typeof profile?.decimals === "number"
+        ? profile.decimals
+        : typeof userFormatPrefs.decimals === "number"
+        ? userFormatPrefs.decimals
+        : 2,
+  }), [profile, userFormatPrefs]);
 
   const discountAmount = React.useMemo(() => {
     if (!quote) return 0;
@@ -178,7 +189,15 @@ export default function PresupuestoPreviewPage() {
   const handleShareWhatsApp = async () => {
     if (!quote) return;
 
-    const fullMessage = buildQuoteWhatsAppMessage(quote, profile, validity || undefined);
+    const effectiveProfile: UserProfile = {
+      ...(profile || {}),
+      currency: formatPrefs.currency,
+      number_locale: formatPrefs.numberLocale,
+      numberLocale: formatPrefs.numberLocale,
+      decimals: formatPrefs.decimals,
+    };
+
+    const fullMessage = buildQuoteWhatsAppMessage(quote, effectiveProfile, validity || undefined);
 
     // 1. Intentar con Web Share API (SIN url separada para evitar que WhatsApp duplique el enlace al final)
     if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
@@ -216,7 +235,14 @@ export default function PresupuestoPreviewPage() {
       window.print();
       return;
     }
-    const html = generateQuotePrintHtml(quote, profile, validity || undefined, currentTheme);
+    const effectiveProfile: UserProfile = {
+      ...(profile || {}),
+      currency: formatPrefs.currency,
+      number_locale: formatPrefs.numberLocale,
+      numberLocale: formatPrefs.numberLocale,
+      decimals: formatPrefs.decimals,
+    };
+    const html = generateQuotePrintHtml(quote, effectiveProfile, validity || undefined, currentTheme);
     printWindow.document.open();
     printWindow.document.write(html);
     printWindow.document.close();
@@ -500,7 +526,7 @@ export default function PresupuestoPreviewPage() {
             <p className="text-[11px] text-neutral-500 mt-1 flex items-center gap-1">
               <Calendar className="w-3.5 h-3.5 text-neutral-400 flex-shrink-0" />
               <span>
-                Emisión: <strong>{new Date(quote.created_at).toLocaleDateString("es-AR", { day: "2-digit", month: "long", year: "numeric" })}</strong>
+                Emisión: <strong>{new Date(quote.created_at).toLocaleDateString(formatPrefs.numberLocale, { day: "2-digit", month: "long", year: "numeric" })}</strong>
               </span>
             </p>
           </div>
@@ -559,7 +585,7 @@ export default function PresupuestoPreviewPage() {
               <p className="text-[11px] text-neutral-500 flex items-center sm:justify-end gap-1">
                 <span>Entrega estimada:</span>
                 <strong className="text-neutral-700">
-                  {new Date(quote.delivery_date).toLocaleDateString("es-AR", { day: "2-digit", month: "short", year: "numeric" })}
+                  {new Date(quote.delivery_date).toLocaleDateString(formatPrefs.numberLocale, { day: "2-digit", month: "short", year: "numeric" })}
                 </strong>
               </p>
             )}

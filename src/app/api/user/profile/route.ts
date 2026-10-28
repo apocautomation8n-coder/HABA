@@ -120,13 +120,13 @@ export async function GET(request: Request) {
       address: profile?.address || meta.address || null,
       business_rubro: profile?.business_rubro || meta.business_rubro || null,
       quote_primary_color: profile?.quote_primary_color || meta.quote_primary_color || null,
-      currency: profile?.currency || meta.currency || "ARS",
-      number_locale: profile?.number_locale || meta.number_locale || "es-AR",
+      currency: meta.currency || profile?.currency || "ARS",
+      number_locale: meta.number_locale || meta.numberLocale || profile?.number_locale || "es-AR",
       decimals:
-        typeof profile?.decimals === "number"
-          ? profile.decimals
-          : typeof meta.decimals === "number"
+        typeof meta.decimals === "number"
           ? meta.decimals
+          : typeof profile?.decimals === "number"
+          ? profile.decimals
           : 2,
       role: isAdmin ? "admin" : profile?.role || "user",
       status: profile?.status || "active",

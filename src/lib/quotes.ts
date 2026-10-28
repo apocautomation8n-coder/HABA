@@ -359,6 +359,33 @@ export function getQuoteValidity(
 }
 
 /**
+ * Resuelve las preferencias de formato monetario para presupuestos.
+ * Prioriza profile del emisor, luego localStorage en el navegador, y finalmente ARS / es-AR.
+ */
+export function resolveQuoteFormatPrefs(profile?: UserProfile | null): FormatPrefs {
+  let cached: any = null;
+  if (typeof window !== "undefined") {
+    try {
+      const raw = localStorage.getItem("haba_format_prefs");
+      if (raw) cached = JSON.parse(raw);
+    } catch {
+      // ignore
+    }
+  }
+
+  return {
+    currency: profile?.currency || cached?.currency || "ARS",
+    numberLocale: profile?.number_locale || profile?.numberLocale || cached?.numberLocale || "es-AR",
+    decimals:
+      typeof profile?.decimals === "number"
+        ? profile.decimals
+        : typeof cached?.decimals === "number"
+        ? cached.decimals
+        : 2,
+  };
+}
+
+/**
  * Genera el texto estándar para compartir por WhatsApp
  */
 export function buildQuoteWhatsAppMessage(
@@ -369,11 +396,7 @@ export function buildQuoteWhatsAppMessage(
   const val = validity || getQuoteValidity(quote);
   const { cleanNotes, shippingCost } = parseQuoteNotes(quote.notes);
 
-  const formatPrefs: FormatPrefs = {
-    currency: profile?.currency || "ARS",
-    numberLocale: profile?.number_locale || profile?.numberLocale || "es-AR",
-    decimals: typeof profile?.decimals === "number" ? profile.decimals : 2,
-  };
+  const formatPrefs: FormatPrefs = resolveQuoteFormatPrefs(profile);
 
   const finalShippingCost = shippingCost || (quote.shipping_cost ? Number(quote.shipping_cost) : 0);
   const rawSubtotal = quote.subtotal;
@@ -496,19 +519,16 @@ export function generateQuotePrintHtml(
   const instagram = profile?.instagram;
   const address = profile?.address;
 
+  const formatPrefs: FormatPrefs = resolveQuoteFormatPrefs(profile);
+
   const formattedIssuedDate = new Date(quote.created_at).toLocaleDateString(
-    profile?.number_locale || profile?.numberLocale || "es-AR",
+    formatPrefs.numberLocale,
     {
       day: "2-digit",
       month: "long",
       year: "numeric",
     }
   );
-  const formatPrefs: FormatPrefs = {
-    currency: profile?.currency || "ARS",
-    numberLocale: profile?.number_locale || profile?.numberLocale || "es-AR",
-    decimals: typeof profile?.decimals === "number" ? profile.decimals : 2,
-  };
 
   const finalShippingCost = shippingCost || (quote.shipping_cost ? Number(quote.shipping_cost) : 0);
   const rawSubtotal = quote.subtotal;
