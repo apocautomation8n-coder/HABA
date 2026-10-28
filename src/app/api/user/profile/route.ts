@@ -3,7 +3,7 @@ import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { getTrustedPlanMeta } from "@/lib/plan-helpers";
 import { checkIsAdmin } from "@/lib/auth-helpers";
-import { formatAccountNumber, parseAccountNumber } from "@/lib/account";
+import { formatAccountNumber, parseAccountNumber, getNextGlobalAccountNumber } from "@/lib/account";
 
 function getAdminClient() {
   return createSupabaseClient(
@@ -70,37 +70,28 @@ export async function GET(request: Request) {
     const meta = user.user_metadata || {};
     let accountNumber = profile?.account_number || meta.account_number || null;
 
-    // Si aún no tiene número de cuenta o tiene el formato antiguo, asignar secuencialmente
+    // Si aún no tiene número de cuenta o tiene el formato antiguo, asignar número global único
     if (!accountNumber || accountNumber.includes("HABA-001001")) {
       try {
-        const { data: allProfiles } = await admin
-          .from("profiles")
-          .select("id, created_at")
-          .order("created_at", { ascending: true });
+        accountNumber = await getNextGlobalAccountNumber(admin);
 
-        if (allProfiles && allProfiles.length > 0) {
-          const userIndex = allProfiles.findIndex((p) => p.id === user.id);
-          const seq = userIndex >= 0 ? userIndex + 1 : 1;
-          accountNumber = formatAccountNumber(seq);
-
-          // Guardar de forma persistente en user_metadata
-          await admin.auth.admin.updateUserById(user.id, {
-            user_metadata: { ...meta, account_number: accountNumber },
-          });
-          try {
-            await admin.from("profiles").update({ account_number: accountNumber }).eq("id", user.id);
-          } catch {
-            // Fallback si la columna no existe en profiles
-          }
-        } else {
-          accountNumber = "01";
+        // Guardar de forma persistente en user_metadata y app_metadata
+        await admin.auth.admin.updateUserById(user.id, {
+          user_metadata: { ...meta, account_number: accountNumber },
+          app_metadata: { ...(user.app_metadata || {}), account_number: accountNumber },
+        });
+        try {
+          await admin.from("profiles").update({ account_number: accountNumber }).eq("id", user.id);
+        } catch {
+          // Fallback si la columna no existe en profiles
         }
-      } catch {
+      } catch (err) {
+        console.error("Error al asignar account_number en perfil:", err);
         accountNumber = "01";
       }
     } else {
       const parsed = parseAccountNumber(accountNumber);
-      if (parsed !== null && parsed < 1000) {
+      if (parsed !== null && parsed < 10000) {
         accountNumber = formatAccountNumber(parsed);
       }
     }

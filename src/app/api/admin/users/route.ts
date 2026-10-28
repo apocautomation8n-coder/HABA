@@ -3,7 +3,7 @@ import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { checkIsAdmin } from "@/lib/auth-helpers";
 import { calculatePlanEndDate, PlanType, buildInitialUserMetadata, getTrustedPlanMeta, splitPlanMetadata } from "@/lib/plan-helpers";
-import { formatAccountNumber, parseAccountNumber, getNextAccountNumberFromList } from "@/lib/account";
+import { formatAccountNumber, parseAccountNumber, getNextGlobalAccountNumber } from "@/lib/account";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -96,14 +96,6 @@ export async function GET(request: Request) {
     const { data: authData } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
     const authMap = new Map(authData?.users?.map((u) => [u.id, u]) || []);
 
-    // Mapa cronológico para fallback de números de cuenta (Admin Gio es siempre 01)
-    const chronologicalProfiles = [...(profiles || [])].sort((a, b) =>
-      new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()
-    );
-    const idToSeqMap = new Map(
-      chronologicalProfiles.map((p, idx) => [p.id, formatAccountNumber(idx + 1)])
-    );
-
     const users = (profiles || []).map((p) => {
       const authUser = authMap.get(p.id);
       const meta = authUser?.user_metadata || {};
@@ -121,15 +113,11 @@ export async function GET(request: Request) {
       const createdAt = p.created_at || authUser?.created_at || new Date().toISOString();
 
       // Recuperar account_number normalizado en formato de 2 dígitos ("01", "02", etc.)
-      let accountNumber = p.account_number || meta.account_number;
-      if (!accountNumber || accountNumber.includes("HABA-001001")) {
-        accountNumber = idToSeqMap.get(p.id) || "01";
-      } else {
+      let accountNumber = meta.account_number || p.account_number || null;
+      if (accountNumber && !accountNumber.includes("HABA-001001")) {
         const parsed = parseAccountNumber(accountNumber);
-        if (parsed !== null && parsed < 1000) {
+        if (parsed !== null && parsed < 10000) {
           accountNumber = formatAccountNumber(parsed);
-        } else {
-          accountNumber = idToSeqMap.get(p.id) || "01";
         }
       }
 
@@ -167,7 +155,13 @@ export async function GET(request: Request) {
       const planStartDate = trusted.plan_start_date;
       const planEndDate = trusted.plan_end_date;
       const accountStatus = trusted.account_status;
-      const accountNumber = meta.account_number || idToSeqMap.get(u.id) || "01";
+      let accountNumber = meta.account_number || null;
+      if (accountNumber && !accountNumber.includes("HABA-001001")) {
+        const parsed = parseAccountNumber(accountNumber);
+        if (parsed !== null && parsed < 10000) {
+          accountNumber = formatAccountNumber(parsed);
+        }
+      }
       const phone = meta.phone || meta.business_phone || null;
 
       users.push({
@@ -232,40 +226,8 @@ export async function POST(request: Request) {
       planStartDate?.trim() || new Date().toISOString().split("T")[0];
     const endDate = calculatePlanEndDate(startDate, effectivePlanType);
 
-    // Obtener usuarios existentes de Auth y perfiles para calcular el siguiente ID secuencial
-    let nextAccountNumber = "01";
-    try {
-      const { data: authDataList } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
-      const authUsers = authDataList?.users || [];
-
-      // Mapear cuentas existentes con su account_number y fecha de creación
-      const existingAccounts = authUsers.map((u) => ({
-        account_number: (u.user_metadata?.account_number as string | undefined) || null,
-        email: u.email,
-        created_at: u.created_at,
-      }));
-
-      // Calcular el siguiente número secuencial (ej. si hay 5 usuarios -> "06")
-      nextAccountNumber = getNextAccountNumberFromList(existingAccounts);
-
-      // Verificación estricta de unicidad: asegurarse de que no exista colisión
-      const existingNumbers = new Set(
-        existingAccounts
-          .map((a) => {
-            const parsed = parseAccountNumber(a.account_number);
-            return parsed !== null && parsed < 1000 ? formatAccountNumber(parsed) : null;
-          })
-          .filter(Boolean)
-      );
-      let candidateSeq = parseAccountNumber(nextAccountNumber) || 1;
-      while (existingNumbers.has(formatAccountNumber(candidateSeq))) {
-        candidateSeq++;
-      }
-      nextAccountNumber = formatAccountNumber(candidateSeq);
-    } catch (calcErr) {
-      console.error("Error al calcular el siguiente número de cuenta:", calcErr);
-      nextAccountNumber = "01";
-    }
+    // Obtener el siguiente número de cuenta único garantizado
+    const nextAccountNumber = await getNextGlobalAccountNumber(supabaseAdmin);
 
     // 1. Crear usuario en Auth con confirmación automática, metadata de plan y account_number único
     const initialPlanMeta = buildInitialUserMetadata({

@@ -60,3 +60,38 @@ export function getNextAccountNumberFromList(
 
   return formatAccountNumber(maxSeq + 1);
 }
+
+/**
+ * Consulta de forma centralizada todos los usuarios de Supabase Auth y retorna
+ * el siguiente número de cuenta único garantizado, buscando el máximo actual y sumando 1.
+ */
+export async function getNextGlobalAccountNumber(adminClient: any): Promise<string> {
+  try {
+    const { data, error } = await adminClient.auth.admin.listUsers({ perPage: 1000 });
+    if (error || !data?.users) {
+      return "01";
+    }
+
+    const existingNumbers = new Set<number>();
+    for (const u of data.users) {
+      const raw = u.user_metadata?.account_number;
+      if (raw) {
+        const parsed = parseAccountNumber(raw);
+        if (parsed !== null && parsed < 10000) {
+          existingNumbers.add(parsed);
+        }
+      }
+    }
+
+    let candidate = Math.max(...Array.from(existingNumbers), 0) + 1;
+    while (existingNumbers.has(candidate)) {
+      candidate++;
+    }
+
+    return formatAccountNumber(candidate);
+  } catch (err) {
+    console.error("Error al obtener el siguiente número global de cuenta:", err);
+    return "01";
+  }
+}
+

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { buildInitialUserMetadata, splitPlanMetadata } from "@/lib/plan-helpers";
 import { TERMS_VERSION, isTermsEnabled } from "@/lib/terms";
+import { getNextGlobalAccountNumber } from "@/lib/account";
 
 /**
  * Registro público de usuarias (T5).
@@ -101,6 +102,11 @@ export async function POST(request: Request) {
     });
     const { app: appMetadata, user: planUserMetadata } = splitPlanMetadata(planMeta);
 
+    const admin = createSupabaseClient(url, serviceKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+    const nextAccountNumber = await getNextGlobalAccountNumber(admin);
+
     const anon = createSupabaseClient(url, anonKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
@@ -113,6 +119,7 @@ export async function POST(request: Request) {
           business_name: businessName || fullName,
           phone: phone || null,
           business_phone: phone || null,
+          account_number: nextAccountNumber,
           ...planUserMetadata,
         },
         emailRedirectTo: `${origin}/dashboard`,
@@ -137,9 +144,6 @@ export async function POST(request: Request) {
       // crear la usuaria de forma directa confirmada para no bloquear su registro ni su prueba de 15 días
       if (msg.includes("rate limit") || msg.includes("email rate limit")) {
         console.warn("[Registro] Límite de emails de Supabase alcanzado. Creando usuaria directamente con service_role...");
-        const admin = createSupabaseClient(url, serviceKey, {
-          auth: { autoRefreshToken: false, persistSession: false },
-        });
         const { data: adminCreated, error: adminErr } = await admin.auth.admin.createUser({
           email,
           password,
@@ -149,9 +153,13 @@ export async function POST(request: Request) {
             business_name: businessName || fullName,
             phone: phone || null,
             business_phone: phone || null,
+            account_number: nextAccountNumber,
             ...planUserMetadata,
           },
-          app_metadata: appMetadata,
+          app_metadata: {
+            ...appMetadata,
+            account_number: nextAccountNumber,
+          },
         });
 
         if (adminErr) {
@@ -170,6 +178,7 @@ export async function POST(request: Request) {
             full_name: fullName,
             business_name: businessName || fullName,
             phone: phone || null,
+            account_number: nextAccountNumber,
             role: "user",
             status: "active",
             updated_at: new Date().toISOString(),
@@ -192,11 +201,15 @@ export async function POST(request: Request) {
     }
 
     if (data?.user) {
-      const admin = createSupabaseClient(url, serviceKey, {
-        auth: { autoRefreshToken: false, persistSession: false },
-      });
       const { error: planError } = await admin.auth.admin.updateUserById(data.user.id, {
-        app_metadata: appMetadata,
+        app_metadata: {
+          ...appMetadata,
+          account_number: nextAccountNumber,
+        },
+        user_metadata: {
+          ...(data.user.user_metadata || {}),
+          account_number: nextAccountNumber,
+        },
       });
       if (planError) {
         // Sin app_metadata la cuenta igualmente recibe la prueba de 15 días desde su fecha de creación
