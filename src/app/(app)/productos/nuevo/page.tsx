@@ -49,6 +49,7 @@ import {
   isDuplicateProductName,
   checkProductNameExists,
   SupplyDimensionMeta,
+  buildSupplyDimensionKey,
   isSurfaceSupply,
   getSurfaceTargetUnit,
   calculateSurfaceRecipeQuantity,
@@ -396,8 +397,8 @@ export default function NuevoProductoPage() {
 
 
   // Agregar insumo a la receta
+  // Se permite repetir un insumo: por ejemplo, varios cortes de distinta medida de la misma tela.
   const handleAddSupply = (supply: SupplyItem) => {
-    if (selectedSupplies.some((s) => s.supply.id === supply.id)) return;
     const isSurface = isSurfaceSupply(supply);
     const hasUnitDims = isUnitSupplyWithDimensions(supply);
     if (isSurface || hasUnitDims) {
@@ -674,6 +675,7 @@ export default function NuevoProductoPage() {
 
       // Serializar dimensiones estructuradas de insumos de superficie o unidad con medidas
       const supplyDimensions: Record<string, SupplyDimensionMeta> = {};
+      const dimOccurrences: Record<string, number> = {};
       for (const s of selectedSupplies) {
         const isSurface = s.supply?.id && isSurfaceSupply(s.supply);
         const hasUnitDims = s.supply?.id && isUnitSupplyWithDimensions(s.supply);
@@ -682,7 +684,8 @@ export default function NuevoProductoPage() {
           const w = typeof s.width === "number" ? s.width : parseFloat(String(s.width)) || 0;
           const l = typeof s.length === "number" ? s.length : parseFloat(String(s.length)) || 0;
           if (w > 0 && l > 0) {
-            supplyDimensions[s.supply.id] = {
+            dimOccurrences[s.supply.id] = (dimOccurrences[s.supply.id] || 0) + 1;
+            supplyDimensions[buildSupplyDimensionKey(s.supply.id, dimOccurrences[s.supply.id])] = {
               pieces: p,
               width: w,
               widthUnit: s.widthUnit || "cm",
@@ -1124,7 +1127,7 @@ export default function NuevoProductoPage() {
 
                     return (
                       <div
-                        key={item.supply.id || idx}
+                        key={`${item.supply.id}-${idx}`}
                         className="p-3 bg-neutral-50 rounded-2xl border border-neutral-200/80 flex flex-col space-y-2.5"
                       >
                         <div className="flex items-center justify-between">
@@ -1728,7 +1731,7 @@ export default function NuevoProductoPage() {
                         if ((e.key === "Tab" || e.key === "ArrowRight") && matchedSuggestion && suggestionSuffix) {
                           e.preventDefault();
                           setSupplyPickerSearch(matchedSuggestion.name);
-                        } else if (e.key === "Enter" && matchedSuggestion && !selectedSupplies.some((s) => s.supply.id === matchedSuggestion.id)) {
+                        } else if (e.key === "Enter" && matchedSuggestion) {
                           e.preventDefault();
                           handleAddSupply(matchedSuggestion);
                           setSupplyPickerSearch("");
@@ -1819,7 +1822,7 @@ export default function NuevoProductoPage() {
                 }
 
                 return filtered.map((sup) => {
-                  const isSelected = selectedSupplies.some((s) => s.supply.id === sup.id);
+                  const timesAdded = selectedSupplies.filter((s) => s.supply.id === sup.id).length;
                   const unitCost = calculateUnitCost(
                     sup.current_price,
                     sup.purchase_quantity,
@@ -1829,13 +1832,8 @@ export default function NuevoProductoPage() {
                   return (
                     <button
                       key={sup.id}
-                      disabled={isSelected}
                       onClick={() => handleAddSupply(sup)}
-                      className={`w-full p-3 rounded-2xl border text-left transition flex items-center justify-between ${
-                        isSelected
-                          ? "bg-neutral-100 border-neutral-200 opacity-50 cursor-not-allowed"
-                          : "bg-white hover:bg-[#DCF4D7]/50 border-neutral-200 hover:border-[#3BB578]"
-                      }`}
+                      className="w-full p-3 rounded-2xl border text-left transition flex items-center justify-between bg-white hover:bg-[#DCF4D7]/50 border-neutral-200 hover:border-[#3BB578]"
                     >
                       <div>
                         <span className="text-xs font-bold text-neutral-800 block">
@@ -1844,6 +1842,11 @@ export default function NuevoProductoPage() {
                         <span className="text-[10px] text-neutral-400">
                           {sup.category === "packaging" ? "📦 Packaging" : "🧵 Materia Prima"}
                         </span>
+                        {timesAdded > 0 && (
+                          <span className="text-[10px] font-semibold text-[#1F7A4C] block">
+                            Ya agregado{timesAdded > 1 ? ` ${timesAdded} veces` : ""} · tocá para sumar otro corte
+                          </span>
+                        )}
                       </div>
                       <div className="text-right">
                         <span className="text-xs font-bold text-[#1F7A4C]">

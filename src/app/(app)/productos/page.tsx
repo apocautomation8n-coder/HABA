@@ -56,6 +56,8 @@ import {
   getCategoryId,
   normalizeCategoryString,
   SupplyDimensionMeta,
+  buildSupplyDimensionKey,
+  matchSupplyDimensions,
   isSurfaceSupply,
   getSurfaceTargetUnit,
   calculateSurfaceRecipeQuantity,
@@ -719,7 +721,12 @@ export default function ProductosPage() {
     setEditYield(meta.yield || 1);
 
     // Cargar insumos actuales de la receta con dimensiones de superficie o unidad si existen
-    const initialSupplies: EditSupplyLine[] = (product.product_supplies || []).map((ps) => {
+    const recipeRows = product.product_supplies || [];
+    const rowDimensions = matchSupplyDimensions(
+      recipeRows.map((ps) => ({ supply_id: ps.supply_id || ps.supplies?.id, quantity: ps.quantity })),
+      meta.supplyDimensions
+    );
+    const initialSupplies: EditSupplyLine[] = recipeRows.map((ps, rowIdx) => {
       const s = ps.supplies;
       const unitCost = s
         ? calculateUnitCost(s.current_price, s.purchase_quantity || 1, s.conversion_factor || 1)
@@ -727,7 +734,7 @@ export default function ProductosPage() {
       const supplyId = ps.supply_id || s?.id || "";
       const isSurface = isSurfaceSupply({ use_unit: s?.use_unit, purchase_unit: s?.purchase_unit });
       const hasUnitDims = isUnitSupplyWithDimensions(s);
-      const dim = meta.supplyDimensions?.[supplyId];
+      const dim = rowDimensions[rowIdx];
 
       return {
         id: ps.id,
@@ -799,10 +806,7 @@ export default function ProductosPage() {
     if (!supplyId) return;
     const supply = allSupplies.find((s) => s.id === supplyId);
     if (!supply) return;
-    if (editSupplies.some((es) => es.supply_id === supplyId)) {
-      alert("Este insumo ya está agregado al producto.");
-      return;
-    }
+    // Se permite repetir un insumo: por ejemplo, varios cortes de distinta medida de la misma tela.
     const unitCost = calculateUnitCost(
       supply.current_price,
       supply.purchase_quantity || 1,
@@ -1114,6 +1118,7 @@ export default function ProductosPage() {
 
       // Serializar dimensiones estructuradas de insumos de superficie o unidad con medidas
       const supplyDimensions: Record<string, SupplyDimensionMeta> = {};
+      const dimOccurrences: Record<string, number> = {};
       for (const s of editSupplies) {
         const isSurface = s.supply_id && isSurfaceSupply(s);
         const hasUnitDims = s.supply_id && isUnitSupplyWithDimensions(s);
@@ -1122,7 +1127,8 @@ export default function ProductosPage() {
           const w = typeof s.width === "number" ? s.width : parseFloat(String(s.width)) || 0;
           const l = typeof s.length === "number" ? s.length : parseFloat(String(s.length)) || 0;
           if (w > 0 && l > 0) {
-            supplyDimensions[s.supply_id] = {
+            dimOccurrences[s.supply_id] = (dimOccurrences[s.supply_id] || 0) + 1;
+            supplyDimensions[buildSupplyDimensionKey(s.supply_id, dimOccurrences[s.supply_id])] = {
               pieces: p,
               width: w,
               widthUnit: s.widthUnit || "cm",
@@ -1205,6 +1211,18 @@ export default function ProductosPage() {
         const { error: insSuppliesErr } = await supabase.from("product_supplies").insert(validSuppliesToInsert);
         if (insSuppliesErr) {
           console.error("Error updating product supplies:", insSuppliesErr);
+          // Restaurar la receta original para no dejar el producto sin insumos
+          const originalRows = (editModalProduct.product_supplies || [])
+            .filter((ps) => Boolean(ps.supply_id || ps.supplies?.id))
+            .map((ps) => ({
+              product_id: editModalProduct.id,
+              supply_id: ps.supply_id || ps.supplies?.id,
+              quantity: ps.quantity,
+            }));
+          if (originalRows.length > 0) {
+            const { error: restoreErr } = await supabase.from("product_supplies").insert(originalRows);
+            if (restoreErr) console.error("No se pudo restaurar la receta original:", restoreErr);
+          }
           throw new Error("Error al guardar insumos de la receta: " + insSuppliesErr.message);
         }
       }
@@ -2604,7 +2622,15 @@ export default function ProductosPage() {
 
                       {product.product_supplies && product.product_supplies.length > 0 ? (
                         <div className="space-y-1.5">
-                          {product.product_supplies.map((item) => {
+                          {(() => {
+                            const cardDimensions = matchSupplyDimensions(
+                              product.product_supplies.map((ps) => ({
+                                supply_id: ps.supply_id || ps.supplies?.id,
+                                quantity: ps.quantity,
+                              })),
+                              product.meta.supplyDimensions
+                            );
+                            return product.product_supplies.map((item, itemIdx) => {
                             const supply = item.supplies;
                             const modInfo = product.modifiedSupplies?.find(
                               (m: ModifiedSupplyInfo) => m.supplyId === item.supply_id
@@ -2661,7 +2687,7 @@ export default function ProductosPage() {
                                   </div>
                                   <span className="text-[10px] text-neutral-400 block mt-0.5">
                                     {(() => {
-                                      const dim = product.meta.supplyDimensions?.[item.supply_id || supply?.id || ""];
+                                      const dim = cardDimensions[itemIdx];
                                       if (dim && dim.pieces > 0 && dim.width > 0 && dim.length > 0) {
                                         return (
                                           <span className="text-neutral-600 font-semibold mr-1">
@@ -2702,15 +2728,23 @@ export default function ProductosPage() {
                                         modInfo.isIncrease ? "text-amber-700" : "text-sky-700"
                                       }`}
                                     >
-                                      {modInfo.isIncrease
-                                        ? `+${formatMoney(modInfo.costImpact)}`
-                                        : `-${formatMoney(modInfo.costImpact)}`}
+                                      {(() => {
+                                        // Si el insumo está en varias líneas, el impacto se reparte según la cantidad de cada una
+                                        const lineImpact =
+                                          modInfo.quantity > 0
+                                            ? (modInfo.costImpact * Number(item.quantity || 0)) / modInfo.quantity
+                                            : modInfo.costImpact;
+                                        return modInfo.isIncrease
+                                          ? `+${formatMoney(lineImpact)}`
+                                          : `-${formatMoney(lineImpact)}`;
+                                      })()}
                                     </span>
                                   )}
                                 </div>
                               </div>
                             );
-                          })}
+                            });
+                          })()}
                         </div>
                       ) : (
                         <div className="p-3 bg-neutral-50 rounded-xl border border-dashed border-neutral-200 text-center text-xs text-neutral-400 italic">
@@ -3105,9 +3139,9 @@ export default function ProductosPage() {
                         >
                           <option value="">+ Seleccionar insumo para agregar...</option>
                           {allSupplies
-                            .filter((s) => !editSupplies.some((es) => es.supply_id === s.id))
                             .map((s) => (
                               <option key={s.id} value={s.id}>
+                                {editSupplies.some((es) => es.supply_id === s.id) ? "(ya agregado) " : ""}
                                 {s.name} ({s.category === "packaging" ? "📦 Packaging" : "🧵 Materia"}) - {formatMoney(s.current_price)}/{s.purchase_unit || "u"}
                               </option>
                             ))}
@@ -3167,7 +3201,7 @@ export default function ProductosPage() {
 
                           return (
                             <div
-                              key={item.supply_id || idx}
+                              key={`${item.supply_id}-${idx}`}
                               className={`p-2.5 rounded-xl border flex flex-col space-y-2 text-xs transition ${
                                 isModified
                                   ? modInfo?.isIncrease

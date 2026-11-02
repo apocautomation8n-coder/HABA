@@ -161,6 +161,69 @@ export interface SupplyDimensionMeta {
   totalAreaQuantity?: number;
 }
 
+/**
+ * Clave con la que se guardan las medidas de una línea de la receta.
+ * Un mismo insumo puede aparecer varias veces (ej: varios cortes distintos de la misma tela).
+ * La primera aparición usa el id del insumo (compatible con productos ya guardados) y las
+ * siguientes "id#2", "id#3", etc.
+ */
+export function buildSupplyDimensionKey(supplyId: string, occurrence: number): string {
+  return occurrence <= 1 ? supplyId : `${supplyId}#${occurrence}`;
+}
+
+/**
+ * Devuelve, alineadas con las líneas de la receta, las medidas guardadas de cada una.
+ * Primero empareja por cantidad (las medidas guardan la cantidad que generaron) y después
+ * asigna en orden las que queden, así no depende del orden en que vuelvan las filas.
+ */
+export function matchSupplyDimensions(
+  rows: Array<{ supply_id?: string | null; quantity?: number | string | null }>,
+  supplyDimensions?: Record<string, SupplyDimensionMeta>
+): Array<SupplyDimensionMeta | undefined> {
+  const pools = new Map<string, SupplyDimensionMeta[]>();
+  for (const [key, dim] of Object.entries(supplyDimensions || {})) {
+    const baseId = key.split("#")[0];
+    if (!pools.has(baseId)) pools.set(baseId, []);
+    pools.get(baseId)!.push(dim);
+  }
+
+  const used = new Map<string, Set<number>>();
+  const result: Array<SupplyDimensionMeta | undefined> = rows.map(() => undefined);
+
+  const take = (supplyId: string, index: number) => {
+    if (!used.has(supplyId)) used.set(supplyId, new Set());
+    used.get(supplyId)!.add(index);
+    return pools.get(supplyId)![index];
+  };
+
+  // 1. Coincidencia exacta por cantidad
+  rows.forEach((row, i) => {
+    const supplyId = row.supply_id || "";
+    const pool = pools.get(supplyId);
+    if (!pool) return;
+    const qty = Number(row.quantity);
+    const idx = pool.findIndex(
+      (d, j) =>
+        !used.get(supplyId)?.has(j) &&
+        d.totalAreaQuantity !== undefined &&
+        Math.abs(Number(d.totalAreaQuantity) - qty) < 1e-6
+    );
+    if (idx >= 0) result[i] = take(supplyId, idx);
+  });
+
+  // 2. El resto, en orden
+  rows.forEach((row, i) => {
+    if (result[i]) return;
+    const supplyId = row.supply_id || "";
+    const pool = pools.get(supplyId);
+    if (!pool) return;
+    const idx = pool.findIndex((_, j) => !used.get(supplyId)?.has(j));
+    if (idx >= 0) result[i] = take(supplyId, idx);
+  });
+
+  return result;
+}
+
 export interface ComponentMeta {
   component_product_id: string;
   quantity: number;
@@ -1372,7 +1435,20 @@ export function detectModifiedSupplies(
 
   const modified: ModifiedSupplyInfo[] = [];
 
+  // Un insumo puede figurar en varias líneas (varios cortes de la misma tela):
+  // se informa una sola vez por insumo, con la cantidad total.
+  const groupedSupplies = new Map<string, any>();
   for (const ps of product.product_supplies) {
+    const key = ps.supply_id || ps.supplies?.id || `row-${groupedSupplies.size}`;
+    const existing = groupedSupplies.get(key);
+    if (existing) {
+      existing.quantity = Number(existing.quantity || 0) + Number(ps.quantity || 0);
+    } else {
+      groupedSupplies.set(key, { ...ps });
+    }
+  }
+
+  for (const ps of groupedSupplies.values()) {
     const supply = ps.supplies;
     if (!supply) continue;
 
