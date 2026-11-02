@@ -15,7 +15,9 @@ import {
   TrendingUp,
   ChevronRight,
   X,
+  Link2,
 } from "lucide-react";
+import { getSafeSupplyLink, getSupplyLinkLabel } from "@/lib/supplies";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
 import { calculateUnitCost } from "@/lib/units";
@@ -448,6 +450,23 @@ export default function InsumosPage() {
                             📐 {supply.unit_width} × {supply.unit_length} {supply.unit_dimension_unit || "cm"}
                           </span>
                         )}
+                        {(() => {
+                          const safeLink = getSafeSupplyLink(supply.link);
+                          if (!safeLink) return null;
+                          return (
+                            <a
+                              href={safeLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              title={safeLink}
+                              className="inline-flex items-center gap-0.5 text-[10px] bg-[#F0FAF4] text-[#1F7A4C] border border-[#DCF4D7] px-1.5 py-0.5 rounded-md font-semibold whitespace-nowrap hover:bg-[#DCF4D7] transition"
+                            >
+                              <Link2 className="w-3 h-3" />
+                              {getSupplyLinkLabel(safeLink)}
+                            </a>
+                          );
+                        })()}
                       </div>
                     </div>
                   </div>

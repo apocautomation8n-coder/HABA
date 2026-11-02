@@ -2,8 +2,9 @@
 
 import React from "react";
 import { createPortal } from "react-dom";
-import { X, Edit2, TrendingUp, Sparkles, Package, Layers, Calculator } from "lucide-react";
+import { X, Edit2, TrendingUp, Sparkles, Package, Layers, Calculator, Link2, ExternalLink } from "lucide-react";
 import { SupplyItem } from "@/components/SupplyModal";
+import { getSafeSupplyLink, getSupplyLinkLabel } from "@/lib/supplies";
 import { calculateUnitCost } from "@/lib/units";
 import { useFormatPrefs } from "@/hooks/useFormatPrefs";
 
@@ -31,6 +32,7 @@ export const SupplyDetailModal: React.FC<SupplyDetailModalProps> = ({
     supply.conversion_factor
   );
   const totalUseUnits = (supply.purchase_quantity || 1) * (supply.conversion_factor || 1);
+  const safeLink = getSafeSupplyLink(supply.link);
 
   const modalContent = (
     <div
@@ -158,6 +160,25 @@ export const SupplyDetailModal: React.FC<SupplyDetailModalProps> = ({
               </span>
             </div>
           </div>
+
+          {/* Link de referencia o compra */}
+          {safeLink && (
+            <a
+              href={safeLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2.5 p-3 rounded-2xl border border-[#EAF0E8] bg-white hover:bg-[#F6F7F2] hover:border-[#3BB578] transition text-xs group"
+            >
+              <Link2 className="w-4 h-4 text-[#3BB578] flex-shrink-0" />
+              <span className="min-w-0 flex-1">
+                <span className="text-[10px] font-bold text-neutral-500 block">Link del insumo</span>
+                <span className="font-semibold text-[#1F7A4C] truncate block">
+                  {getSupplyLinkLabel(safeLink)}
+                </span>
+              </span>
+              <ExternalLink className="w-3.5 h-3.5 text-neutral-400 group-hover:text-[#1F7A4C] flex-shrink-0" />
+            </a>
+          )}
 
           {/* Explicación didáctica */}
           <div className="bg-[#F0FAF4] border border-[#DCF4D7] p-3 rounded-2xl flex items-start gap-2.5">

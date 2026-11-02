@@ -30,6 +30,8 @@ import {
   SupplyItem,
   UnitDimensionUnit,
   isUnitSupply,
+  normalizeSupplyLink,
+  SUPPLY_LINK_MAX_LENGTH,
 } from "@/lib/supplies";
 import {
   matchSourceInsumos,
@@ -165,6 +167,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
   const [unitDimensionUnit, setUnitDimensionUnit] = useState<UnitDimensionUnit>("cm");
 
   const [currentPrice, setCurrentPrice] = useState<number | string>("");
+  const [link, setLink] = useState<string>("");
   const [useUnit, setUseUnit] = useState("g");
   const [conversionFactor, setConversionFactor] = useState<number | string>(1000);
   const [selectedPresetId, setSelectedPresetId] = useState<string>("kg-g");
@@ -881,6 +884,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
       setPurchaseUnit(initialSupply.purchase_unit || "kg");
       setPurchaseQuantity(initialSupply.purchase_quantity ?? "");
       setCurrentPrice(initialSupply.current_price ?? "");
+      setLink(initialSupply.link || "");
       setUseUnit(initialSupply.use_unit || "g");
       setConversionFactor(initialSupply.conversion_factor ?? 1000);
       const initialNormPurchase = normalizeUnit(initialSupply.purchase_unit);
@@ -926,6 +930,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
             setPurchaseUnit(draft.purchaseUnit || "kg");
             setPurchaseQuantity(draft.purchaseQuantity ?? "");
             setCurrentPrice(draft.currentPrice ?? "");
+            setLink(typeof draft.link === "string" ? draft.link : "");
             setUseUnit(draft.useUnit || "g");
             setConversionFactor(draft.conversionFactor ?? 1000);
             setSelectedPresetId(draft.selectedPresetId || "kg-g");
@@ -949,6 +954,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
         setPurchaseUnit("kg");
         setPurchaseQuantity("");
         setCurrentPrice("");
+        setLink("");
         setUseUnit("g");
         setConversionFactor(1000);
         setSelectedPresetId("kg-g");
@@ -975,6 +981,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
           purchaseUnit,
           purchaseQuantity,
           currentPrice,
+          link,
           useUnit,
           conversionFactor,
           selectedPresetId,
@@ -998,6 +1005,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
     purchaseUnit,
     purchaseQuantity,
     currentPrice,
+    link,
     useUnit,
     conversionFactor,
     selectedPresetId,
@@ -1115,6 +1123,12 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
       return;
     }
 
+    const normalizedLink = normalizeSupplyLink(link);
+    if (normalizedLink === "invalid") {
+      setError("El link no es válido. Pegá la dirección completa, por ejemplo https://articulo.mercadolibre.com.ar/...");
+      return;
+    }
+
     // Medidas de compra de insumos por superficie: se guardan para mostrarlas al editar
     const surfaceStored = isSurfaceUnit
       ? surfaceDimsForStorage(
@@ -1210,6 +1224,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
             unit_width: surfaceStored ? surfaceStored.width : parsedUnitWidth,
             unit_length: surfaceStored ? surfaceStored.length : parsedUnitLength,
             unit_dimension_unit: surfaceStored ? surfaceStored.unit : parsedUnitDimUnit,
+            link: normalizedLink,
             updated_at: nowIso,
           })
           .eq("id", initialSupply.id);
@@ -1242,6 +1257,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
             unit_width: surfaceStored ? surfaceStored.width : parsedUnitWidth,
             unit_length: surfaceStored ? surfaceStored.length : parsedUnitLength,
             unit_dimension_unit: surfaceStored ? surfaceStored.unit : parsedUnitDimUnit,
+            link: normalizedLink,
           })
           .select("*")
           .single();
@@ -1272,6 +1288,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
         current_price: parsedPrice,
         use_unit: useUnit.trim(),
         conversion_factor: parsedConversion,
+        link: normalizedLink,
         unit_width: surfaceStored
           ? surfaceStored.width
           : isUnitPurchase && unitWidth !== "" && Number(unitWidth) > 0 ? Number(unitWidth) : null,
@@ -1637,6 +1654,27 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
                     <span>Ya existe un insumo con este nombre. Elegí un nombre diferente.</span>
                   </p>
                 )}
+              </div>
+
+              {/* Link de referencia o compra (opcional) */}
+              <div className="space-y-1">
+                <label htmlFor="supply-link" className="text-[11px] font-semibold text-[#2B2B2B] block">
+                  Link <span className="font-normal text-neutral-400">(opcional)</span>
+                </label>
+                <input
+                  id="supply-link"
+                  type="text"
+                  inputMode="url"
+                  autoComplete="off"
+                  value={link}
+                  maxLength={SUPPLY_LINK_MAX_LENGTH}
+                  onChange={(e) => {
+                    setLink(e.target.value);
+                    if (error) setError(null);
+                  }}
+                  placeholder="Pegá acá el link de donde lo comprás"
+                  className="w-full h-9 px-3 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none transition text-[#2B2B2B]"
+                />
               </div>
 
             {/* Fila Dimensional Dinámica (m2 / cm2) o Estándar */}
