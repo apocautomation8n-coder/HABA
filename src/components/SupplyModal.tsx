@@ -102,6 +102,26 @@ const toMeters = (val: number, unit: "m" | "cm" | "mm"): number => {
   return val;
 };
 
+/**
+ * Medidas de compra de un insumo por superficie (m² / cm²) listas para guardar en
+ * unit_width / unit_length / unit_dimension_unit, así se recuperan al editar.
+ * Si ancho y largo usan unidades distintas se guardan ambos en cm.
+ */
+const surfaceDimsForStorage = (
+  width: number,
+  widthUnit: "m" | "cm" | "mm",
+  length: number,
+  lengthUnit: "m" | "cm" | "mm"
+): { width: number; length: number; unit: "m" | "cm" | "mm" } | null => {
+  if (isNaN(width) || width <= 0 || isNaN(length) || length <= 0) return null;
+  if (widthUnit === lengthUnit) return { width, length, unit: widthUnit };
+  return {
+    width: parseFloat(toCentimeters(width, widthUnit).toFixed(4)),
+    length: parseFloat(toCentimeters(length, lengthUnit).toFixed(4)),
+    unit: "cm",
+  };
+};
+
 const toCentimeters = (val: number, unit: "m" | "cm" | "mm"): number => {
   if (unit === "m") return val * 100;
   if (unit === "cm") return val;
@@ -863,12 +883,27 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
       setCurrentPrice(initialSupply.current_price ?? "");
       setUseUnit(initialSupply.use_unit || "g");
       setConversionFactor(initialSupply.conversion_factor ?? 1000);
-      setDimWidth("");
-      setDimWidthUnit("cm");
-      setDimLength("");
-      setDimLengthUnit("m");
-      setUnitWidth(initialSupply.unit_width ?? "");
-      setUnitLength(initialSupply.unit_length ?? "");
+      const initialNormPurchase = normalizeUnit(initialSupply.purchase_unit);
+      const initialIsSurface = initialNormPurchase === "m2" || initialNormPurchase === "cm2";
+      const savedDimUnit = (initialSupply.unit_dimension_unit as "m" | "cm" | "mm") || "cm";
+      const hasSavedSurfaceDims =
+        initialIsSurface && Number(initialSupply.unit_width) > 0 && Number(initialSupply.unit_length) > 0;
+      if (hasSavedSurfaceDims) {
+        // Insumo por superficie: recuperar el ancho y largo con que se cargó
+        setDimWidth(Number(initialSupply.unit_width));
+        setDimWidthUnit(savedDimUnit);
+        setDimLength(Number(initialSupply.unit_length));
+        setDimLengthUnit(savedDimUnit);
+        setUnitWidth("");
+        setUnitLength("");
+      } else {
+        setDimWidth("");
+        setDimWidthUnit("cm");
+        setDimLength("");
+        setDimLengthUnit("m");
+        setUnitWidth(initialIsSurface ? "" : initialSupply.unit_width ?? "");
+        setUnitLength(initialIsSurface ? "" : initialSupply.unit_length ?? "");
+      }
       setUnitDimensionUnit((initialSupply.unit_dimension_unit as UnitDimensionUnit) || "cm");
 
       const matched = findMatchingPreset(initialSupply.purchase_unit, initialSupply.use_unit);
@@ -1080,6 +1115,16 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
       return;
     }
 
+    // Medidas de compra de insumos por superficie: se guardan para mostrarlas al editar
+    const surfaceStored = isSurfaceUnit
+      ? surfaceDimsForStorage(
+          parseNumber(String(dimWidth)),
+          dimWidthUnit,
+          parseNumber(String(dimLength)),
+          dimLengthUnit
+        )
+      : null;
+
     try {
       setLoading(true);
       const {
@@ -1162,9 +1207,9 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
             current_price: parsedPrice,
             use_unit: useUnit.trim(),
             conversion_factor: parsedConversion,
-            unit_width: parsedUnitWidth,
-            unit_length: parsedUnitLength,
-            unit_dimension_unit: parsedUnitDimUnit,
+            unit_width: surfaceStored ? surfaceStored.width : parsedUnitWidth,
+            unit_length: surfaceStored ? surfaceStored.length : parsedUnitLength,
+            unit_dimension_unit: surfaceStored ? surfaceStored.unit : parsedUnitDimUnit,
             updated_at: nowIso,
           })
           .eq("id", initialSupply.id);
@@ -1194,9 +1239,9 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
             current_price: parsedPrice,
             use_unit: useUnit.trim(),
             conversion_factor: parsedConversion,
-            unit_width: parsedUnitWidth,
-            unit_length: parsedUnitLength,
-            unit_dimension_unit: parsedUnitDimUnit,
+            unit_width: surfaceStored ? surfaceStored.width : parsedUnitWidth,
+            unit_length: surfaceStored ? surfaceStored.length : parsedUnitLength,
+            unit_dimension_unit: surfaceStored ? surfaceStored.unit : parsedUnitDimUnit,
           })
           .select("*")
           .single();
@@ -1227,12 +1272,15 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
         current_price: parsedPrice,
         use_unit: useUnit.trim(),
         conversion_factor: parsedConversion,
-        unit_width:
-          isUnitPurchase && unitWidth !== "" && Number(unitWidth) > 0 ? Number(unitWidth) : null,
-        unit_length:
-          isUnitPurchase && unitLength !== "" && Number(unitLength) > 0 ? Number(unitLength) : null,
-        unit_dimension_unit:
-          isUnitPurchase &&
+        unit_width: surfaceStored
+          ? surfaceStored.width
+          : isUnitPurchase && unitWidth !== "" && Number(unitWidth) > 0 ? Number(unitWidth) : null,
+        unit_length: surfaceStored
+          ? surfaceStored.length
+          : isUnitPurchase && unitLength !== "" && Number(unitLength) > 0 ? Number(unitLength) : null,
+        unit_dimension_unit: surfaceStored
+          ? surfaceStored.unit
+          : isUnitPurchase &&
           unitWidth !== "" &&
           unitLength !== "" &&
           Number(unitWidth) > 0 &&
@@ -1593,6 +1641,7 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
 
             {/* Fila Dimensional Dinámica (m2 / cm2) o Estándar */}
             {isSurfaceUnit ? (
+              <>
               <div className="flex flex-col sm:flex-row gap-3 items-start">
                 {/* Inputs dimensionales compartiendo primera fila en móviles */}
                 <div className="grid grid-cols-2 gap-3 w-full sm:flex-1">
@@ -1666,6 +1715,20 @@ export const SupplyModal: React.FC<SupplyModalProps> = ({
                   {renderUnitDropdown()}
                 </div>
               </div>
+              {initialSupply?.id &&
+                dimWidth === "" &&
+                dimLength === "" &&
+                Number(initialSupply.purchase_quantity) > 0 && (
+                  <p className="text-[11px] text-neutral-500 leading-snug -mt-1">
+                    Superficie guardada:{" "}
+                    <strong className="text-[#2B2B2B]">
+                      {Number(initialSupply.purchase_quantity).toLocaleString("es-AR", { maximumFractionDigits: 4 })}{" "}
+                      {normalizeUnit(initialSupply.purchase_unit) === "cm2" ? "cm²" : "m²"}
+                    </strong>
+                    . Este insumo se cargó antes de que se guardaran el ancho y el largo. Si los completás ahora, quedan guardados.
+                  </p>
+                )}
+              </>
             ) : (
               /* Fila Estándar: Cantidad y Unidad de Compra */
               <div className="grid grid-cols-2 gap-3 items-start">
