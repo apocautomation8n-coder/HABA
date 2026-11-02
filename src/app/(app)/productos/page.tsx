@@ -3140,9 +3140,10 @@ export default function ProductosPage() {
                           <option value="">+ Seleccionar insumo para agregar...</option>
                           {allSupplies
                             .map((s) => (
-                              <option key={s.id} value={s.id}>
+                              <option key={s.id} value={s.id} title={s.name}>
                                 {editSupplies.some((es) => es.supply_id === s.id) ? "(ya agregado) " : ""}
-                                {s.name} ({s.category === "packaging" ? "📦 Packaging" : "🧵 Materia"}) - {formatMoney(s.current_price)}/{s.purchase_unit || "u"}
+                                {/* Nombres muy largos (ej. un link pegado) estiran la lista fuera de la pantalla */}
+                                {s.name.length > 60 ? `${s.name.slice(0, 57).trimEnd()}…` : s.name} ({s.category === "packaging" ? "📦 Packaging" : "🧵 Materia"}) - {formatMoney(s.current_price)}/{s.purchase_unit || "u"}
                               </option>
                             ))}
                         </select>
@@ -3442,8 +3443,8 @@ export default function ProductosPage() {
                             .map((p) => {
                               const baseCost = Number(p.total_cost) || Number(p.direct_cost) || 0;
                               return (
-                                <option key={p.id} value={p.id}>
-                                  {p.name} - Costo base: {formatMoney(baseCost)}/u
+                                <option key={p.id} value={p.id} title={p.name}>
+                                  {p.name.length > 60 ? `${p.name.slice(0, 57).trimEnd()}…` : p.name} - Costo base: {formatMoney(baseCost)}/u
                                 </option>
                               );
                             })}
