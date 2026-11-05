@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { syncUserPaymentWithMercadoPago } from "@/lib/mercadopago";
+import { syncUserSubscription } from "@/lib/mp-subscriptions";
 import { checkIsAdmin } from "@/lib/auth-helpers";
 
 export const dynamic = "force-dynamic";
@@ -72,6 +73,15 @@ async function handleSyncPayment(request: Request) {
     // - Si no existe pago aprobado, NO modifica la base de datos y retorna error
     // - Si el último pago aprobado ya coincide con profiles.last_payment_id, rechaza la solicitud
     // - Solo si el pago aprobado es nuevo (id !== last_payment_id), aplica los 30 días y actualiza last_payment_id
+    // Suscripción automática: registrar su estado (al volver del link de Mercado Pago el aviso
+    // del webhook puede no haber llegado todavía)
+    let subscription: { status: string | null; activated: boolean } = { status: null, activated: false };
+    try {
+      subscription = await syncUserSubscription(targetUserId);
+    } catch (subErr) {
+      console.warn("[API sync-payment] No se pudo sincronizar la suscripción:", subErr);
+    }
+
     const result = await syncUserPaymentWithMercadoPago({
       userId: targetUserId,
       paymentId: paymentId ? String(paymentId) : undefined,
@@ -79,7 +89,19 @@ async function handleSyncPayment(request: Request) {
       trusted,
     });
 
-    return NextResponse.json(result);
+    // Suscripción recién activada y el cobro todavía no figura: igual es un éxito para la usuaria
+    if (!result.synced && subscription.status === "authorized") {
+      return NextResponse.json({
+        ...result,
+        synced: true,
+        status: "authorized",
+        plan_type: "mensual",
+        subscription: subscription.status,
+        error: undefined,
+      });
+    }
+
+    return NextResponse.json({ ...result, subscription: subscription.status });
   } catch (err: any) {
     console.error("[API sync-payment] Error:", err);
     return NextResponse.json({ error: err.message }, { status: 500 });

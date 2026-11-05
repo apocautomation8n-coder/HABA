@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { checkIsAdmin } from "@/lib/auth-helpers";
-import { createUserSubscription, getRequestUser } from "@/lib/mp-subscriptions";
+import { createPendingSubscription, createUserSubscription, getRequestUser } from "@/lib/mp-subscriptions";
 
 export const dynamic = "force-dynamic";
 
@@ -20,10 +20,15 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json().catch(() => ({}));
+    // mode "mercadopago": la usuaria paga en Mercado Pago (saldo o sus tarjetas); sin tarjeta acá
+    const mode = body.mode === "mercadopago" ? "mercadopago" : "card";
     const cardTokenId = typeof body.card_token_id === "string" ? body.card_token_id.trim() : "";
-    const payerEmail = typeof body.payer_email === "string" ? body.payer_email.trim().toLowerCase() : "";
+    const payerEmail =
+      typeof body.payer_email === "string" && body.payer_email.trim()
+        ? body.payer_email.trim().toLowerCase()
+        : String(user.email || "").toLowerCase();
 
-    if (!cardTokenId || cardTokenId.length > 200) {
+    if (mode === "card" && (!cardTokenId || cardTokenId.length > 200)) {
       return NextResponse.json({ error: "Faltan los datos de la tarjeta." }, { status: 400 });
     }
     if (!payerEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payerEmail)) {
@@ -34,7 +39,10 @@ export async function POST(request: Request) {
     const proto = request.headers.get("x-forwarded-proto") || (host.includes("localhost") ? "http" : "https");
     const appUrl = (process.env.NEXT_PUBLIC_APP_URL || `${proto}://${host}`).replace(/\/$/, "");
 
-    const result = await createUserSubscription({ user, cardTokenId, payerEmail, appUrl });
+    const result =
+      mode === "mercadopago"
+        ? await createPendingSubscription({ user, payerEmail, appUrl })
+        : await createUserSubscription({ user, cardTokenId, payerEmail, appUrl });
     if (!result.success) {
       return NextResponse.json(result, { status: result.alreadySubscribed ? 409 : 400 });
     }

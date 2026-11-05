@@ -11,6 +11,9 @@ import {
   Lock,
   RefreshCw,
   CalendarClock,
+  Wallet,
+  ChevronRight,
+  ExternalLink,
 } from "lucide-react";
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
@@ -97,6 +100,9 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<"subscribed" | "cancelled" | null>(null);
+  // Cómo quiere pagar: en Mercado Pago (saldo o sus tarjetas) o con tarjeta en el formulario
+  const [method, setMethod] = useState<"mercadopago" | "card" | null>(null);
+  const [redirecting, setRedirecting] = useState(false);
   const cardFormRef = useRef<any>(null);
 
   const authHeaders = useCallback(async () => {
@@ -113,6 +119,8 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
     if (!isOpen) return;
     setError(null);
     setDone(null);
+    setMethod(null);
+    setRedirecting(false);
     setConfirmCancel(false);
     setFormReady(false);
     setInfo(null);
@@ -164,7 +172,33 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
   );
 
   // Montar el formulario seguro de Mercado Pago cuando corresponde mostrarlo
-  const showForm = isOpen && info !== null && !info.subscribed && !done;
+  const canSubscribe = isOpen && info !== null && !info.subscribed && !done;
+  const showForm = canSubscribe && method === "card";
+
+  // Pagar en Mercado Pago: HABA crea la suscripción con el id de la cuenta y manda al link personal
+  const handleMercadoPago = async () => {
+    try {
+      setRedirecting(true);
+      setError(null);
+      const res = await fetch("/api/mercadopago/create-subscription", {
+        method: "POST",
+        headers: await authHeaders(),
+        body: JSON.stringify({ mode: "mercadopago", payer_email: defaultEmail }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success || !data.initPoint) {
+        if (data.alreadySubscribed) {
+          setInfo({ subscribed: true, status: data.status, nextPaymentDate: data.nextPaymentDate });
+          return;
+        }
+        throw new Error(data.error || "No se pudo iniciar la suscripción en Mercado Pago.");
+      }
+      window.location.href = data.initPoint;
+    } catch (err: any) {
+      setError(err?.message || "No se pudo iniciar la suscripción en Mercado Pago.");
+      setRedirecting(false);
+    }
+  };
   useEffect(() => {
     if (!showForm) return;
     const publicKey = BUILD_PUBLIC_KEY || info?.publicKey || "";
@@ -410,6 +444,50 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
             </div>
           )}
 
+          {/* Elegir cómo pagar */}
+          {canSubscribe && method === null && (
+            <div className="p-5 space-y-2.5">
+              <p className="text-[11px] font-semibold text-neutral-700">¿Cómo querés pagar?</p>
+              <button
+                type="button"
+                onClick={handleMercadoPago}
+                disabled={redirecting}
+                className="w-full p-3.5 bg-white border border-[#C3EBC0] hover:border-[#3BB578] hover:bg-[#F6FBF7] rounded-2xl text-left flex items-center gap-3 transition disabled:opacity-70"
+              >
+                <div className="w-9 h-9 rounded-xl bg-[#DCF4D7] text-[#1F7A4C] flex items-center justify-center shrink-0">
+                  {redirecting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wallet className="w-4 h-4" />}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <span className="text-xs font-bold text-neutral-800 block">Con mi cuenta de Mercado Pago</span>
+                  <span className="text-[11px] text-neutral-500 block leading-snug">
+                    Saldo, tarjeta de Mercado Pago o la tarjeta que tengas guardada. Te lleva a Mercado Pago.
+                  </span>
+                </div>
+                <ExternalLink className="w-4 h-4 text-neutral-400 shrink-0" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setMethod("card")}
+                disabled={redirecting}
+                className="w-full p-3.5 bg-white border border-neutral-200 hover:border-[#3BB578] hover:bg-[#F6FBF7] rounded-2xl text-left flex items-center gap-3 transition disabled:opacity-70"
+              >
+                <div className="w-9 h-9 rounded-xl bg-neutral-100 text-neutral-600 flex items-center justify-center shrink-0">
+                  <CreditCard className="w-4 h-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <span className="text-xs font-bold text-neutral-800 block">Con tarjeta de crédito o débito</span>
+                  <span className="text-[11px] text-neutral-500 block leading-snug">
+                    Cargás la tarjeta acá, en el formulario seguro de Mercado Pago. No sirve la tarjeta de Mercado Pago.
+                  </span>
+                </div>
+                <ChevronRight className="w-4 h-4 text-neutral-400 shrink-0" />
+              </button>
+              <p className="text-[10px] text-neutral-400 text-center leading-snug pt-1">
+                En los dos casos la suscripción se renueva sola y podés cancelarla cuando quieras.
+              </p>
+            </div>
+          )}
+
           {/* Formulario seguro de tarjeta (Mercado Pago) */}
           {showForm && (
             <form id="haba-subscription-form" className="p-5 space-y-3" noValidate>
@@ -473,11 +551,14 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
                 <div className="pt-1 flex items-center gap-2.5">
                   <button
                     type="button"
-                    onClick={handleClose}
+                    onClick={() => {
+                      setError(null);
+                      setMethod(null);
+                    }}
                     disabled={submitting}
                     className="w-1/3 py-2.5 border border-neutral-200 hover:bg-neutral-50 text-neutral-600 text-xs font-bold rounded-xl transition disabled:opacity-50"
                   >
-                    Cancelar
+                    Volver
                   </button>
                   <button
                     type="submit"

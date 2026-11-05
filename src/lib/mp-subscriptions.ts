@@ -12,6 +12,7 @@
  */
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { createClient as createServerClient } from "@/lib/supabase/server";
+import { getExpectedPlanAmount } from "@/lib/mercadopago";
 
 const MP_API = "https://api.mercadopago.com";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -120,6 +121,8 @@ export interface CreateSubscriptionResult {
   preapprovalId?: string;
   nextPaymentDate?: string | null;
   alreadySubscribed?: boolean;
+  /** Link de Mercado Pago para terminar de activar la suscripción (modo sin tarjeta). */
+  initPoint?: string;
   error?: string;
 }
 
@@ -146,9 +149,10 @@ export async function createUserSubscription(options: {
 }): Promise<CreateSubscriptionResult> {
   const { user, cardTokenId, payerEmail, appUrl } = options;
 
-  // No duplicar: si ya tiene una suscripción activa con su id, no se crea otra
+  // No duplicar: si ya tiene una suscripción activa con su id, no se crea otra.
+  // Una pendiente (abrió el link de Mercado Pago y no terminó) no bloquea un nuevo intento.
   const existing = await getUserSubscription(user);
-  if (existing && (existing.status === "authorized" || existing.status === "pending")) {
+  if (existing && existing.status === "authorized") {
     return {
       success: false,
       alreadySubscribed: true,
@@ -196,6 +200,99 @@ export async function createUserSubscription(options: {
     preapprovalId: String(data.id),
     nextPaymentDate: data.next_payment_date || null,
   };
+}
+
+/**
+ * Suscripción SIN tarjeta: HABA la crea pendiente con el id de la cuenta y Mercado Pago devuelve un
+ * link personal donde la usuaria elige cómo pagar (saldo de Mercado Pago, su tarjeta de Mercado
+ * Pago o cualquier tarjeta). Sirve para las tarjetas con código de seguridad dinámico, que el
+ * formulario de tarjeta no acepta. Mercado Pago no permite asociarla al plan en este modo, así que
+ * no figura en "Clientes" del plan, pero renueva sola y cobros y bajas llegan con el id.
+ */
+export async function createPendingSubscription(options: {
+  user: any;
+  payerEmail: string;
+  appUrl: string;
+}): Promise<CreateSubscriptionResult> {
+  const { user, payerEmail, appUrl } = options;
+
+  const existing = await getUserSubscription(user);
+  if (existing && existing.status === "authorized") {
+    return {
+      success: false,
+      alreadySubscribed: true,
+      status: existing.status,
+      preapprovalId: existing.id,
+      nextPaymentDate: existing.next_payment_date || null,
+      error: "Ya tenés una suscripción activa. Se renueva sola cada mes.",
+    };
+  }
+  // Si quedó una pendiente sin activar, se reutiliza su link
+  if (existing && existing.status === "pending" && existing.init_point) {
+    return { success: true, status: "pending", preapprovalId: existing.id, initPoint: existing.init_point };
+  }
+
+  const amount = getExpectedPlanAmount();
+  const currency = (process.env.MP_SUBSCRIPTION_CURRENCY || "ARS").toUpperCase();
+
+  const res = await fetch(`${MP_API}/preapproval`, {
+    method: "POST",
+    headers: mpHeaders({ "X-Idempotency-Key": `haba-pend-${user.id}-${Date.now()}` }),
+    body: JSON.stringify({
+      reason: process.env.MP_SUBSCRIPTION_TITLE || "Haba Mensual",
+      external_reference: user.id,
+      payer_email: payerEmail,
+      auto_recurring: {
+        frequency: 1,
+        frequency_type: "months",
+        transaction_amount: amount,
+        currency_id: currency,
+      },
+      back_url: `${appUrl}/configuracion?status=approved`,
+      status: "pending",
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok || !data?.id || !data?.init_point) {
+    console.error("[Suscripción MP] Error al crear la suscripción pendiente:", res.status, data);
+    return { success: false, error: friendlyMpError(data, res.status) };
+  }
+
+  await saveSubscriptionState(user.id, {
+    preapprovalId: String(data.id),
+    status: "pending",
+    payerEmail,
+  });
+
+  console.log(`[Suscripción MP] Suscripción pendiente ${data.id} creada para ${user.id}; se activa en Mercado Pago`);
+  return { success: true, status: "pending", preapprovalId: String(data.id), initPoint: data.init_point };
+}
+
+/**
+ * Sincroniza la suscripción de la usuaria con Mercado Pago (por ejemplo al volver del link de
+ * activación, antes de que llegue el aviso del webhook): registra el estado actual y, si ya está
+ * autorizada, deja la cuenta vigente al menos hasta el próximo cobro. Los cobros en sí se acreditan
+ * por el webhook, con su registro anti-duplicados.
+ */
+export async function syncUserSubscription(userId: string): Promise<{ status: string | null; activated: boolean }> {
+  const admin = getAdminClient();
+  const { data: authRes } = await admin.auth.admin.getUserById(userId);
+  const user = authRes?.user;
+  if (!user) return { status: null, activated: false };
+  const pre = await getUserSubscription(user);
+  if (!pre) return { status: null, activated: false };
+
+  const previous = String(user.app_metadata?.mp_status || "");
+  await saveSubscriptionState(userId, {
+    preapprovalId: String(pre.id),
+    status: pre.status,
+    nextPaymentDate: pre.next_payment_date || null,
+  });
+  if (pre.status === "authorized") {
+    await ensurePlanEndDateAtLeast(userId, pre.next_payment_date || null);
+  }
+  return { status: pre.status, activated: pre.status === "authorized" && previous !== "authorized" };
 }
 
 /** Cancela la suscripción de la usuaria. No corta el acceso: sigue hasta el último día pagado. */
