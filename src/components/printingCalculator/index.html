@@ -865,6 +865,40 @@ function getInitialConsumables(techId){
   const stored = getSavedConsumablesFromStorage(techId);
   const storedIsValid = hasValidPrices(stored);
 
+  // Si la usuaria ya guardó su juego de tintas para esta tecnología, se respeta exactamente esa
+  // lista (qué colores y en qué orden). Así un color predeterminado que quitó (por ejemplo gris
+  // o negro pigmentado en una impresora de 6 colores) no vuelve a aparecer en el siguiente insumo.
+  // "Limpiar datos" sigue volviendo a los colores predeterminados.
+  if (storedIsValid && Array.isArray(stored)) {
+    const usedDefaults = new Set();
+    const fromStored = stored.map(s => {
+      const savedConfigId = s.configId || s.localConfigId || s.id || "custom";
+      const def = tech.consumables.find(c => c.id === savedConfigId && !usedDefaults.has(c.id));
+      if (def) usedDefaults.add(def.id);
+      const pNum = typeof s.price === "number" ? s.price : parseLocalizedNumber(s.price);
+      const qNum = Number(s.quantity);
+      const hostSupply = def ? hostSupplies[def.id] : null;
+      return {
+        name: s.name || (def ? def.name : ""),
+        quantity: Number.isFinite(qNum) && qNum > 0 ? qNum : (tech.inputMode === "single" ? 1 : ""),
+        unit: s.unit || (def ? def.unit : tech.allowedUnits[0]),
+        price: Number.isFinite(pNum) && pNum > 0 ? formatMoneyInput(pNum) : "",
+        configId: def ? def.id : "custom",
+        referenceQuantity: def ? def.referenceQuantity : (s.referenceQuantity || tech.customReferenceQuantity),
+        referenceUnit: def ? def.unit : (s.referenceUnit || tech.referenceUnit),
+        sourceInsumoId: s.sourceInsumoId || (hostSupply ? hostSupply.id : (def ? (hostIds[def.id] || null) : null))
+      };
+    });
+    if (fromStored.length > 0) {
+      lastSavedConsumablesByTech[techId] = fromStored.map(item => ({
+        configId: item.configId || "custom",
+        price: priceValue(item),
+        quantity: Number(item.quantity) || 0
+      }));
+      return fromStored;
+    }
+  }
+
   const result = tech.consumables.map(c => {
     const hostSupply = hostSupplies[c.id];
     const saved = (storedIsValid && Array.isArray(stored))
@@ -1648,7 +1682,12 @@ async function savePrintingInsumo(){
   }catch(error){
     button.classList.remove("saving");
     button.textContent = "Guardar insumo";
-    showHabaToast("error", "No pudimos guardar el insumo", "No se modificó nada. Probá nuevamente.");
+    const reason = error && error.message ? String(error.message) : "";
+    showHabaToast(
+      "error",
+      "No pudimos guardar el insumo",
+      reason && reason.length <= 160 ? reason : "No se modificó nada. Probá nuevamente."
+    );
     console.error("HABA printing insumo save error", error);
   }
 }
@@ -1866,9 +1905,12 @@ function bind(){
   $("cancelClear").addEventListener("click", () => { pendingRemoveIndex = null; $("confirmModal").classList.remove("open"); });
   $("confirmClear").addEventListener("click", () => {
     if(Number.isInteger(pendingRemoveIndex)){
+      // Tomar lo que la usuaria escribió antes de quitar la fila (la pantalla todavía muestra la lista anterior)
+      syncDOMInputsToState();
       state.consumables.splice(pendingRemoveIndex,1);
       state.exampleMode = false;
       pendingRemoveIndex = null;
+      persistCurrentConsumables();
       renderAll();
       checkUpdateValuesVisibility();
     } else {
