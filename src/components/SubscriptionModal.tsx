@@ -1,19 +1,26 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Sparkles,
   CreditCard,
-  Mail,
   AlertCircle,
-  ExternalLink,
   Loader2,
   X,
   CheckCircle2,
-  HelpCircle,
+  Lock,
+  RefreshCw,
+  CalendarClock,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useModalThemeColor } from "@/hooks/useModalThemeColor";
+
+/**
+ * Suscripción mensual con renovación automática.
+ * Los datos de la tarjeta se cargan en el formulario seguro de Mercado Pago (cardForm, en iframes):
+ * HABA solo recibe un token de un solo uso y con él crea la suscripción asociada al plan único,
+ * con el id de la cuenta. Si ya está suscripta, muestra el estado y la opción de cancelar.
+ */
 
 interface SubscriptionModalProps {
   isOpen: boolean;
@@ -24,122 +31,274 @@ interface SubscriptionModalProps {
   planAmount?: string;
 }
 
+type SubscriptionInfo = {
+  subscribed: boolean;
+  status?: string;
+  nextPaymentDate?: string | null;
+};
+
+const MP_SDK_URL = "https://sdk.mercadopago.com/js/v2";
+const PUBLIC_KEY = process.env.NEXT_PUBLIC_MP_PUBLIC_KEY || "";
+const PLAN_AMOUNT = process.env.NEXT_PUBLIC_MP_SUBSCRIPTION_AMOUNT || "7000";
+
+let sdkPromise: Promise<void> | null = null;
+function loadMercadoPagoSdk(): Promise<void> {
+  if (typeof window === "undefined") return Promise.reject(new Error("Sin navegador"));
+  if ((window as any).MercadoPago) return Promise.resolve();
+  if (sdkPromise) return sdkPromise;
+  sdkPromise = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = MP_SDK_URL;
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = () => {
+      sdkPromise = null;
+      reject(new Error("No se pudo cargar Mercado Pago"));
+    };
+    document.body.appendChild(script);
+  });
+  return sdkPromise;
+}
+
+function formatDate(value?: string | null): string {
+  if (!value) return "";
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+const fieldBox =
+  "h-10 px-3 bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl flex items-center focus-within:bg-white focus-within:border-[#3BB578] transition";
+const inputClass =
+  "w-full h-10 px-3 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B] transition";
+const labelClass = "text-[11px] font-semibold text-[#2B2B2B] block mb-1";
+
 export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
   isOpen,
   onClose,
   defaultEmail = "",
-  returnUrl = "/configuracion?status=approved",
   planTitle = "Plan Mensual HABA",
   planAmount = "$7.000",
 }) => {
   const supabase = createClient();
   useModalThemeColor(isOpen);
 
-  const [mpEmail, setMpEmail] = useState<string>("");
-  const [showEmailInput, setShowEmailInput] = useState<boolean>(false);
-  const [loading, setLoading] = useState<boolean>(false);
+  const [info, setInfo] = useState<SubscriptionInfo | null>(null);
+  const [loadingInfo, setLoadingInfo] = useState(false);
+  const [formReady, setFormReady] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [confirmCancel, setConfirmCancel] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState<"subscribed" | "cancelled" | null>(null);
+  const cardFormRef = useRef<any>(null);
 
+  const authHeaders = useCallback(async () => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`;
+    return headers;
+  }, [supabase]);
+
+  // Al abrir: consultar si ya tiene una suscripción activa
   useEffect(() => {
-    if (isOpen) {
-      setMpEmail("");
-      setShowEmailInput(false);
-      setError(null);
-      setLoading(false);
-    }
-  }, [isOpen]);
+    if (!isOpen) return;
+    setError(null);
+    setDone(null);
+    setConfirmCancel(false);
+    setFormReady(false);
+    setInfo(null);
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoadingInfo(true);
+        const res = await fetch("/api/mercadopago/subscription", { headers: await authHeaders() });
+        const data = await res.json().catch(() => ({}));
+        if (!cancelled) setInfo(res.ok ? data : { subscribed: false });
+      } catch {
+        if (!cancelled) setInfo({ subscribed: false });
+      } finally {
+        if (!cancelled) setLoadingInfo(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, authHeaders]);
 
-  if (!isOpen) return null;
+  const createSubscription = useCallback(
+    async (token: string, email: string) => {
+      try {
+        setSubmitting(true);
+        setError(null);
+        const res = await fetch("/api/mercadopago/create-subscription", {
+          method: "POST",
+          headers: await authHeaders(),
+          body: JSON.stringify({ card_token_id: token, payer_email: email }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) {
+          if (data.alreadySubscribed) {
+            setInfo({ subscribed: true, status: data.status, nextPaymentDate: data.nextPaymentDate });
+            return;
+          }
+          throw new Error(data.error || "No se pudo crear la suscripción.");
+        }
+        setInfo({ subscribed: true, status: data.status, nextPaymentDate: data.nextPaymentDate });
+        setDone("subscribed");
+      } catch (err: any) {
+        setError(err?.message || "No se pudo crear la suscripción.");
+      } finally {
+        setSubmitting(false);
+      }
+    },
+    [authHeaders]
+  );
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const cleanEmail = mpEmail.trim().toLowerCase();
-
-    if (cleanEmail && !cleanEmail.includes("@")) {
-      setError("Por favor ingresá un formato de correo electrónico válido.");
+  // Montar el formulario seguro de Mercado Pago cuando corresponde mostrarlo
+  const showForm = isOpen && info !== null && !info.subscribed && !done;
+  useEffect(() => {
+    if (!showForm) return;
+    if (!PUBLIC_KEY) {
+      setError("El pago con tarjeta no está disponible por el momento.");
       return;
     }
-
-    try {
-      setLoading(true);
-      setError(null);
-
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (session?.access_token) {
-        headers["Authorization"] = `Bearer ${session.access_token}`;
-      }
-
-      const res = await fetch("/api/mercadopago/create-preference", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          return_url: returnUrl,
-        }),
+    let disposed = false;
+    loadMercadoPagoSdk()
+      .then(() => {
+        if (disposed) return;
+        const mp = new (window as any).MercadoPago(PUBLIC_KEY, { locale: "es-AR" });
+        const cardForm = mp.cardForm({
+          amount: String(PLAN_AMOUNT),
+          iframe: true,
+          form: {
+            id: "haba-subscription-form",
+            cardNumber: { id: "haba-sub-cardNumber", placeholder: "Número de tarjeta" },
+            expirationDate: { id: "haba-sub-expirationDate", placeholder: "MM/AA" },
+            securityCode: { id: "haba-sub-securityCode", placeholder: "Código" },
+            cardholderName: { id: "haba-sub-cardholderName", placeholder: "Como figura en la tarjeta" },
+            issuer: { id: "haba-sub-issuer", placeholder: "Banco emisor" },
+            installments: { id: "haba-sub-installments", placeholder: "Cuotas" },
+            identificationType: { id: "haba-sub-identificationType", placeholder: "Tipo" },
+            identificationNumber: { id: "haba-sub-identificationNumber", placeholder: "Número de documento" },
+            cardholderEmail: { id: "haba-sub-cardholderEmail", placeholder: "Email" },
+          },
+          callbacks: {
+            onFormMounted: (err: any) => {
+              if (disposed) return;
+              if (err) {
+                console.warn("[SubscriptionModal] Error al montar el formulario:", err);
+                setError("No se pudo cargar el formulario de tarjeta. Probá de nuevo.");
+                return;
+              }
+              setFormReady(true);
+            },
+            onSubmit: (event: Event) => {
+              event.preventDefault();
+              const data = cardForm.getCardFormData();
+              if (!data?.token) {
+                setError("Revisá los datos de la tarjeta.");
+                return;
+              }
+              createSubscription(data.token, String(data.cardholderEmail || defaultEmail).trim());
+            },
+          },
+        });
+        cardFormRef.current = cardForm;
+      })
+      .catch(() => {
+        if (!disposed) setError("No se pudo conectar con Mercado Pago. Revisá tu conexión.");
       });
-
-      const data = await res.json();
-      const redirectUrl = data.url || data.init_point;
-
-      if (!res.ok || !redirectUrl) {
-        throw new Error(data.error || "No se pudo generar la sesión de pago en Mercado Pago.");
+    return () => {
+      disposed = true;
+      try {
+        cardFormRef.current?.unmount?.();
+      } catch {
+        // ignore
       }
+      cardFormRef.current = null;
+    };
+  }, [showForm, createSubscription, defaultEmail]);
 
-      // Redirigir a la pasarela oficial de Mercado Pago
-      window.location.href = redirectUrl;
+  const handleCancel = async () => {
+    try {
+      setCancelling(true);
+      setError(null);
+      const res = await fetch("/api/mercadopago/subscription", { method: "DELETE", headers: await authHeaders() });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) throw new Error(data.error || "No se pudo cancelar la suscripción.");
+      setInfo({ subscribed: false, status: "cancelled" });
+      setDone("cancelled");
     } catch (err: any) {
-      console.error("[SubscriptionModal] Error al crear suscripción:", err);
-      setError(err.message || "Error al conectar con la pasarela de Mercado Pago.");
-      setLoading(false);
+      setError(err?.message || "No se pudo cancelar la suscripción.");
+    } finally {
+      setCancelling(false);
+      setConfirmCancel(false);
     }
   };
 
+  const handleClose = () => {
+    if (submitting || cancelling) return;
+    if (done) {
+      // Refrescar para que la app muestre el estado nuevo del plan
+      window.location.reload();
+      return;
+    }
+    onClose();
+  };
+
+  if (!isOpen) return null;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-200">
       <div
-        className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-neutral-100 overflow-hidden flex flex-col animate-in zoom-in-95 duration-200"
+        className="w-full max-w-md bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl border border-neutral-100 overflow-hidden flex flex-col max-h-[92dvh] animate-in zoom-in-95 duration-200"
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-subscription-title"
       >
         {/* Cabecera */}
-        <div className="px-5 pt-5 pb-4 border-b border-neutral-100 flex items-center justify-between">
+        <div className="px-5 pt-5 pb-4 border-b border-neutral-100 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-2xl bg-[#DCF4D7] text-[#1F7A4C] flex items-center justify-center shrink-0">
               <Sparkles className="w-5 h-5" />
             </div>
             <div>
               <h2 id="modal-subscription-title" className="text-sm font-bold text-neutral-800">
-                Suscribirme al Plan Mensual
+                {info?.subscribed ? "Tu suscripción" : "Suscribirme al Plan Mensual"}
               </h2>
-              <p className="text-[11px] text-neutral-500">Pasarela oficial y segura de Mercado Pago</p>
+              <p className="text-[11px] text-neutral-500 flex items-center gap-1">
+                <Lock className="w-3 h-3" />
+                Pago seguro con Mercado Pago
+              </p>
             </div>
           </div>
           <button
             type="button"
-            onClick={onClose}
-            disabled={loading}
+            onClick={handleClose}
+            disabled={submitting || cancelling}
             className="p-1.5 text-neutral-400 hover:text-neutral-600 rounded-full hover:bg-neutral-100 transition disabled:opacity-40 cursor-pointer"
-            aria-label="Cerrar modal"
+            aria-label="Cerrar"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Alerta de Error */}
-        {error && (
-          <div className="mx-5 mt-4 p-3 bg-rose-50 border border-rose-200 rounded-2xl text-rose-700 text-xs flex items-center gap-2 animate-in fade-in">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{error}</span>
-          </div>
-        )}
+        <div className="overflow-y-auto overscroll-contain">
+          {error && (
+            <div
+              role="alert"
+              className="mx-5 mt-4 p-3 bg-rose-50 border border-rose-200 rounded-2xl text-rose-700 text-xs flex items-center gap-2"
+            >
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
 
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
-          {/* Tarjeta de Resumen del Plan */}
-          <div className="p-4 bg-gradient-to-br from-[#F6FBF7] to-[#EDF8F0] border border-[#CDEBD3] rounded-2xl space-y-2.5">
+          {/* Resumen del plan */}
+          <div className="mx-5 mt-4 p-4 bg-gradient-to-br from-[#F6FBF7] to-[#EDF8F0] border border-[#CDEBD3] rounded-2xl space-y-2">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <CreditCard className="w-4 h-4 text-[#1F7A4C]" />
@@ -149,92 +308,187 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
                 {planAmount} / mes
               </span>
             </div>
-            <p className="text-[11px] text-neutral-600 leading-relaxed">
-              Cobro único de 30 días de acceso completo a HABA. Sin suscripciones recurrentes bloqueadas.
+            <p className="text-[11px] text-neutral-600 leading-relaxed flex items-start gap-1.5">
+              <RefreshCw className="w-3.5 h-3.5 shrink-0 mt-0.5 text-[#1F7A4C]" />
+              <span>
+                Se renueva sola cada mes con la tarjeta que cargues. Podés cancelarla cuando quieras y seguís usando
+                HABA hasta el último día pagado.
+              </span>
             </p>
-            <div className="pt-1 border-t border-[#CDEBD3]/60 flex items-center gap-2 text-[11px] text-[#1F7A4C] font-semibold">
-              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-              <span>Podés pagar con tu Mercado Pago, el de un familiar o con cualquier tarjeta.</span>
-            </div>
           </div>
 
-          {/* Sección opcional: ¿Pagas con otro email? */}
-          <div className="space-y-2">
-            {!showEmailInput ? (
+          {loadingInfo && (
+            <div className="p-8 flex items-center justify-center gap-2 text-xs text-neutral-500">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>Consultando tu suscripción...</span>
+            </div>
+          )}
+
+          {/* Resultado de la operación */}
+          {done && (
+            <div className="p-5 text-center space-y-3">
+              <CheckCircle2 className="w-10 h-10 text-[#3BB578] mx-auto" />
+              <h3 className="text-sm font-bold text-neutral-800">
+                {done === "subscribed" ? "¡Listo! Tu suscripción quedó activa" : "Cancelaste tu suscripción"}
+              </h3>
+              <p className="text-xs text-neutral-500 leading-relaxed">
+                {done === "subscribed"
+                  ? "El primer cobro se acredita en tu cuenta en unos minutos. Después se renueva sola cada mes."
+                  : "No se te va a volver a cobrar. Podés seguir usando HABA hasta el último día que pagaste."}
+              </p>
               <button
                 type="button"
-                onClick={() => setShowEmailInput(true)}
-                className="text-[11px] text-[#1F7A4C] hover:text-[#185E3B] font-bold flex items-center gap-1.5 hover:underline cursor-pointer transition"
+                onClick={handleClose}
+                className="w-full py-2.5 bg-[#3BB578] hover:bg-[#2E9E65] text-white text-xs font-bold rounded-xl transition"
               >
-                <HelpCircle className="w-3.5 h-3.5" />
-                <span>¿Tu cuenta de Mercado Pago tiene otro e-mail? (Opcional)</span>
+                Entendido
               </button>
-            ) : (
-              <div className="space-y-1.5 animate-in fade-in duration-200">
-                <div className="flex items-center justify-between">
-                  <label htmlFor="mp-payer-email" className="text-xs font-bold text-neutral-700">
-                    Email de tu cuenta en Mercado Pago
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowEmailInput(false);
-                      setMpEmail("");
-                    }}
-                    className="text-[10px] text-neutral-400 hover:text-neutral-600"
-                  >
-                    Ocultar
-                  </button>
+            </div>
+          )}
+
+          {/* Ya suscripta: estado y cancelar */}
+          {!done && info?.subscribed && (
+            <div className="p-5 space-y-3">
+              <div className="p-3 bg-white border border-[#EAF0E8] rounded-2xl flex items-center gap-2.5 text-xs">
+                <CalendarClock className="w-4 h-4 text-[#1F7A4C] shrink-0" />
+                <div>
+                  <span className="font-bold text-neutral-800 block">Suscripción activa</span>
+                  {info.nextPaymentDate && (
+                    <span className="text-neutral-500">Próximo cobro: {formatDate(info.nextPaymentDate)}</span>
+                  )}
                 </div>
-                <div className="relative">
-                  <Mail className="w-4 h-4 text-neutral-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              </div>
+              {!confirmCancel ? (
+                <button
+                  type="button"
+                  onClick={() => setConfirmCancel(true)}
+                  className="w-full py-2.5 border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-bold rounded-xl transition"
+                >
+                  Cancelar suscripción
+                </button>
+              ) : (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl space-y-2.5">
+                  <p className="text-xs text-rose-800 leading-relaxed">
+                    ¿Seguro? No se te va a volver a cobrar y vas a poder usar HABA hasta el último día pagado.
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setConfirmCancel(false)}
+                      disabled={cancelling}
+                      className="flex-1 py-2 bg-white border border-neutral-200 text-neutral-600 text-xs font-bold rounded-xl"
+                    >
+                      Volver
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCancel}
+                      disabled={cancelling}
+                      className="flex-1 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 disabled:opacity-70"
+                    >
+                      {cancelling && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                      <span>Sí, cancelar</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Formulario seguro de tarjeta (Mercado Pago) */}
+          {showForm && (
+            <form id="haba-subscription-form" className="p-5 space-y-3" noValidate>
+              {!formReady && !error && (
+                <div className="flex items-center gap-2 text-xs text-neutral-500">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Cargando el formulario seguro de Mercado Pago...</span>
+                </div>
+              )}
+              <div className={formReady ? "space-y-3" : "space-y-3 opacity-0 h-0 overflow-hidden"}>
+                <div>
+                  <span className={labelClass}>Número de tarjeta</span>
+                  <div id="haba-sub-cardNumber" className={fieldBox} />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <span className={labelClass}>Vencimiento</span>
+                    <div id="haba-sub-expirationDate" className={fieldBox} />
+                  </div>
+                  <div>
+                    <span className={labelClass}>Código de seguridad</span>
+                    <div id="haba-sub-securityCode" className={fieldBox} />
+                  </div>
+                </div>
+                <div>
+                  <label htmlFor="haba-sub-cardholderName" className={labelClass}>
+                    Titular de la tarjeta
+                  </label>
+                  <input id="haba-sub-cardholderName" type="text" autoComplete="cc-name" className={inputClass} />
+                </div>
+                <div className="grid grid-cols-[110px_1fr] gap-3">
+                  <div>
+                    <label htmlFor="haba-sub-identificationType" className={labelClass}>
+                      Documento
+                    </label>
+                    <select id="haba-sub-identificationType" className={inputClass} />
+                  </div>
+                  <div>
+                    <label htmlFor="haba-sub-identificationNumber" className={labelClass}>
+                      Número
+                    </label>
+                    <input id="haba-sub-identificationNumber" type="text" inputMode="numeric" className={inputClass} />
+                  </div>
+                </div>
+                <div>
+                  <label htmlFor="haba-sub-cardholderEmail" className={labelClass}>
+                    Email
+                  </label>
                   <input
-                    id="mp-payer-email"
+                    id="haba-sub-cardholderEmail"
                     type="email"
-                    value={mpEmail}
-                    onChange={(e) => setMpEmail(e.target.value)}
-                    placeholder="ej: otrocorreo@gmail.com"
-                    disabled={loading}
-                    className="w-full pl-9 pr-3.5 py-2.5 text-xs bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:border-[#3BB578] focus:ring-2 focus:ring-[#DCF4D7] outline-none transition disabled:opacity-60"
+                    autoComplete="email"
+                    defaultValue={defaultEmail}
+                    className={inputClass}
                   />
                 </div>
-                <p className="text-[10px] text-neutral-500 leading-tight">
-                  Tu cuenta de HABA ({defaultEmail || "actual"}) quedará vinculada automáticamente aunque en Mercado Pago utilices otro correo.
+                {/* El formulario de Mercado Pago los necesita; para la suscripción no se usan cuotas */}
+                <select id="haba-sub-issuer" className="hidden" aria-hidden="true" tabIndex={-1} />
+                <select id="haba-sub-installments" className="hidden" aria-hidden="true" tabIndex={-1} />
+
+                <div className="pt-1 flex items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={handleClose}
+                    disabled={submitting}
+                    className="w-1/3 py-2.5 border border-neutral-200 hover:bg-neutral-50 text-neutral-600 text-xs font-bold rounded-xl transition disabled:opacity-50"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={submitting || !formReady}
+                    className="w-2/3 py-2.5 bg-[#3BB578] hover:bg-[#2E9E65] text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center justify-center gap-2 disabled:opacity-75"
+                  >
+                    {submitting ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Creando suscripción...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Lock className="w-3.5 h-3.5" />
+                        <span>Suscribirme por {planAmount} / mes</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+                <p className="text-[10px] text-neutral-400 text-center leading-snug">
+                  Los datos de tu tarjeta se cargan directamente en Mercado Pago. HABA no los ve ni los guarda.
                 </p>
               </div>
-            )}
-          </div>
-
-          {/* Botones de Acción */}
-          <div className="pt-2 flex items-center gap-2.5">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={loading}
-              className="w-1/3 py-2.5 px-3 border border-neutral-200 hover:bg-neutral-50 active:scale-[0.99] text-neutral-600 text-xs font-bold rounded-xl transition disabled:opacity-50 cursor-pointer text-center"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-2/3 py-2.5 px-4 bg-[#3BB578] hover:bg-[#2E9E65] active:scale-[0.99] text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center justify-center gap-2 disabled:opacity-75 cursor-pointer"
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>Conectando con MP...</span>
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Ir a Pagar en Mercado Pago</span>
-                  <ExternalLink className="w-3 h-3 text-white/80" />
-                </>
-              )}
-            </button>
-          </div>
-        </form>
+            </form>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -192,8 +192,13 @@ export async function applyApprovedPaymentToUser(options: {
   payment: any;
   userId: string;
   source?: "webhook" | "sync" | "admin";
+  /**
+   * Fecha mínima de vencimiento. En la suscripción automática es la fecha del próximo cobro:
+   * la cuenta sigue vigente hasta ese día, cuando Mercado Pago vuelve a cobrar y se renueva.
+   */
+  minEndDate?: string | null;
 }): Promise<ApplyPaymentResult> {
-  const { payment, userId, source = "webhook" } = options;
+  const { payment, userId, source = "webhook", minEndDate } = options;
 
   if (!payment || payment.status !== "approved") {
     return {
@@ -286,7 +291,11 @@ export async function applyApprovedPaymentToUser(options: {
   const trustedMeta = getTrustedPlanMeta(authUser);
   const currentEndDate = profile?.plan_end_date || trustedMeta.plan_end_date;
   const creditedDays = getPlanDaysForPayment(payment);
-  const newEndDate = calculateNewPlanEndDate(currentEndDate, creditedDays);
+  let newEndDate = calculateNewPlanEndDate(currentEndDate, creditedDays);
+  const minEnd = minEndDate ? String(minEndDate).split("T")[0] : null;
+  if (minEnd && /^\d{4}-\d{2}-\d{2}$/.test(minEnd) && minEnd > newEndDate) {
+    newEndDate = minEnd;
+  }
   const payerEmail =
     payment.payer?.email ||
     payment.additional_info?.payer?.email ||

@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { applyApprovedPaymentToUser } from "@/lib/mercadopago";
+import {
+  ensurePlanEndDateAtLeast,
+  getPreapproval,
+  isHabaUserId,
+  saveSubscriptionState,
+} from "@/lib/mp-subscriptions";
 
 export const dynamic = "force-dynamic";
 
@@ -77,8 +83,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ received: true, note: "MP_ACCESS_TOKEN no configurado" });
     }
 
+    // Cobro mensual de una suscripción (renovación automática)
+    const isSubscriptionPayment =
+      type === "subscription_authorized_payment" ||
+      type === "authorized_payment" ||
+      Boolean(action?.includes("authorized_payment"));
+
     const isStandardPayment =
-      type === "payment" || action?.includes("payment") || url.searchParams.get("topic") === "payment";
+      !isSubscriptionPayment &&
+      (type === "payment" || action?.includes("payment") || url.searchParams.get("topic") === "payment");
 
     const isPreapproval =
       type === "subscription_preapproval" ||
@@ -90,6 +103,77 @@ export async function POST(request: Request) {
     }
 
     const supabaseAdmin = getAdminClient();
+
+    // =========================================================================
+    // Cobros de la suscripción automática: llegan con el id de la suscripción, cuya
+    // external_reference es el id de la cuenta de HABA (suscripciones creadas desde HABA).
+    // Las del link compartido anterior se vinculan por el email de pago.
+    // =========================================================================
+    if (isSubscriptionPayment) {
+      const apRes = await fetch(`https://api.mercadopago.com/authorized_payments/${encodeURIComponent(String(dataId))}`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!apRes.ok) {
+        console.error(`[Webhook Mercado Pago] Error ${apRes.status} consultando cobro de suscripción ${dataId}`);
+        return NextResponse.json({ error: "No se pudo consultar el cobro en Mercado Pago" }, { status: 502 });
+      }
+      const authorizedPayment = await apRes.json();
+      const preapprovalId = authorizedPayment.preapproval_id ? String(authorizedPayment.preapproval_id) : "";
+      const chargeId = authorizedPayment.payment?.id ? String(authorizedPayment.payment.id) : "";
+      if (!preapprovalId || !chargeId) {
+        return NextResponse.json({ received: true, ignored: true, reason: "cobro sin pago asociado todavía" });
+      }
+
+      const preapproval = await getPreapproval(preapprovalId);
+      const preRef = String(preapproval?.external_reference || "").trim();
+      let userId: string | null = null;
+      if (isHabaUserId(preRef)) {
+        const { data: userRes } = await supabaseAdmin.auth.admin.getUserById(preRef);
+        if (userRes?.user) userId = userRes.user.id;
+      }
+      if (!userId && /haba/i.test(preRef)) {
+        userId = await findUserIdByPayerEmail(supabaseAdmin, preapproval?.payer_email);
+      }
+      if (!userId) {
+        console.warn(`[Webhook Mercado Pago] Cobro de suscripción ${chargeId} sin cuenta de HABA (ref '${preRef}').`);
+        return NextResponse.json({ received: true, orphan: true });
+      }
+
+      const payRes = await fetch(`https://api.mercadopago.com/v1/payments/${encodeURIComponent(chargeId)}`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!payRes.ok) {
+        return NextResponse.json({ error: "No se pudo consultar el pago en Mercado Pago" }, { status: 502 });
+      }
+      const payment = await payRes.json();
+      if (payment.status !== "approved") {
+        console.log(`[Webhook Mercado Pago] Cobro de suscripción ${chargeId} en estado '${payment.status}'.`);
+        return NextResponse.json({ received: true, status: payment.status });
+      }
+
+      const applyResult = await applyApprovedPaymentToUser({
+        payment,
+        userId,
+        minEndDate: preapproval?.next_payment_date || null,
+      });
+      // Si el mismo pago ya se acreditó por otra notificación, igual se alinea el vencimiento
+      // con la fecha del próximo cobro (solo extiende).
+      if (!applyResult.success && applyResult.alreadyApplied) {
+        await ensurePlanEndDateAtLeast(userId, preapproval?.next_payment_date || null);
+      }
+      await saveSubscriptionState(userId, {
+        preapprovalId,
+        status: preapproval?.status || "authorized",
+        nextPaymentDate: preapproval?.next_payment_date || null,
+      });
+
+      return NextResponse.json({
+        received: true,
+        subscriptionPayment: true,
+        applied: applyResult.success,
+        alreadyApplied: applyResult.alreadyApplied || false,
+      });
+    }
 
     // =========================================================================
     // 3. Notificaciones de tipo PAYMENT (Checkout Pro / Cobro Único mensual)
@@ -184,6 +268,17 @@ export async function POST(request: Request) {
         const preapproval = await preRes.json();
         const preStatus = preapproval.status;
         const externalRef = (preapproval.external_reference || "").trim();
+
+        if (preStatus === "authorized" && isHabaUserId(externalRef)) {
+          const { data: authRes } = await supabaseAdmin.auth.admin.getUserById(externalRef);
+          if (authRes?.user) {
+            await saveSubscriptionState(externalRef, {
+              preapprovalId,
+              status: "authorized",
+              nextPaymentDate: preapproval.next_payment_date || null,
+            });
+          }
+        }
 
         if (preStatus === "cancelled" || preStatus === "paused") {
           let targetUserId: string | null = null;

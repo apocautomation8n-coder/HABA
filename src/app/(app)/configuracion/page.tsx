@@ -876,10 +876,9 @@ export default function SettingsPage() {
                 <Sparkles className="w-3.5 h-3.5 text-white" />
                 <span>
                   {planType === "mensual" && planStatusInfo.status === "vigente"
-                    ? "Renovar / Extender Plan (+30 días)"
-                    : "Suscribirme al Plan Mensual (Mercado Pago)"}
+                    ? "Mi suscripción (ver o cancelar)"
+                    : "Suscribirme al Plan Mensual (renovación automática)"}
                 </span>
-                <ExternalLink className="w-3 h-3 text-white/80" />
               </button>
 
               <div className="flex items-center justify-between text-xs pt-1 px-1">
