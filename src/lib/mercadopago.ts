@@ -131,21 +131,50 @@ export interface ApplyPaymentResult {
   error?: string;
 }
 
+/** Cuántos IDs de pagos acreditados se guardan en app_metadata como respaldo del registro. */
+const APPLIED_PAYMENT_IDS_LIMIT = 100;
+
+/** Monto esperado del plan (el mismo que usa create-preference). */
+export function getExpectedPlanAmount(): number {
+  const amount = Number(process.env.MP_SUBSCRIPTION_AMOUNT || 7000);
+  return isNaN(amount) || amount <= 0 ? 7000 : amount;
+}
+
+/** true si el pago cubre el precio completo del plan (tolerancia de 1% por redondeos). */
+export function paymentCoversPlan(payment: any): boolean {
+  const amount = Number(payment?.transaction_amount);
+  if (isNaN(amount)) return false;
+  const expectedCurrency = (process.env.MP_SUBSCRIPTION_CURRENCY || "ARS").toUpperCase();
+  if (payment?.currency_id && String(payment.currency_id).toUpperCase() !== expectedCurrency) return false;
+  return amount >= getExpectedPlanAmount() * 0.99;
+}
+
+function isMissingLedgerTable(err: { code?: string; message?: string } | null): boolean {
+  if (!err) return false;
+  return (
+    err.code === "42P01" ||
+    err.code === "PGRST205" ||
+    (err.message || "").toLowerCase().includes("mp_applied_payments")
+  );
+}
+
 /**
  * Aplica de forma atómica y segura un pago aprobado a la cuenta del usuario en Supabase:
  * - Valida status === 'approved'.
- * - Verifica anti-abuso: si payment.id coincide con profiles.last_payment_id, rechaza la solicitud.
+ * - Anti-abuso: cada pago se acredita UNA sola vez y a UNA sola cuenta. Se registra primero en
+ *   public.mp_applied_payments (payment_id es clave primaria, así un segundo intento falla en la base)
+ *   y además en app_metadata.applied_payment_ids como respaldo. Esto impide repetir el mismo pago,
+ *   alternar entre pagos viejos o reclamar el pago de otra persona.
  * - Calcula la nueva fecha (currentEndDate + 30 días si vigente, o hoy + 30 días si vencida).
- * - Actualiza en `profiles`:
- *     plan_type = 'mensual', account_status = 'activa', plan_end_date = nuevaFecha, last_payment_id = payment.id.toString().
- * - Actualiza también en Supabase Auth (`app_metadata` y `user_metadata`) para consistencia.
+ * - Actualiza `profiles` y Supabase Auth (`app_metadata`, fuente de verdad, y `user_metadata` para la UI).
+ * Nunca se lee el historial de pagos desde user_metadata: la usuaria lo puede editar.
  */
 export async function applyApprovedPaymentToUser(options: {
   payment: any;
   userId: string;
-  force?: boolean;
+  source?: "webhook" | "sync" | "admin";
 }): Promise<ApplyPaymentResult> {
-  const { payment, userId, force = false } = options;
+  const { payment, userId, source = "webhook" } = options;
 
   if (!payment || payment.status !== "approved") {
     return {
@@ -172,13 +201,15 @@ export async function applyApprovedPaymentToUser(options: {
     return { success: false, error: `No se encontró el usuario con id '${userId}' en Supabase.` };
   }
 
-  const currentLastPaymentId =
-    profile?.last_payment_id ||
-    authUser?.app_metadata?.last_payment_id ||
-    authUser?.user_metadata?.last_payment_id;
+  // 3. Anti-abuso por cuenta (solo datos que la usuaria no puede editar)
+  const previousIds: string[] = Array.isArray(authUser?.app_metadata?.applied_payment_ids)
+    ? authUser!.app_metadata.applied_payment_ids.map((id: unknown) => String(id))
+    : [];
+  const knownIds = new Set<string>(previousIds);
+  if (profile?.last_payment_id) knownIds.add(String(profile.last_payment_id));
+  if (authUser?.app_metadata?.last_payment_id) knownIds.add(String(authUser.app_metadata.last_payment_id));
 
-  // Validación Anti-Abuso: si el último pago aprobado ya coincide, rechazar
-  if (!force && currentLastPaymentId && String(currentLastPaymentId) === paymentIdStr) {
+  if (knownIds.has(paymentIdStr)) {
     return {
       success: false,
       alreadyApplied: true,
@@ -186,6 +217,52 @@ export async function applyApprovedPaymentToUser(options: {
       error: `El pago #${paymentIdStr} ya fue aplicado anteriormente a esta cuenta. No se pueden duplicar días de vigencia.`,
     };
   }
+
+  // 4. Anti-abuso global: reservar el pago en el registro único antes de acreditar
+  let ledgerReserved = false;
+  const { error: ledgerErr } = await supabaseAdmin.from("mp_applied_payments").insert({
+    payment_id: paymentIdStr,
+    user_id: userId,
+    amount: Number(payment.transaction_amount) || null,
+    currency: payment.currency_id || null,
+    source,
+  });
+
+  if (ledgerErr) {
+    if (ledgerErr.code === "23505") {
+      const { data: existing } = await supabaseAdmin
+        .from("mp_applied_payments")
+        .select("user_id")
+        .eq("payment_id", paymentIdStr)
+        .maybeSingle();
+      const sameUser = existing?.user_id === userId;
+      return {
+        success: false,
+        alreadyApplied: true,
+        paymentId: paymentIdStr,
+        error: sameUser
+          ? `El pago #${paymentIdStr} ya fue aplicado anteriormente a esta cuenta. No se pueden duplicar días de vigencia.`
+          : `El pago #${paymentIdStr} ya fue acreditado a otra cuenta de HABA.`,
+      };
+    }
+    if (isMissingLedgerTable(ledgerErr)) {
+      // Mientras no se cree la tabla, queda el control por cuenta (app_metadata)
+      console.warn("[Mercado Pago] Falta la tabla mp_applied_payments; se usa solo el control por cuenta.");
+    } else {
+      console.error("[Mercado Pago] No se pudo registrar el pago en mp_applied_payments:", ledgerErr.message);
+      return {
+        success: false,
+        error: "No se pudo registrar el pago en este momento. Probá de nuevo en unos minutos.",
+      };
+    }
+  } else {
+    ledgerReserved = true;
+  }
+
+  const releaseLedger = async () => {
+    if (!ledgerReserved) return;
+    await supabaseAdmin.from("mp_applied_payments").delete().eq("payment_id", paymentIdStr).eq("user_id", userId);
+  };
 
   const trustedMeta = getTrustedPlanMeta(authUser);
   const currentEndDate = profile?.plan_end_date || trustedMeta.plan_end_date;
@@ -195,8 +272,45 @@ export async function applyApprovedPaymentToUser(options: {
     payment.additional_info?.payer?.email ||
     payment.payer_email ||
     null;
+  const appliedPaymentIds = [...previousIds.filter((id) => id !== paymentIdStr), paymentIdStr].slice(
+    -APPLIED_PAYMENT_IDS_LIMIT
+  );
 
-  // 3. Actualizar en profiles
+  // 5. Actualizar en Supabase Auth (app_metadata es la fuente de verdad del plan)
+  if (authUser) {
+    const today = new Date().toISOString().split("T")[0];
+    const { error: authErr } = await supabaseAdmin.auth.admin.updateUserById(userId, {
+      app_metadata: {
+        ...authUser.app_metadata,
+        plan_type: "mensual",
+        plan_start_date: authUser.app_metadata?.plan_start_date || today,
+        plan_end_date: newEndDate,
+        account_status: "activa",
+        status: "active",
+        last_payment_id: paymentIdStr,
+        applied_payment_ids: appliedPaymentIds,
+        mp_status: "approved",
+        ...(payerEmail ? { mp_payer_email: payerEmail } : {}),
+      },
+      user_metadata: {
+        ...(authUser.user_metadata || {}),
+        plan_type: "mensual",
+        plan_start_date: authUser.user_metadata?.plan_start_date || today,
+        plan_end_date: newEndDate,
+        account_status: "activa",
+        status: "active",
+        mp_status: "approved",
+      },
+    });
+
+    if (authErr) {
+      console.error(`[Mercado Pago] No se pudo acreditar el pago #${paymentIdStr} en Auth:`, authErr.message);
+      await releaseLedger();
+      return { success: false, error: "No se pudo acreditar el pago. Probá de nuevo en unos minutos." };
+    }
+  }
+
+  // 6. Actualizar en profiles
   const profilePayload: Record<string, any> = {
     plan_type: "mensual",
     account_status: "activa",
@@ -217,35 +331,6 @@ export async function applyApprovedPaymentToUser(options: {
       delete profilePayload.last_payment_id;
       await supabaseAdmin.from("profiles").update(profilePayload).eq("id", userId);
     }
-  }
-
-  // 4. Actualizar en Supabase Auth (app_metadata y user_metadata)
-  if (authUser) {
-    const today = new Date().toISOString().split("T")[0];
-    await supabaseAdmin.auth.admin.updateUserById(userId, {
-      app_metadata: {
-        ...authUser.app_metadata,
-        plan_type: "mensual",
-        plan_start_date: authUser.app_metadata?.plan_start_date || today,
-        plan_end_date: newEndDate,
-        account_status: "activa",
-        status: "active",
-        last_payment_id: paymentIdStr,
-        mp_status: "approved",
-        ...(payerEmail ? { mp_payer_email: payerEmail } : {}),
-      },
-      user_metadata: {
-        ...(authUser.user_metadata || {}),
-        plan_type: "mensual",
-        plan_start_date: authUser.user_metadata?.plan_start_date || today,
-        plan_end_date: newEndDate,
-        account_status: "activa",
-        status: "active",
-        last_payment_id: paymentIdStr,
-        mp_status: "approved",
-        ...(payerEmail ? { mp_payer_email: payerEmail } : {}),
-      },
-    });
   }
 
   console.log(
@@ -284,8 +369,14 @@ export async function syncUserPaymentWithMercadoPago(options: {
   userId: string;
   paymentId?: string | null;
   email?: string | null;
+  /**
+   * true solo para un administrador o el service role. Una usuaria común solo puede
+   * acreditar pagos hechos desde su propia cuenta (external_reference = su id) o, como
+   * respaldo, pagos sin referencia hechos con el email de su cuenta y por el monto completo.
+   */
+  trusted?: boolean;
 }): Promise<SyncSubscriptionResult> {
-  const { userId, paymentId: explicitPaymentId, email: candidateInputEmail } = options;
+  const { userId, paymentId: explicitPaymentId, email: candidateInputEmail, trusted = false } = options;
   const accessToken = process.env.MP_ACCESS_TOKEN;
 
   if (!accessToken || !userId) {
@@ -304,8 +395,7 @@ export async function syncUserPaymentWithMercadoPago(options: {
   const { data: authRes } = await supabaseAdmin.auth.admin.getUserById(userId);
   const currentLastPaymentId =
     profile?.last_payment_id ||
-    authRes?.user?.app_metadata?.last_payment_id ||
-    authRes?.user?.user_metadata?.last_payment_id;
+    authRes?.user?.app_metadata?.last_payment_id;
 
   let approvedPayment: any = null;
 
@@ -323,14 +413,18 @@ export async function syncUserPaymentWithMercadoPago(options: {
           const isUserUuid = (ref: string) =>
             /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test((ref || "").trim());
 
-          if (
-            payData.external_reference &&
-            isUserUuid(payData.external_reference) &&
-            payData.external_reference !== userId
-          ) {
+          const ref = String(payData.external_reference || "").trim();
+          if (ref && isUserUuid(ref) && ref !== userId) {
             return {
               synced: false,
               error: `El pago #${payData.id} pertenece a otra cuenta de HABA.`,
+            };
+          }
+          // Un pago sin referencia a esta cuenta solo lo puede asignar un administrador
+          if (!trusted && ref !== userId) {
+            return {
+              synced: false,
+              error: `El pago #${payData.id} no está vinculado a tu cuenta. Escribinos y lo revisamos para acreditarlo.`,
             };
           }
           approvedPayment = payData;
@@ -386,6 +480,8 @@ export async function syncUserPaymentWithMercadoPago(options: {
           const pEmail = (p.payer?.email || p.additional_info?.payer?.email || "").toLowerCase();
           if (pEmail === candidateClean) {
             if (p.external_reference && p.external_reference !== userId) continue;
+            // Sin referencia a la cuenta: exigir el precio completo del plan
+            if (p.external_reference !== userId && !paymentCoversPlan(p)) continue;
             approvedPayment = p;
             break;
           }
@@ -425,6 +521,7 @@ export async function syncUserPaymentWithMercadoPago(options: {
   const applyResult = await applyApprovedPaymentToUser({
     payment: approvedPayment,
     userId,
+    source: "sync",
   });
 
   if (!applyResult.success) {
@@ -744,5 +841,6 @@ export async function assignOrphanPayment(options: {
   return applyApprovedPaymentToUser({
     payment,
     userId: targetUserId,
+    source: "admin",
   });
 }

@@ -46,12 +46,17 @@ async function handleSyncPayment(request: Request) {
       url.searchParams.get("collection_id") ||
       undefined;
 
+    const trusted = Boolean(isServiceRole) || checkIsAdmin(user);
     let targetUserId = user?.id || requestedUserId;
-    let candidateEmail = body.email || url.searchParams.get("email") || user?.email;
+    // Una usuaria común solo puede buscar pagos con el email de su propia cuenta:
+    // un email enviado en la solicitud permitiría reclamar el pago de otra persona.
+    let candidateEmail = trusted
+      ? body.email || url.searchParams.get("email") || user?.email
+      : user?.email;
 
     // Solo un administrador o service_role puede sincronizar la cuenta de otra persona
     if (requestedUserId && requestedUserId !== user?.id) {
-      if (!isServiceRole && !checkIsAdmin(user)) {
+      if (!trusted) {
         return NextResponse.json({ error: "No autorizado" }, { status: 403 });
       }
       targetUserId = requestedUserId;
@@ -71,6 +76,7 @@ async function handleSyncPayment(request: Request) {
       userId: targetUserId,
       paymentId: paymentId ? String(paymentId) : undefined,
       email: candidateEmail,
+      trusted,
     });
 
     return NextResponse.json(result);
