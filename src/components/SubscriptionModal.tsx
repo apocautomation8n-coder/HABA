@@ -12,6 +12,7 @@ import {
   RefreshCw,
   CalendarClock,
 } from "lucide-react";
+import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import { useModalThemeColor } from "@/hooks/useModalThemeColor";
 
@@ -35,10 +36,12 @@ type SubscriptionInfo = {
   subscribed: boolean;
   status?: string;
   nextPaymentDate?: string | null;
+  publicKey?: string;
 };
 
 const MP_SDK_URL = "https://sdk.mercadopago.com/js/v2";
-const PUBLIC_KEY = process.env.NEXT_PUBLIC_MP_PUBLIC_KEY || "";
+// Clave incluida al construir la app; si falta, se usa la que devuelve el servidor en el momento
+const BUILD_PUBLIC_KEY = process.env.NEXT_PUBLIC_MP_PUBLIC_KEY || "";
 const PLAN_AMOUNT = process.env.NEXT_PUBLIC_MP_SUBSCRIPTION_AMOUNT || "7000";
 
 let sdkPromise: Promise<void> | null = null;
@@ -67,10 +70,13 @@ function formatDate(value?: string | null): string {
   return d.toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
+// Estilo de los campos de Mercado Pago (iframes): mismo tamaño de letra que el resto del formulario
+const IFRAME_STYLE = { fontSize: "14px", color: "#2B2B2B" };
+
 const fieldBox =
   "h-10 px-3 bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl flex items-center focus-within:bg-white focus-within:border-[#3BB578] transition";
 const inputClass =
-  "w-full h-10 px-3 text-xs bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B] transition";
+  "w-full h-10 px-3 text-sm bg-[#F6F7F2] border border-[#EAF0E8] rounded-2xl focus:bg-white focus:border-[#3BB578] outline-none text-[#2B2B2B] transition";
 const labelClass = "text-[11px] font-semibold text-[#2B2B2B] block mb-1";
 
 export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
@@ -161,7 +167,8 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
   const showForm = isOpen && info !== null && !info.subscribed && !done;
   useEffect(() => {
     if (!showForm) return;
-    if (!PUBLIC_KEY) {
+    const publicKey = BUILD_PUBLIC_KEY || info?.publicKey || "";
+    if (!publicKey) {
       setError("El pago con tarjeta no está disponible por el momento.");
       return;
     }
@@ -169,15 +176,15 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
     loadMercadoPagoSdk()
       .then(() => {
         if (disposed) return;
-        const mp = new (window as any).MercadoPago(PUBLIC_KEY, { locale: "es-AR" });
+        const mp = new (window as any).MercadoPago(publicKey, { locale: "es-AR" });
         const cardForm = mp.cardForm({
           amount: String(PLAN_AMOUNT),
           iframe: true,
           form: {
             id: "haba-subscription-form",
-            cardNumber: { id: "haba-sub-cardNumber", placeholder: "Número de tarjeta" },
-            expirationDate: { id: "haba-sub-expirationDate", placeholder: "MM/AA" },
-            securityCode: { id: "haba-sub-securityCode", placeholder: "Código" },
+            cardNumber: { id: "haba-sub-cardNumber", placeholder: "Número de tarjeta", style: IFRAME_STYLE },
+            expirationDate: { id: "haba-sub-expirationDate", placeholder: "MM/AA", style: IFRAME_STYLE },
+            securityCode: { id: "haba-sub-securityCode", placeholder: "Código", style: IFRAME_STYLE },
             cardholderName: { id: "haba-sub-cardholderName", placeholder: "Como figura en la tarjeta" },
             issuer: { id: "haba-sub-issuer", placeholder: "Banco emisor" },
             installments: { id: "haba-sub-installments", placeholder: "Cuotas" },
@@ -220,7 +227,7 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
       }
       cardFormRef.current = null;
     };
-  }, [showForm, createSubscription, defaultEmail]);
+  }, [showForm, createSubscription, defaultEmail, info?.publicKey]);
 
   const handleCancel = async () => {
     try {
@@ -251,10 +258,15 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
 
   if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-200">
+  // Se dibuja en el body y por encima de la barra de navegación inferior (z-50)
+  const modal = (
+    <div
+      className="fixed inset-0 z-[99998] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-200"
+      style={{ height: "100dvh" }}
+    >
       <div
-        className="w-full max-w-md bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl border border-neutral-100 overflow-hidden flex flex-col max-h-[92dvh] animate-in zoom-in-95 duration-200"
+        className="w-full max-w-md bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl border border-neutral-100 overflow-hidden flex flex-col animate-in slide-in-from-bottom-6 sm:zoom-in-95 duration-200"
+        style={{ maxHeight: "min(92dvh, calc(100dvh - 1rem))" }}
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-subscription-title"
@@ -286,7 +298,10 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
           </button>
         </div>
 
-        <div className="overflow-y-auto overscroll-contain">
+        <div
+          className="overflow-y-auto overscroll-contain flex-1 min-h-0"
+          style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 12px)" }}
+        >
           {error && (
             <div
               role="alert"
@@ -492,4 +507,6 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
       </div>
     </div>
   );
+
+  return typeof document !== "undefined" ? createPortal(modal, document.body) : null;
 };

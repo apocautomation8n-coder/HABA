@@ -3,14 +3,28 @@ import { cancelUserSubscription, getRequestUser, getUserSubscription, saveSubscr
 
 export const dynamic = "force-dynamic";
 
+/**
+ * Public Key de Mercado Pago leída en tiempo de ejecución (no al construir la app), para que el
+ * formulario de tarjeta funcione apenas se carga la variable en Vercel. Es pública por diseño.
+ */
+function getPublicKey(): string {
+  const names = ["NEXT_PUBLIC_MP_PUBLIC_KEY", "MP_PUBLIC_KEY"];
+  for (const name of names) {
+    const value = (process.env[name] || "").trim();
+    if (value) return value;
+  }
+  return "";
+}
+
 /** Estado de la suscripción de la usuaria, consultado en Mercado Pago. */
 export async function GET(request: Request) {
   try {
     const user = await getRequestUser(request);
     if (!user?.id) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
 
+    const publicKey = getPublicKey();
     const pre = await getUserSubscription(user);
-    if (!pre) return NextResponse.json({ subscribed: false });
+    if (!pre) return NextResponse.json({ subscribed: false, publicKey });
 
     // Mantener el estado guardado al día si cambió en Mercado Pago (por ejemplo, baja desde su app)
     if (pre.status && pre.status !== user.app_metadata?.mp_status) {
@@ -23,6 +37,7 @@ export async function GET(request: Request) {
       nextPaymentDate: pre.next_payment_date || null,
       amount: pre.auto_recurring?.transaction_amount ?? null,
       currency: pre.auto_recurring?.currency_id ?? null,
+      publicKey,
     });
   } catch (err: any) {
     console.error("[API subscription] Error:", err);
