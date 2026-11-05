@@ -32,6 +32,8 @@ import {
   QuoteItem,
   UserProfile,
   getQuoteValidity,
+  getQuoteDisplayStatus,
+  QUOTE_STATUS_META,
   buildQuoteWhatsAppMessage,
   parseQuoteNotes,
   getQuoteTheme,
@@ -162,6 +164,10 @@ export default function PresupuestoPreviewPage() {
     if (!quote) return null;
     return getQuoteValidity(quote);
   }, [quote]);
+
+  // Estado del presupuesto: solo un pendiente puede figurar como vencido
+  const displayStatus = React.useMemo(() => (quote ? getQuoteDisplayStatus(quote) : null), [quote]);
+  const isShownExpired = displayStatus === "vencido";
 
   const formatPrefs: FormatPrefs = React.useMemo(() => ({
     currency: profile?.currency || userFormatPrefs.currency || "ARS",
@@ -389,10 +395,17 @@ export default function PresupuestoPreviewPage() {
               <h2 className="text-lg font-bold text-neutral-800">
                 Presupuesto #{quote.quote_number}
               </h2>
-              {validity?.isExpired ? (
+              {displayStatus && displayStatus !== "vencido" && displayStatus !== "pendiente" ? (
+                <span
+                  className={`text-[10px] font-bold px-2 py-0.5 rounded-full border flex items-center gap-1 ${QUOTE_STATUS_META[displayStatus].className}`}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full ${QUOTE_STATUS_META[displayStatus].dotClassName}`} />
+                  <span>{QUOTE_STATUS_META[displayStatus].label}</span>
+                </span>
+              ) : isShownExpired ? (
                 <span className="text-[10px] bg-rose-50 text-rose-700 font-bold px-2 py-0.5 rounded-full border border-rose-200 flex items-center gap-1">
                   <Clock className="w-3 h-3 text-rose-600" />
-                  <span>Vencido ({validity.formattedValidUntil})</span>
+                  <span>Vencido ({validity?.formattedValidUntil})</span>
                 </span>
               ) : (
                 <span className="text-[10px] bg-[#DCF4D7] text-[#1F7A4C] font-bold px-2 py-0.5 rounded-full border border-[#C3EBC0] flex items-center gap-1">
@@ -439,7 +452,7 @@ export default function PresupuestoPreviewPage() {
       </div>
 
       {/* Banner de advertencia si el presupuesto ya venció */}
-      {validity?.isExpired && (
+      {isShownExpired && validity && (
         <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl flex items-center justify-between text-xs text-rose-900 shadow-2xs gap-3 print-hidden animate-in fade-in duration-200">
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-5 h-5 text-rose-600 flex-shrink-0" />

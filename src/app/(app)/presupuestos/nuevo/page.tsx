@@ -73,6 +73,8 @@ function NuevoPresupuestoContent() {
   const { formatMoney, parseNumber, decimals } = useFormatPrefs();
 
   const [loading, setLoading] = useState(false);
+  const [savingAsDraft, setSavingAsDraft] = useState(false);
+  const [editStatus, setEditStatus] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [quoteNumber, setQuoteNumber] = useState<string | number | null>(null);
   const [preselectedProductName, setPreselectedProductName] = useState<string | null>(null);
@@ -81,7 +83,8 @@ function NuevoPresupuestoContent() {
   // Productos disponibles en catálogo
   const [products, setProducts] = useState<Product[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
-  // Datos del Cliente
+
+  // Datos del Cliente
   const [clientName, setClientName] = useState("");
   const [clientContact, setClientContact] = useState("");
   const [deliveryDate, setDeliveryDate] = useState("");
@@ -175,6 +178,7 @@ function NuevoPresupuestoContent() {
         }
 
         setQuoteNumber(quote.quote_number);
+        setEditStatus(typeof quote.status === "string" ? quote.status : null);
         setClientName(quote.client_name || "");
         setClientContact(quote.client_contact || "");
         setDeliveryDate(quote.delivery_date ? quote.delivery_date.split("T")[0] : "");
@@ -388,8 +392,10 @@ function NuevoPresupuestoContent() {
   }, [subtotal, discountAmount, shippingCost, decimals]);
 
   // Guardar presupuesto congelado en Supabase
-  const handleSaveQuote = async () => {
+  // asDraft: guardar como "borrador" (todavía no se envió al cliente)
+  const handleSaveQuote = async (asDraft = false) => {
     setErrorMsg(null);
+    setSavingAsDraft(asDraft);
     if (!clientName.trim()) {
       setErrorMsg("El nombre del cliente o contacto es obligatorio");
       return;
@@ -429,6 +435,14 @@ function NuevoPresupuestoContent() {
           valid_until: validUntilIso,
           validity_days: validityDays,
         };
+        // Borrador al guardar como tal; al emitir un borrador pasa a pendiente; si no, se conserva el estado
+        if (asDraft) {
+          updatePayload.status = "borrador";
+          updatePayload.status_updated_at = new Date().toISOString();
+        } else if (editStatus === "borrador") {
+          updatePayload.status = "pendiente";
+          updatePayload.status_updated_at = new Date().toISOString();
+        }
 
         let quoteError: any = null;
         const { error: fullUpdateErr } = await supabase
@@ -440,6 +454,8 @@ function NuevoPresupuestoContent() {
           // Fallback en caso de que la migración SQL aún no esté aplicada en Supabase
           delete updatePayload.valid_until;
           delete updatePayload.validity_days;
+          delete updatePayload.status;
+          delete updatePayload.status_updated_at;
           const { error: fallbackErr } = await supabase
             .from("quotes")
             .update(updatePayload)
@@ -492,6 +508,8 @@ function NuevoPresupuestoContent() {
         notes: finalNotes,
         valid_until: validUntilIso,
         validity_days: validityDays,
+        status: asDraft ? "borrador" : "pendiente",
+        status_updated_at: new Date().toISOString(),
       };
 
       let quoteData: any = null;
@@ -506,6 +524,8 @@ function NuevoPresupuestoContent() {
         // Fallback si la columna no existe en Supabase
         delete insertPayload.valid_until;
         delete insertPayload.validity_days;
+        delete insertPayload.status;
+        delete insertPayload.status_updated_at;
         const { data: fallbackData, error: fallbackErr } = await supabase
           .from("quotes")
           .insert(insertPayload)
@@ -898,7 +918,7 @@ function NuevoPresupuestoContent() {
           )}
 
           <button
-            onClick={handleSaveQuote}
+            onClick={() => handleSaveQuote(false)}
             disabled={loading}
             className={`w-full py-3.5 text-white rounded-2xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-md ${
               errorMsg
@@ -907,7 +927,13 @@ function NuevoPresupuestoContent() {
             } ${loading ? "opacity-75 cursor-not-allowed" : ""}`}
           >
             {loading ? (
-              <span>{isEditing ? "Guardando cambios..." : "Generando Presupuesto..."}</span>
+              <span>
+                {savingAsDraft
+                  ? "Guardando borrador..."
+                  : isEditing
+                  ? "Guardando cambios..."
+                  : "Generando Presupuesto..."}
+              </span>
             ) : errorMsg ? (
               <>
                 <AlertCircle className="w-4 h-4" />
@@ -920,6 +946,20 @@ function NuevoPresupuestoContent() {
               </>
             )}
           </button>
+
+          {(!isEditing || editStatus === "borrador" || editStatus === null) && (
+            <button
+              type="button"
+              onClick={() => handleSaveQuote(true)}
+              disabled={loading}
+              className={`w-full py-2.5 bg-white hover:bg-neutral-50 text-neutral-700 border border-neutral-200 rounded-2xl text-xs font-bold transition flex items-center justify-center gap-2 ${
+                loading ? "opacity-75 cursor-not-allowed" : "active:scale-[0.99]"
+              }`}
+            >
+              <FileText className="w-4 h-4" />
+              <span>{isEditing && editStatus === "borrador" ? "Seguir como borrador" : "Guardar como borrador"}</span>
+            </button>
+          )}
         </div>
       </div>
 

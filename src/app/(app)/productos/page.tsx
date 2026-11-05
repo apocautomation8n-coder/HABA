@@ -63,6 +63,8 @@ import {
   calculateSurfaceRecipeQuantity,
 } from "@/lib/products";
 import { matchesSearch } from "@/lib/search";
+import { ViewModeToggle, ExportMenu, useViewMode } from "@/components/ListToolbar";
+import { downloadCsv, openPdfReport, ExportColumn } from "@/lib/exporters";
 import { SupplyModal, SupplyItem } from "@/components/SupplyModal";
 import {
   isUnitSupply,
@@ -228,6 +230,7 @@ export default function ProductosPage() {
 
   // Ordenamiento compacto
   const [sortBy, setSortBy] = useState<ProductSortOption>("recent");
+  const [viewMode, setViewMode] = useViewMode("productos");
   const [isSortOpen, setIsSortOpen] = useState(false);
   const sortRef = useRef<HTMLDivElement>(null);
 
@@ -1865,6 +1868,85 @@ export default function ProductosPage() {
     setSortBy("recent");
   };
 
+  // Exportación del listado filtrado y ordenado
+  type ExportProduct = (typeof filteredProducts)[number];
+  const getMainPrice = (p: ExportProduct) => {
+    const prices = sortProductPrices(p.product_prices || []);
+    return (
+      prices.find((pr) => {
+        const n = (pr.channel_name || "").toLowerCase();
+        return n.includes("menor") || n.includes("minorista") || n.includes("directo") || n.includes("local");
+      }) || prices[0]
+    );
+  };
+  const exportColumns: ExportColumn<ExportProduct>[] = [
+    { header: "Producto", value: (p) => p.name },
+    { header: "Categoría", value: (p) => p.meta.category || "" },
+    { header: "Estado", value: (p) => (p.meta.isActive ? "Activo" : "Inactivo") },
+    {
+      header: "Costo total",
+      value: (p) => Number(p.total_cost) || 0,
+      display: (p) => formatMoney(p.total_cost),
+      align: "right",
+    },
+    {
+      header: "Canal principal",
+      value: (p) => getMainPrice(p)?.channel_name || "",
+    },
+    {
+      header: "Precio principal",
+      value: (p) => Number(getMainPrice(p)?.selling_price) || 0,
+      display: (p) => {
+        const mp = getMainPrice(p);
+        return mp ? formatMoney(mp.selling_price) : "-";
+      },
+      align: "right",
+    },
+    {
+      header: "Margen %",
+      value: (p) => Number(getMainPrice(p)?.profit_margin_percent) || 0,
+      display: (p) => {
+        const mp = getMainPrice(p);
+        return mp ? `${mp.profit_margin_percent}%` : "-";
+      },
+      align: "right",
+    },
+    {
+      header: "Todos los precios",
+      value: (p) =>
+        sortProductPrices(p.product_prices || [])
+          .map((pr) => `${pr.channel_name}: ${Number(pr.selling_price) || 0}`)
+          .join(" | "),
+      display: (p) =>
+        sortProductPrices(p.product_prices || [])
+          .map((pr) => `${pr.channel_name}: ${formatMoney(pr.selling_price)}`)
+          .join(" | "),
+    },
+    { header: "Insumos", value: (p) => p.product_supplies?.length || 0, align: "center" },
+    { header: "Revisar precios", value: (p) => (p.isCostOutdated ? "Sí" : "No"), align: "center" },
+  ];
+  const pdfColumns = exportColumns.filter((c) => c.header !== "Canal principal");
+
+  const exportSubtitle = [
+    selectedCategory !== "all" ? `Categoría: ${selectedCategory}` : "Todas las categorías",
+    statusFilter === "active" ? "Activos" : statusFilter === "inactive" ? "Inactivos" : null,
+    onlyAlerts ? "Solo con precios a revisar" : null,
+    search.trim() ? `Búsqueda: "${search.trim()}"` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  const handleExportCsv = () => downloadCsv("productos", exportColumns, filteredProducts);
+  const handleExportPdf = () => {
+    const ok = openPdfReport({
+      title: "Productos",
+      subtitle: exportSubtitle,
+      columns: pdfColumns,
+      rows: filteredProducts,
+    });
+    if (!ok) alert("Tu navegador bloqueó la ventana emergente. Permití las ventanas emergentes para HABA.");
+  };
+
   return (
     <div className="w-full flex flex-col space-y-4 pb-16">
       {/* Encabezado del Módulo */}
@@ -2128,6 +2210,17 @@ export default function ProductosPage() {
         )}
       </div>
 
+      {/* Exportación y modo de vista */}
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[11px] text-neutral-400">
+          {filteredProducts.length} {filteredProducts.length === 1 ? "producto" : "productos"}
+        </span>
+        <div className="flex items-center gap-2">
+          <ExportMenu onCsv={handleExportCsv} onPdf={handleExportPdf} disabled={filteredProducts.length === 0} />
+          <ViewModeToggle mode={viewMode} onChange={setViewMode} />
+        </div>
+      </div>
+
       {/* Listado de Productos o Estado Vacío */}
       {loading ? (
         <div className="py-16 flex flex-col items-center justify-center text-center space-y-2">
@@ -2165,7 +2258,13 @@ export default function ProductosPage() {
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div
+          className={
+            viewMode === "list"
+              ? "flex flex-col gap-2"
+              : "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+          }
+        >
           {filteredProducts.map((product) => {
             const isExpanded = expandedProductId === product.id;
             const sortedPrices = sortProductPrices(product.product_prices || []);
@@ -2176,6 +2275,76 @@ export default function ProductosPage() {
               }) || sortedPrices[0];
 
             const isActive = product.meta.isActive;
+
+            // Vista de lista: fila compacta; al tocarla se despliega la tarjeta completa
+            if (viewMode === "list" && !isExpanded) {
+              return (
+                <div
+                  key={product.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setExpandedProductId(product.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setExpandedProductId(product.id);
+                    }
+                  }}
+                  className={`bg-white rounded-2xl px-3.5 py-2.5 border shadow-sm flex items-center gap-3 cursor-pointer transition hover:border-[#3BB578]/50 hover:shadow-md ${
+                    isActive ? "border-[#EAF0E8]" : "border-neutral-200/80 bg-neutral-50/40"
+                  }`}
+                >
+                  <span
+                    className={`w-2 h-2 rounded-full flex-shrink-0 ${isActive ? "bg-emerald-500" : "bg-neutral-400"}`}
+                    title={isActive ? "Activo" : "Inactivo"}
+                    aria-label={isActive ? "Activo" : "Inactivo"}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <span
+                      className={`text-xs font-bold block truncate ${
+                        isActive ? "text-neutral-800" : "text-neutral-500 line-through decoration-neutral-300"
+                      }`}
+                    >
+                      {product.name}
+                    </span>
+                    <span className="text-[10px] text-neutral-400 flex items-center gap-1.5 min-w-0">
+                      <span className="truncate">
+                        {product.badge.icon} {product.badge.label}
+                      </span>
+                      {product.isCostOutdated && (
+                        <span className="inline-flex items-center gap-0.5 text-amber-700 font-bold flex-shrink-0">
+                          <AlertTriangle className="w-3 h-3" />
+                          <span className="hidden sm:inline">Revisar precios</span>
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                  <div className="text-right flex-shrink-0 hidden sm:block">
+                    <span className="text-[9px] text-neutral-400 block">Costo</span>
+                    <span className="text-xs font-bold text-neutral-700">{formatMoney(product.total_cost)}</span>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <span className="text-[9px] text-[#1F7A4C] block truncate max-w-[90px]">
+                      {retailPrice ? retailPrice.channel_name.split("(")[0].trim() : "Precio"}
+                    </span>
+                    <span className="text-xs font-black text-[#1F7A4C]">
+                      {retailPrice ? formatMoney(retailPrice.selling_price) : "-"}
+                    </span>
+                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleOpenEdit(product);
+                    }}
+                    className="p-1.5 text-neutral-400 hover:text-[#1F7A4C] hover:bg-[#DCF4D7] rounded-xl transition flex-shrink-0"
+                    title="Editar producto"
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </button>
+                  <ChevronDown className="w-4 h-4 text-neutral-300 flex-shrink-0" />
+                </div>
+              );
+            }
 
             return (
               <div

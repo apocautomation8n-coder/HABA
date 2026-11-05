@@ -28,6 +28,14 @@ import { DeleteSupplyModal } from "@/components/insumos/DeleteSupplyModal";
 import { SupplyDetailModal } from "@/components/insumos/SupplyDetailModal";
 import { Insumo, PriceRecord } from "@/types/insumo";
 import { matchesSearch } from "@/lib/search";
+import { ViewModeToggle, ExportMenu, useViewMode } from "@/components/ListToolbar";
+import { downloadCsv, openPdfReport, ExportColumn } from "@/lib/exporters";
+
+const SUPPLY_CATEGORY_LABEL: Record<string, string> = {
+  materia_prima: "Materia Prima",
+  packaging: "Packaging",
+  otro: "Otro",
+};
 
 export default function InsumosPage() {
   const supabase = createClient();
@@ -37,6 +45,7 @@ export default function InsumosPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"todos" | "materia_prima" | "packaging">("todos");
   const [search, setSearch] = useState("");
+  const [viewMode, setViewMode] = useViewMode("insumos");
 
   // Modales
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -289,6 +298,71 @@ export default function InsumosPage() {
     };
   }, [supplies]);
 
+  // Exportación del listado filtrado
+  const exportColumns: ExportColumn<SupplyItem>[] = [
+    { header: "Insumo", value: (s) => s.name },
+    { header: "Tipo", value: (s) => SUPPLY_CATEGORY_LABEL[s.category] || s.category },
+    {
+      header: "Cantidad comprada",
+      value: (s) => Number(s.purchase_quantity) || 0,
+      display: (s) => `${s.purchase_quantity} ${s.purchase_unit}`,
+      align: "right",
+    },
+    { header: "Unidad de compra", value: (s) => s.purchase_unit },
+    {
+      header: `Precio de reposición (${currency})`,
+      value: (s) => Number(s.current_price) || 0,
+      display: (s) => formatMoney(s.current_price),
+      align: "right",
+    },
+    { header: "Unidad de uso", value: (s) => s.use_unit },
+    {
+      header: "Costo por unidad de uso",
+      value: (s) => calculateUnitCost(s.current_price, s.purchase_quantity, s.conversion_factor),
+      display: (s) =>
+        `${formatMoney(calculateUnitCost(s.current_price, s.purchase_quantity, s.conversion_factor))} /${s.use_unit}`,
+      align: "right",
+    },
+    {
+      header: "Medidas",
+      value: (s) =>
+        s.unit_width && s.unit_length ? `${s.unit_width} x ${s.unit_length} ${s.unit_dimension_unit || "cm"}` : "",
+    },
+    { header: "Link", value: (s) => getSafeSupplyLink(s.link) || "" },
+  ];
+  // En el PDF el link largo no entra en la tabla: se muestra solo el sitio
+  const pdfColumns: ExportColumn<SupplyItem>[] = exportColumns
+    .filter((c) => c.header !== "Unidad de compra" && c.header !== "Unidad de uso")
+    .map((c) =>
+      c.header === "Link"
+        ? {
+            ...c,
+            display: (s: SupplyItem) => {
+              const l = getSafeSupplyLink(s.link);
+              return l ? getSupplyLinkLabel(l) : "";
+            },
+          }
+        : c
+    );
+
+  const exportSubtitle = [
+    filter === "todos" ? "Todos los insumos" : SUPPLY_CATEGORY_LABEL[filter],
+    search.trim() ? `Búsqueda: "${search.trim()}"` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  const handleExportCsv = () => downloadCsv("insumos", exportColumns, filteredSupplies);
+  const handleExportPdf = () => {
+    const ok = openPdfReport({
+      title: "Insumos",
+      subtitle: exportSubtitle,
+      columns: pdfColumns,
+      rows: filteredSupplies,
+    });
+    if (!ok) alert("Tu navegador bloqueó la ventana emergente. Permití las ventanas emergentes para HABA.");
+  };
+
   return (
     <div className="w-full flex flex-col space-y-4 pb-12">
       {/* Encabezado del Módulo */}
@@ -367,6 +441,17 @@ export default function InsumosPage() {
         </div>
       </div>
 
+      {/* Exportación y modo de vista */}
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[11px] text-neutral-400">
+          {filteredSupplies.length} {filteredSupplies.length === 1 ? "insumo" : "insumos"}
+        </span>
+        <div className="flex items-center gap-2">
+          <ExportMenu onCsv={handleExportCsv} onPdf={handleExportPdf} disabled={filteredSupplies.length === 0} />
+          <ViewModeToggle mode={viewMode} onChange={setViewMode} />
+        </div>
+      </div>
+
       {/* Listado de Insumos */}
       {loading ? (
         <div className="py-16 flex flex-col items-center justify-center text-center space-y-2">
@@ -396,6 +481,91 @@ export default function InsumosPage() {
             <Sparkles className="w-4 h-4" />
             <span>Cargar mi primer insumo</span>
           </button>
+        </div>
+      ) : viewMode === "list" ? (
+        <div className="bg-white rounded-3xl border border-[#EAF0E8] shadow-sm overflow-hidden divide-y divide-[#EAF0E8]">
+          {filteredSupplies.map((supply) => {
+            const unitCost = calculateUnitCost(
+              supply.current_price,
+              supply.purchase_quantity,
+              supply.conversion_factor
+            );
+            const safeLink = getSafeSupplyLink(supply.link);
+            return (
+              <div
+                key={supply.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => setSelectedSupplyForDetail(supply)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setSelectedSupplyForDetail(supply);
+                  }
+                }}
+                className="flex items-center gap-3 px-3.5 py-2.5 hover:bg-[#F6F7F2] transition cursor-pointer group"
+              >
+                <div
+                  className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                    supply.category === "packaging" ? "bg-amber-50 text-amber-600" : "bg-[#DCF4D7] text-[#3BB578]"
+                  }`}
+                >
+                  {supply.category === "packaging" ? <Package className="w-4 h-4" /> : <Layers className="w-4 h-4" />}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <span className="text-xs font-bold text-neutral-800 block truncate group-hover:text-[#1F7A4C]">
+                    {supply.name}
+                  </span>
+                  <span className="text-[10px] text-neutral-400 block truncate">
+                    {supply.purchase_quantity} {supply.purchase_unit} · {formatMoney(supply.current_price)}
+                    {safeLink && (
+                      <>
+                        {" · "}
+                        <a
+                          href={safeLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-[#1F7A4C] font-semibold hover:underline"
+                        >
+                          {getSupplyLinkLabel(safeLink)}
+                        </a>
+                      </>
+                    )}
+                  </span>
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <span className="text-xs font-black text-[#1F7A4C] block">
+                    {formatMoney(unitCost)}
+                    <span className="text-[10px] font-normal text-neutral-400">/{supply.use_unit}</span>
+                  </span>
+                </div>
+                <div className="flex items-center flex-shrink-0">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditingSupply(supply);
+                      setIsModalOpen(true);
+                    }}
+                    className="p-1.5 text-neutral-400 hover:text-[#3BB578] hover:bg-[#DCF4D7] rounded-xl transition"
+                    title="Editar insumo"
+                  >
+                    <Edit2 className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleRequestDelete(supply);
+                    }}
+                    className="p-1.5 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition hidden sm:inline-flex"
+                    title="Eliminar insumo"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">

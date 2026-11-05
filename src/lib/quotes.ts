@@ -25,6 +25,71 @@ export interface Quote {
   valid_until?: string | null;
   validity_days?: number | null;
   shipping_cost?: number | null;
+  status?: QuoteStatus | string | null;
+  status_updated_at?: string | null;
+}
+
+/** Estados que se guardan en la base. */
+export type QuoteStatus = "borrador" | "pendiente" | "aceptado" | "rechazado";
+/** Estado que se muestra: "vencido" se calcula para un pendiente que pasó su validez. */
+export type QuoteDisplayStatus = QuoteStatus | "vencido";
+
+export const QUOTE_STATUSES: QuoteStatus[] = ["borrador", "pendiente", "aceptado", "rechazado"];
+
+export const QUOTE_STATUS_META: Record<
+  QuoteDisplayStatus,
+  { label: string; className: string; dotClassName: string }
+> = {
+  borrador: {
+    label: "Borrador",
+    className: "bg-neutral-100 text-neutral-700 border-neutral-300",
+    dotClassName: "bg-neutral-400",
+  },
+  pendiente: {
+    label: "Pendiente",
+    className: "bg-amber-50 text-amber-800 border-amber-200",
+    dotClassName: "bg-amber-500",
+  },
+  aceptado: {
+    label: "Aceptado",
+    className: "bg-emerald-50 text-emerald-800 border-emerald-200",
+    dotClassName: "bg-emerald-500",
+  },
+  rechazado: {
+    label: "Rechazado",
+    className: "bg-rose-50 text-rose-700 border-rose-200",
+    dotClassName: "bg-rose-500",
+  },
+  vencido: {
+    label: "Vencido",
+    className: "bg-rose-50 text-rose-700 border-rose-200",
+    dotClassName: "bg-rose-600",
+  },
+};
+
+/** Normaliza el estado guardado: los presupuestos sin estado se consideran pendientes. */
+export function getQuoteStatus(quote: { status?: string | null }): QuoteStatus {
+  const s = (quote.status || "").toLowerCase().trim();
+  return (QUOTE_STATUSES as string[]).includes(s) ? (s as QuoteStatus) : "pendiente";
+}
+
+/**
+ * Estado a mostrar. Solo un presupuesto pendiente puede vencer: uno aceptado o rechazado ya
+ * tuvo respuesta y un borrador todavía no se envió.
+ */
+export function getQuoteDisplayStatus(
+  quote: {
+    status?: string | null;
+    created_at?: string;
+    valid_until?: string | null;
+    validity_days?: number | null;
+    notes?: string | null;
+  },
+  customNow?: Date
+): QuoteDisplayStatus {
+  const status = getQuoteStatus(quote);
+  if (status === "pendiente" && getQuoteValidity(quote, customNow).isExpired) return "vencido";
+  return status;
 }
 
 export interface UserProfile {
