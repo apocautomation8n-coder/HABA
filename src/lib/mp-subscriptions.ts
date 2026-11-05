@@ -183,6 +183,23 @@ export async function createUserSubscription(options: {
 
   if (!res.ok || !data?.id) {
     console.error("[Suscripción MP] Error al crear la suscripción:", res.status, data);
+    // Diagnóstico: qué registró Mercado Pago del token (nunca incluye el número de la tarjeta)
+    try {
+      const tokRes = await fetch(`${MP_API}/v1/card_tokens/${encodeURIComponent(cardTokenId)}`, { headers: mpHeaders() });
+      const tok = await tokRes.json().catch(() => ({}));
+      const { card_number_length, security_code_length, status, luhn_validation, live_mode, cardholder, ...rest } = tok || {};
+      console.error("[Suscripción MP] Datos del token:", tokRes.status, {
+        card_number_length,
+        security_code_length,
+        status,
+        luhn_validation,
+        live_mode,
+        identification_type: cardholder?.identification?.type,
+        other_keys: Object.keys(rest || {}),
+      });
+    } catch (diagErr) {
+      console.warn("[Suscripción MP] No se pudo consultar el token:", diagErr);
+    }
     return { success: false, error: friendlyMpError(data, res.status) };
   }
 
