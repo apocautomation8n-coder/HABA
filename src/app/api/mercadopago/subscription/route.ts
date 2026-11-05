@@ -32,9 +32,12 @@ export async function GET(request: Request) {
     }
 
     return NextResponse.json({
-      subscribed: pre.status === "authorized" || pre.status === "pending",
+      // Solo una suscripción autorizada cuenta como activa. Una pendiente (empezó a pagar y no
+      // terminó) no bloquea: se devuelve su link para que pueda completar el pago.
+      subscribed: pre.status === "authorized",
       status: pre.status,
-      nextPaymentDate: pre.next_payment_date || null,
+      pendingInitPoint: pre.status === "pending" && pre.init_point ? pre.init_point : null,
+      nextPaymentDate: pre.status === "authorized" ? pre.next_payment_date || null : null,
       amount: pre.auto_recurring?.transaction_amount ?? null,
       currency: pre.auto_recurring?.currency_id ?? null,
       publicKey,

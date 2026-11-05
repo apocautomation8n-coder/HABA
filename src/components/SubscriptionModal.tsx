@@ -40,6 +40,8 @@ type SubscriptionInfo = {
   status?: string;
   nextPaymentDate?: string | null;
   publicKey?: string;
+  /** Link de Mercado Pago de una suscripción empezada y no terminada. */
+  pendingInitPoint?: string | null;
 };
 
 const MP_SDK_URL = "https://sdk.mercadopago.com/js/v2";
@@ -447,7 +449,26 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
           {/* Elegir cómo pagar */}
           {canSubscribe && method === null && (
             <div className="p-5 space-y-2.5">
-              <p className="text-[11px] font-semibold text-neutral-700">¿Cómo querés pagar?</p>
+              {info?.pendingInitPoint && (
+                <a
+                  href={info.pendingInitPoint}
+                  className="w-full p-3.5 bg-[#DCF4D7] border border-[#C3EBC0] hover:bg-[#cbf0c4] rounded-2xl text-left flex items-center gap-3 transition"
+                >
+                  <div className="w-9 h-9 rounded-xl bg-white text-[#1F7A4C] flex items-center justify-center shrink-0">
+                    <Wallet className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <span className="text-xs font-bold text-[#1F7A4C] block">Terminar el pago en Mercado Pago</span>
+                    <span className="text-[11px] text-[#1F7A4C]/80 block leading-snug">
+                      Empezaste una suscripción y quedó sin confirmar. Retomala desde acá.
+                    </span>
+                  </div>
+                  <ExternalLink className="w-4 h-4 text-[#1F7A4C] shrink-0" />
+                </a>
+              )}
+              <p className="text-[11px] font-semibold text-neutral-700">
+                {info?.pendingInitPoint ? "O empezá de nuevo:" : "¿Cómo querés pagar?"}
+              </p>
               <button
                 type="button"
                 onClick={handleMercadoPago}
