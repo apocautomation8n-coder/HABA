@@ -308,11 +308,18 @@ export async function applyApprovedPaymentToUser(options: {
   // 5. Actualizar en Supabase Auth (app_metadata es la fuente de verdad del plan)
   if (authUser) {
     const today = new Date().toISOString().split("T")[0];
+    // Fecha de inicio del plan pago: al pasar de prueba a mensual arranca con este pago (la fecha
+    // de la prueba era la del alta). Si ya era mensual, se conserva la que tenía.
+    const wasMonthly = authUser.app_metadata?.plan_type === "mensual";
+    const paidAt = String(payment.date_approved || payment.date_created || "").split("T")[0];
+    const planStart =
+      (wasMonthly && authUser.app_metadata?.plan_start_date) ||
+      (/^\d{4}-\d{2}-\d{2}$/.test(paidAt) ? paidAt : today);
     const { error: authErr } = await supabaseAdmin.auth.admin.updateUserById(userId, {
       app_metadata: {
         ...authUser.app_metadata,
         plan_type: "mensual",
-        plan_start_date: authUser.app_metadata?.plan_start_date || today,
+        plan_start_date: planStart,
         plan_end_date: newEndDate,
         account_status: "activa",
         status: "active",
@@ -324,7 +331,7 @@ export async function applyApprovedPaymentToUser(options: {
       user_metadata: {
         ...(authUser.user_metadata || {}),
         plan_type: "mensual",
-        plan_start_date: authUser.user_metadata?.plan_start_date || today,
+        plan_start_date: planStart,
         plan_end_date: newEndDate,
         account_status: "activa",
         status: "active",
@@ -344,6 +351,10 @@ export async function applyApprovedPaymentToUser(options: {
     plan_type: "mensual",
     account_status: "activa",
     status: "active",
+    plan_start_date:
+      (authUser?.app_metadata?.plan_type === "mensual" && authUser?.app_metadata?.plan_start_date) ||
+      String(payment.date_approved || payment.date_created || "").split("T")[0] ||
+      new Date().toISOString().split("T")[0],
     plan_end_date: newEndDate,
     last_payment_id: paymentIdStr,
     updated_at: new Date().toISOString(),

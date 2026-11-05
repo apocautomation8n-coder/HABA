@@ -212,6 +212,32 @@ export async function POST(request: Request) {
           }
         }
 
+        // Cobro de una suscripción avisado como pago común: el pago suele venir SIN referencia de la
+        // cuenta (la referencia está en la suscripción). Se busca la suscripción a la que pertenece y
+        // se toma de ahí el id de la cuenta y la fecha del próximo cobro.
+        let subscriptionNextPayment: string | null = null;
+        let subscription: any = null;
+        if (!userId) {
+          const preapprovalId = String(
+            payment.metadata?.preapproval_id || payment.point_of_interaction?.transaction_data?.subscription_id || ""
+          ).trim();
+          if (preapprovalId) {
+            subscription = await getPreapproval(preapprovalId);
+            const subRef = String(subscription?.external_reference || "").trim();
+            if (isHabaUserId(subRef)) {
+              const { data: userRes } = await supabaseAdmin.auth.admin.getUserById(subRef);
+              if (userRes?.user) {
+                userId = userRes.user.id;
+                subscriptionNextPayment = subscription?.next_payment_date || null;
+              }
+            } else if (/haba/i.test(subRef)) {
+              // Suscripción del plan anterior: vincular por el email de quien pagó
+              userId = await findUserIdByPayerEmail(supabaseAdmin, subscription?.payer_email);
+              if (userId) subscriptionNextPayment = subscription?.next_payment_date || null;
+            }
+          }
+        }
+
         // Cobros de la suscripción anterior: llegan con la referencia fija "Haba suscripción mensual".
         // Solo para esa referencia se busca la cuenta por el email de pago (coincidencia única);
         // el registro mp_applied_payments impide acreditar el mismo pago dos veces.
@@ -234,10 +260,21 @@ export async function POST(request: Request) {
         const applyResult = await applyApprovedPaymentToUser({
           payment,
           userId,
+          minEndDate: subscriptionNextPayment,
         });
 
         if (!applyResult.success) {
           console.warn(`[Webhook Mercado Pago] Aviso al aplicar pago #${payment.id}: ${applyResult.error}`);
+          if (applyResult.alreadyApplied && subscriptionNextPayment) {
+            await ensurePlanEndDateAtLeast(userId, subscriptionNextPayment);
+          }
+        }
+        if (subscription?.id) {
+          await saveSubscriptionState(userId, {
+            preapprovalId: String(subscription.id),
+            status: subscription.status || "authorized",
+            nextPaymentDate: subscriptionNextPayment,
+          });
         }
 
         return NextResponse.json({
