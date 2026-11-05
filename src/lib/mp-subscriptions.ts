@@ -126,6 +126,11 @@ export interface CreateSubscriptionResult {
 /** Traduce los errores habituales de Mercado Pago a un mensaje claro. */
 function friendlyMpError(data: any, status: number): string {
   const raw = String(data?.message || data?.error || "").toLowerCase();
+  // Tarjetas con código de seguridad dinámico (por ejemplo la de Mercado Pago, física o virtual):
+  // Mercado Pago no las acepta para cobros automáticos con tarjeta.
+  if (raw.includes("cvv"))
+    return "Esta tarjeta no se puede usar para el cobro automático (por ejemplo, la tarjeta de Mercado Pago). Probá con una tarjeta de crédito o débito de un banco.";
+  if (raw.includes("card token was used")) return "Los datos de la tarjeta vencieron. Volvé a cargarlos y probá de nuevo.";
   if (raw.includes("card_token")) return "La tarjeta no se pudo validar. Revisá los datos y probá de nuevo.";
   if (raw.includes("payer_email") || raw.includes("email")) return "Revisá el email ingresado en el formulario.";
   if (raw.includes("rejected") || raw.includes("cc_rejected")) return "La tarjeta fue rechazada. Probá con otra tarjeta.";
