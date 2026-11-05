@@ -33,6 +33,7 @@ import {
   FilterX,
   Download,
   FileSpreadsheet,
+  Receipt,
 } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { isRealUserAvatar } from "@/components/ProfileAvatar";
@@ -49,6 +50,7 @@ import {
   calculatePlanEndDate,
 } from "@/lib/plan-helpers";
 import { matchesSearch } from "@/lib/search";
+import { OrphanPaymentModal } from "@/components/admin/OrphanPaymentModal";
 
 /**
  * Normaliza y construye el link directo a WhatsApp para comunicarse con una usuaria
@@ -216,6 +218,7 @@ export default function AdminPage() {
   const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false);
   const [expandedHistoryUserId, setExpandedHistoryUserId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [isOrphanModalOpen, setIsOrphanModalOpen] = useState(false);
 
   // Modal para dar de alta nueva usuaria
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -262,14 +265,14 @@ export default function AdminPage() {
 
   // Oscurecer la barra de estado superior nativa de iOS al abrir cualquier modal en admin
   useModalThemeColor(
-    isCreateModalOpen || Boolean(resetModalUser) || Boolean(editModalUser),
+    isCreateModalOpen || Boolean(resetModalUser) || Boolean(editModalUser) || isOrphanModalOpen,
     "#000000"
   );
 
   // Bloquear scroll de fondo para evitar rebote elástico en móviles
   useEffect(() => {
     const isAnyModalOpen =
-      isCreateModalOpen || Boolean(resetModalUser) || Boolean(editModalUser);
+      isCreateModalOpen || Boolean(resetModalUser) || Boolean(editModalUser) || isOrphanModalOpen;
     if (!isAnyModalOpen) return;
 
     const originalOverflow = document.body.style.overflow;
@@ -405,7 +408,7 @@ export default function AdminPage() {
       setSyncingUserId(targetUser.id);
       const emailToUse = customEmail || targetUser.email || "";
       const res = await fetch(
-        `/api/mercadopago/sync?userId=${targetUser.id}&email=${encodeURIComponent(emailToUse)}`,
+        `/api/mercadopago/sync-payment?userId=${targetUser.id}&email=${encodeURIComponent(emailToUse)}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -415,11 +418,16 @@ export default function AdminPage() {
       const data = await res.json();
       if (data.synced) {
         alert(
-          `¡Suscripción de ${targetUser.full_name || targetUser.email} sincronizada con éxito!\nPlan: ${
+          `¡Cobro de ${targetUser.full_name || targetUser.email} acreditado con éxito!\nPlan: ${
             data.plan_type
-          }\nFecha de fin: ${formatDateDisplay(data.plan_end_date)}`
+          }\nNueva fecha de fin: ${formatDateDisplay(data.plan_end_date)}`
         );
         await loadUsers();
+      } else if (data.alreadyApplied) {
+        alert(
+          data.error ||
+            `El cobro #${data.payment_id || ""} ya fue aplicado previamente a esta cuenta. No se duplicaron días.`
+        );
       } else {
         if (!customEmail) {
           const inputVal = window.prompt(
@@ -431,7 +439,7 @@ export default function AdminPage() {
         }
         alert(
           data.error ||
-            "No se detectó un cobro o suscripción autorizada en Mercado Pago para esta usuaria todavía."
+            "No se detectó un cobro aprobado en Mercado Pago para esta usuaria todavía."
         );
       }
     } catch (err: any) {
@@ -776,6 +784,17 @@ export default function AdminPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Botón Pagos Huérfanos */}
+          <button
+            type="button"
+            onClick={() => setIsOrphanModalOpen(true)}
+            title="Buscar y resolver pagos huérfanos de Mercado Pago"
+            className="py-2.5 px-3.5 bg-white hover:bg-neutral-50 text-[#2B2B2B] border border-[#EAF0E8] rounded-2xl shadow-xs transition flex items-center gap-1.5 text-xs font-bold active:scale-[0.98] cursor-pointer"
+          >
+            <Receipt className="w-4 h-4 text-[#3BB578]" />
+            <span>Resolver Pago Huérfano</span>
+          </button>
+
           {/* Botón Exportar CSV */}
           <button
             type="button"
@@ -2010,6 +2029,13 @@ export default function AdminPage() {
           <span>{toastMessage}</span>
         </div>
       )}
+
+      {/* Modal de Búsqueda y Resolución Asistida de Pagos Huérfanos */}
+      <OrphanPaymentModal
+        isOpen={isOrphanModalOpen}
+        onClose={() => setIsOrphanModalOpen(false)}
+        onAssignedSuccess={loadUsers}
+      />
     </div>
   );
 }

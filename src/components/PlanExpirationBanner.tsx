@@ -72,7 +72,7 @@ export function PlanExpirationBanner() {
   const handleSubscribe = async () => {
     try {
       setSubscribing(true);
-      const res = await fetch("/api/mercadopago/create-subscription", { method: "POST" });
+      const res = await fetch("/api/mercadopago/create-preference", { method: "POST" });
       const data = await res.json();
       const redirectUrl = data.url || data.init_point;
       if (redirectUrl) {

@@ -1,5 +1,6 @@
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
-import { calculatePlanEndDate, getTrustedPlanMeta } from "@/lib/plan-helpers";
+import { getTrustedPlanMeta } from "@/lib/plan-helpers";
+import { MercadoPagoConfig, Preference } from "mercadopago";
 
 function getAdminClient() {
   return createSupabaseClient(
@@ -14,13 +15,248 @@ function getAdminClient() {
   );
 }
 
-const PAYMENT_GRACE_DAYS = 3;
+/**
+ * Calcula la nueva fecha de fin de vigencia (30 días adicionales):
+ * - Si la cuenta tiene vigencia actual en el futuro (o vence hoy), se le suman 30 días a esa fecha.
+ * - Si la cuenta ya está vencida o no tiene fecha configurada, se le suman 30 días a partir de hoy (Date.now()).
+ */
+export function calculateNewPlanEndDate(currentEndDateStr: string | null | undefined): string {
+  const todayStr = new Date().toISOString().split("T")[0];
+  let baseDate: Date;
 
-function addDays(dateStr: string, days: number): string {
-  const [y, m, d] = dateStr.split("-").map((n) => parseInt(n, 10));
-  const date = new Date(Date.UTC(y, m - 1, d));
-  date.setUTCDate(date.getUTCDate() + days);
-  return date.toISOString().split("T")[0];
+  if (currentEndDateStr && currentEndDateStr >= todayStr) {
+    // Vigente en el futuro o hoy: sumar 30 días a currentEndDate
+    const [y, m, d] = currentEndDateStr.split("T")[0].split("-").map((n) => parseInt(n, 10));
+    baseDate = new Date(Date.UTC(y, m - 1, d));
+  } else {
+    // Vencida o sin fecha: sumar 30 días desde la fecha actual
+    const now = new Date();
+    baseDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  }
+
+  baseDate.setUTCDate(baseDate.getUTCDate() + 30);
+  return baseDate.toISOString().split("T")[0];
+}
+
+export interface CreatePreferenceResult {
+  success: boolean;
+  url?: string;
+  init_point?: string;
+  preference_id?: string;
+  error?: string;
+}
+
+/**
+ * 1. Migración a Checkout Pro (Cobro Único de ciclo mensual):
+ * - Crea una preferencia en /checkout/preferences con cobro único por 30 días de acceso.
+ * - OMITIR estrictamente `payer_email` para permitir que cualquier usuario pague con cualquier cuenta de MP o tarjeta,
+ *   y que una misma billetera de MP pueda abonar varias cuentas distintas de HABA.
+ * - Envía siempre `external_reference: user.id` (UUID del usuario en Supabase).
+ */
+export async function createCheckoutPreference(options: {
+  userId: string;
+  appUrl: string;
+  returnPath?: string;
+}): Promise<CreatePreferenceResult> {
+  const { userId, appUrl, returnPath = "/configuracion?status=approved" } = options;
+  const accessToken = process.env.MP_ACCESS_TOKEN;
+
+  if (!accessToken) {
+    return { success: false, error: "MP_ACCESS_TOKEN no configurado en las variables de entorno del servidor." };
+  }
+
+  if (!userId) {
+    return { success: false, error: "userId es obligatorio para crear la preferencia." };
+  }
+
+  const cleanAppUrl = appUrl.replace(/\/$/, "");
+  const normalizedReturnPath = returnPath.startsWith("/") ? returnPath : `/${returnPath}`;
+  const redirectSuccessUrl = `${cleanAppUrl}${normalizedReturnPath}`;
+
+  const amount = Number(process.env.MP_SUBSCRIPTION_AMOUNT || 7000);
+  const currency = process.env.MP_SUBSCRIPTION_CURRENCY || "ARS";
+  const title = process.env.MP_SUBSCRIPTION_TITLE || "HABA - Plan Mensual (30 días)";
+
+  try {
+    const client = new MercadoPagoConfig({ accessToken });
+    const preference = new Preference(client);
+
+    const response = await preference.create({
+      body: {
+        items: [
+          {
+            id: "haba-plan-mensual",
+            title: title,
+            description: "Acceso completo a HABA por 30 días",
+            quantity: 1,
+            unit_price: amount,
+            currency_id: currency,
+          },
+        ],
+        external_reference: userId,
+        back_urls: {
+          success: redirectSuccessUrl,
+          pending: redirectSuccessUrl,
+          failure: redirectSuccessUrl,
+        },
+        auto_return: "approved",
+        statement_descriptor: "HABA",
+        notification_url: `${cleanAppUrl}/api/webhooks/mercadopago`,
+      },
+    });
+
+    const initPoint = response.init_point || response.sandbox_init_point;
+
+    if (!initPoint) {
+      return { success: false, error: "Mercado Pago SDK no retornó init_point." };
+    }
+
+    return {
+      success: true,
+      url: initPoint,
+      init_point: initPoint,
+      preference_id: response.id,
+    };
+  } catch (err: any) {
+    console.error("[Mercado Pago Preferences SDK] Excepción creando preferencia:", err);
+    return { success: false, error: err.message || "Error al conectar con Mercado Pago" };
+  }
+}
+
+export interface ApplyPaymentResult {
+  success: boolean;
+  alreadyApplied?: boolean;
+  newEndDate?: string;
+  paymentId?: string;
+  error?: string;
+}
+
+/**
+ * Aplica de forma atómica y segura un pago aprobado a la cuenta del usuario en Supabase:
+ * - Valida status === 'approved'.
+ * - Verifica anti-abuso: si payment.id coincide con profiles.last_payment_id, rechaza la solicitud.
+ * - Calcula la nueva fecha (currentEndDate + 30 días si vigente, o hoy + 30 días si vencida).
+ * - Actualiza en `profiles`:
+ *     plan_type = 'mensual', account_status = 'activa', plan_end_date = nuevaFecha, last_payment_id = payment.id.toString().
+ * - Actualiza también en Supabase Auth (`app_metadata` y `user_metadata`) para consistencia.
+ */
+export async function applyApprovedPaymentToUser(options: {
+  payment: any;
+  userId: string;
+  force?: boolean;
+}): Promise<ApplyPaymentResult> {
+  const { payment, userId, force = false } = options;
+
+  if (!payment || payment.status !== "approved") {
+    return {
+      success: false,
+      error: `El pago no está aprobado (estado actual: '${payment?.status || "desconocido"}').`,
+    };
+  }
+
+  const paymentIdStr = String(payment.id);
+  const supabaseAdmin = getAdminClient();
+
+  // 1. Obtener perfil actual del usuario
+  const { data: profile } = await supabaseAdmin
+    .from("profiles")
+    .select("id, plan_type, plan_end_date, account_status, last_payment_id")
+    .eq("id", userId)
+    .maybeSingle();
+
+  // 2. Obtener Auth user para plan_end_date de app_metadata como respaldo
+  const { data: authRes } = await supabaseAdmin.auth.admin.getUserById(userId);
+  const authUser = authRes?.user;
+
+  if (!profile && !authUser) {
+    return { success: false, error: `No se encontró el usuario con id '${userId}' en Supabase.` };
+  }
+
+  const currentLastPaymentId =
+    profile?.last_payment_id ||
+    authUser?.app_metadata?.last_payment_id ||
+    authUser?.user_metadata?.last_payment_id;
+
+  // Validación Anti-Abuso: si el último pago aprobado ya coincide, rechazar
+  if (!force && currentLastPaymentId && String(currentLastPaymentId) === paymentIdStr) {
+    return {
+      success: false,
+      alreadyApplied: true,
+      paymentId: paymentIdStr,
+      error: `El pago #${paymentIdStr} ya fue aplicado anteriormente a esta cuenta. No se pueden duplicar días de vigencia.`,
+    };
+  }
+
+  const trustedMeta = getTrustedPlanMeta(authUser);
+  const currentEndDate = profile?.plan_end_date || trustedMeta.plan_end_date;
+  const newEndDate = calculateNewPlanEndDate(currentEndDate);
+  const payerEmail =
+    payment.payer?.email ||
+    payment.additional_info?.payer?.email ||
+    payment.payer_email ||
+    null;
+
+  // 3. Actualizar en profiles
+  const profilePayload: Record<string, any> = {
+    plan_type: "mensual",
+    account_status: "activa",
+    status: "active",
+    plan_end_date: newEndDate,
+    last_payment_id: paymentIdStr,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { error: profileErr } = await supabaseAdmin
+    .from("profiles")
+    .update(profilePayload)
+    .eq("id", userId);
+
+  if (profileErr) {
+    console.warn("[Mercado Pago] Advertencia al actualizar profiles:", profileErr.message);
+    if (profileErr.message.includes("last_payment_id") || profileErr.message.includes("column")) {
+      delete profilePayload.last_payment_id;
+      await supabaseAdmin.from("profiles").update(profilePayload).eq("id", userId);
+    }
+  }
+
+  // 4. Actualizar en Supabase Auth (app_metadata y user_metadata)
+  if (authUser) {
+    const today = new Date().toISOString().split("T")[0];
+    await supabaseAdmin.auth.admin.updateUserById(userId, {
+      app_metadata: {
+        ...authUser.app_metadata,
+        plan_type: "mensual",
+        plan_start_date: authUser.app_metadata?.plan_start_date || today,
+        plan_end_date: newEndDate,
+        account_status: "activa",
+        status: "active",
+        last_payment_id: paymentIdStr,
+        mp_status: "approved",
+        ...(payerEmail ? { mp_payer_email: payerEmail } : {}),
+      },
+      user_metadata: {
+        ...(authUser.user_metadata || {}),
+        plan_type: "mensual",
+        plan_start_date: authUser.user_metadata?.plan_start_date || today,
+        plan_end_date: newEndDate,
+        account_status: "activa",
+        status: "active",
+        last_payment_id: paymentIdStr,
+        mp_status: "approved",
+        ...(payerEmail ? { mp_payer_email: payerEmail } : {}),
+      },
+    });
+  }
+
+  console.log(
+    `[Mercado Pago] Pago #${paymentIdStr} aplicado con éxito al usuario ${userId}. Nueva fecha: ${newEndDate}`
+  );
+
+  return {
+    success: true,
+    newEndDate,
+    paymentId: paymentIdStr,
+  };
 }
 
 export interface SyncSubscriptionResult {
@@ -28,16 +264,188 @@ export interface SyncSubscriptionResult {
   status?: string;
   plan_type?: string;
   plan_end_date?: string;
+  payment_id?: string;
   mp_preapproval_id?: string;
+  alreadyApplied?: boolean;
   error?: string;
   debug?: any;
 }
 
 /**
- * Consulta en la API de Mercado Pago las suscripciones o cobros aprobados para un usuario
- * e impacta de inmediato en Supabase (Auth app_metadata, user_metadata y profiles).
- *
- * Funciona como salvaguarda ante demoras o fallas en el webhook de Mercado Pago.
+ * 3. Blindaje de Botones de "Sincronizar" (Anti-Abuso) - /api/mercadopago/sync-payment:
+ * - Consulta fehacientemente contra:
+ *   GET /v1/payments/search?external_reference=${userId}&sort=date_created&criteria=desc
+ * - Si no existe pago aprobado, NO modifica la base de datos y retorna error.
+ * - Si el último pago aprobado ya coincide con profiles.last_payment_id, rechaza la solicitud
+ *   informando que el pago ya fue aplicado, impidiendo sumar días gratis duplicados.
+ * - Solo si el pago aprobado es nuevo (id !== last_payment_id), aplica los 30 días y actualiza last_payment_id.
+ */
+export async function syncUserPaymentWithMercadoPago(options: {
+  userId: string;
+  paymentId?: string | null;
+  email?: string | null;
+}): Promise<SyncSubscriptionResult> {
+  const { userId, paymentId: explicitPaymentId, email: candidateInputEmail } = options;
+  const accessToken = process.env.MP_ACCESS_TOKEN;
+
+  if (!accessToken || !userId) {
+    return { synced: false, error: "Faltan credenciales del servidor o userId del usuario." };
+  }
+
+  const supabaseAdmin = getAdminClient();
+
+  // Obtener perfil actual
+  const { data: profile } = await supabaseAdmin
+    .from("profiles")
+    .select("id, last_payment_id, plan_type, plan_end_date")
+    .eq("id", userId)
+    .maybeSingle();
+
+  const { data: authRes } = await supabaseAdmin.auth.admin.getUserById(userId);
+  const currentLastPaymentId =
+    profile?.last_payment_id ||
+    authRes?.user?.app_metadata?.last_payment_id ||
+    authRes?.user?.user_metadata?.last_payment_id;
+
+  let approvedPayment: any = null;
+
+  // A. Si se proporcionó un ID de pago o número de comprobante explícito (ej: 185634306746)
+  if (explicitPaymentId && /^\d+$/.test(explicitPaymentId.trim())) {
+    try {
+      const payRes = await fetch(
+        `https://api.mercadopago.com/v1/payments/${encodeURIComponent(explicitPaymentId.trim())}`,
+        { headers: { Authorization: `Bearer ${accessToken}` } }
+      );
+      if (payRes.ok) {
+        const payData = await payRes.json();
+        if (payData.status === "approved") {
+          // Si el pago tiene external_reference y es otro UUID distinto, rechazar
+          const isUserUuid = (ref: string) =>
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test((ref || "").trim());
+
+          if (
+            payData.external_reference &&
+            isUserUuid(payData.external_reference) &&
+            payData.external_reference !== userId
+          ) {
+            return {
+              synced: false,
+              error: `El pago #${payData.id} pertenece a otra cuenta de HABA.`,
+            };
+          }
+          approvedPayment = payData;
+        } else {
+          return {
+            synced: false,
+            error: `El pago #${payData.id} se encuentra en estado '${payData.status}' (${payData.status_detail || "no aprobado"}).`,
+          };
+        }
+      }
+    } catch (err: any) {
+      console.warn("[Mercado Pago Sync] Error consultando explicitPaymentId:", err);
+    }
+  }
+
+  // B. Búsqueda principal por external_reference = userId
+  if (!approvedPayment) {
+    try {
+      const searchUrl = `https://api.mercadopago.com/v1/payments/search?external_reference=${encodeURIComponent(
+        userId
+      )}&sort=date_created&criteria=desc&limit=10`;
+
+      const searchRes = await fetch(searchUrl, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+
+      if (searchRes.ok) {
+        const searchData = await searchRes.json();
+        const results = Array.isArray(searchData.results) ? searchData.results : [];
+        const approvedFromSearch = results.find((p: any) => p.status === "approved");
+        if (approvedFromSearch) {
+          approvedPayment = approvedFromSearch;
+        }
+      }
+    } catch (err: any) {
+      console.warn("[Mercado Pago Sync] Error buscando por external_reference:", err);
+    }
+  }
+
+  // C. Fallback: búsqueda en pagos recientes si no vino por external_reference pero coincide email
+  if (!approvedPayment && candidateInputEmail && candidateInputEmail.includes("@")) {
+    try {
+      const candidateClean = candidateInputEmail.trim().toLowerCase();
+      const recentRes = await fetch(
+        `https://api.mercadopago.com/v1/payments/search?sort=date_created&criteria=desc&limit=30`,
+        { headers: { Authorization: `Bearer ${accessToken}` } }
+      );
+      if (recentRes.ok) {
+        const recentData = await recentRes.json();
+        const results = Array.isArray(recentData.results) ? recentData.results : [];
+        for (const p of results) {
+          if (p.status !== "approved") continue;
+          const pEmail = (p.payer?.email || p.additional_info?.payer?.email || "").toLowerCase();
+          if (pEmail === candidateClean) {
+            if (p.external_reference && p.external_reference !== userId) continue;
+            approvedPayment = p;
+            break;
+          }
+        }
+      }
+    } catch (err: any) {
+      console.warn("[Mercado Pago Sync] Error buscando por email reciente:", err);
+    }
+  }
+
+  // Si no existe pago aprobado, NO modificar la base de datos y retornar error
+  if (!approvedPayment) {
+    return {
+      synced: false,
+      error:
+        "No se encontró ningún cobro aprobado en Mercado Pago vinculado a tu cuenta. Si acabás de abonar, aguardá unos instantes y volvé a intentar.",
+    };
+  }
+
+  const approvedPaymentIdStr = String(approvedPayment.id);
+
+  // Si el último pago aprobado ya coincide con profiles.last_payment_id, rechazar la solicitud
+  if (currentLastPaymentId && String(currentLastPaymentId) === approvedPaymentIdStr) {
+    return {
+      synced: false,
+      alreadyApplied: true,
+      payment_id: approvedPaymentIdStr,
+      plan_type: profile?.plan_type || "mensual",
+      plan_end_date: profile?.plan_end_date,
+      error: `El último cobro (#${approvedPaymentIdStr}) ya fue acreditado a tu cuenta. Tu vigencia actual vence el ${
+        profile?.plan_end_date || "próximamente"
+      }.`,
+    };
+  }
+
+  // Solo si el pago aprobado es nuevo (id !== last_payment_id), aplicar los 30 días
+  const applyResult = await applyApprovedPaymentToUser({
+    payment: approvedPayment,
+    userId,
+  });
+
+  if (!applyResult.success) {
+    return {
+      synced: false,
+      alreadyApplied: applyResult.alreadyApplied,
+      error: applyResult.error || "No se pudo aplicar el pago a la cuenta.",
+    };
+  }
+
+  return {
+    synced: true,
+    status: "approved",
+    plan_type: "mensual",
+    plan_end_date: applyResult.newEndDate,
+    payment_id: approvedPaymentIdStr,
+  };
+}
+
+/**
+ * Alias de compatibilidad retrocompatible
  */
 export async function syncUserSubscriptionWithMercadoPago(options: {
   userId: string;
@@ -45,594 +453,296 @@ export async function syncUserSubscriptionWithMercadoPago(options: {
   preapprovalId?: string | null;
   paymentId?: string | null;
 }): Promise<SyncSubscriptionResult> {
-  const { userId, email, preapprovalId: explicitPreapprovalId, paymentId: explicitPaymentId } = options;
-  const accessToken = process.env.MP_ACCESS_TOKEN;
+  return syncUserPaymentWithMercadoPago({
+    userId: options.userId,
+    paymentId: options.paymentId || options.preapprovalId,
+    email: options.email,
+  });
+}
 
-  if (!accessToken || !userId) {
-    return { synced: false, error: "Faltan credenciales o userId" };
+export interface OrphanPaymentCandidate {
+  userId: string;
+  fullName: string;
+  businessName: string;
+  email: string;
+  accountNumber?: string | null;
+  planEndDate?: string | null;
+  planType?: string | null;
+  accountStatus?: string | null;
+  alreadyHasThisPayment: boolean;
+  matchScore: number;
+  matchReasons: string[];
+}
+
+export interface OrphanPaymentLookupResult {
+  success: boolean;
+  payment?: {
+    id: string;
+    status: string;
+    status_detail?: string;
+    date_created?: string;
+    date_approved?: string;
+    transaction_amount?: number;
+    currency_id?: string;
+    external_reference?: string | null;
+    payment_method_id?: string;
+    payment_type_id?: string;
+    payer: {
+      id?: string;
+      email?: string;
+      first_name?: string;
+      last_name?: string;
+      identification_number?: string;
+      cardholder_name?: string;
+    };
+  };
+  candidates?: OrphanPaymentCandidate[];
+  error?: string;
+}
+
+/**
+ * 4. Búsqueda y Asignación Asistida de Pagos Huérfanos en /admin:
+ * - Consulta por paymentId en la API de Mercado Pago.
+ * - Extrae datos del pagador (nombre, email de MP, monto, fecha).
+ * - Cruza con Supabase para sugerir cuentas candidatas por similitud de nombre, apellido o fecha de vencimiento reciente.
+ */
+export async function lookupOrphanPayment(paymentId: string): Promise<OrphanPaymentLookupResult> {
+  const accessToken = process.env.MP_ACCESS_TOKEN;
+  if (!accessToken) {
+    return { success: false, error: "MP_ACCESS_TOKEN no configurado en el servidor." };
   }
 
-  const supabaseAdmin = getAdminClient();
+  const cleanPaymentId = paymentId.trim();
+  if (!cleanPaymentId) {
+    return { success: false, error: "El ID de operación es obligatorio." };
+  }
 
   try {
-    // 1. Obtener datos actuales del usuario en Supabase
-    const { data: userRes, error: fetchErr } = await supabaseAdmin.auth.admin.getUserById(userId);
-    if (fetchErr || !userRes?.user) {
-      return { synced: false, error: "Usuario no encontrado en Supabase: " + fetchErr?.message };
-    }
-    const targetUser = userRes.user;
-
-    const rawInput = (email || "").trim();
-    const isEmail = rawInput.includes("@");
-    const isOperationId = Boolean(rawInput && !isEmail && /^[0-9a-f-]{6,}$/i.test(rawInput));
-
-    const targetEmail = isEmail ? rawInput.toLowerCase() : (targetUser.email || "").trim().toLowerCase();
-    const directOperationId = explicitPaymentId || (isOperationId ? rawInput : null);
-
-    let preapproval: any = null;
-    let paymentApproved: any = null;
-
-    // 1. Obtener listado de usuarios de Supabase para verificaciones de seguridad cruzadas
-    const { data: allUsersRes } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-    const allUsers = allUsersRes?.users || [];
-
-    // Mapeo de suscripciones ya activas en Supabase: mp_preapproval_id -> userId
-    const existingSubOwners: Record<string, string> = {};
-    for (const u of allUsers) {
-      if (u.id === userId) continue;
-      const activePreapproval =
-        u.app_metadata?.plan_type === "mensual"
-          ? u.app_metadata?.mp_preapproval_id || u.user_metadata?.mp_preapproval_id
-          : null;
-      if (activePreapproval) {
-        existingSubOwners[activePreapproval] = u.id;
-      }
-    }
-
-
-
-    const candidateEmails = Array.from(
-      new Set(
-        [
-          targetEmail,
-          targetUser.email,
-          targetUser.user_metadata?.business_email,
-          targetUser.user_metadata?.email,
-          targetUser.user_metadata?.mp_payer_email,
-          targetUser.app_metadata?.mp_payer_email,
-        ]
-          .filter(Boolean)
-          .map((e) => (e as string).trim().toLowerCase())
-      )
+    const payRes = await fetch(
+      `https://api.mercadopago.com/v1/payments/${encodeURIComponent(cleanPaymentId)}`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
     );
 
-    const debugLog: string[] = [];
+    if (!payRes.ok) {
+      const errText = await payRes.text();
+      return { success: false, error: `No se encontró la operación #${cleanPaymentId} en Mercado Pago (${payRes.status}).` };
+    }
 
-    // Función de seguridad estricta:
-    // Una suscripción o pago SOLO es válido para este usuario si el correo del pagador
-    // coincide con candidateEmails y no pertenece a otro usuario de HABA.
-    const isValidMatch = async (p: any): Promise<boolean> => {
-      if (!p) return false;
-      const validStatus =
-        p.status === "authorized" ||
-        p.status === "pending" ||
-        p.status === "paused" ||
-        p.status === "approved" ||
-        p.status === "in_process";
-      if (!validStatus) {
-        debugLog.push(`[${p.id}] invalid status: ${p.status}`);
-        return false;
-      }
+    const payData = await payRes.json();
+    const payerEmail = (
+      payData.payer?.email ||
+      payData.additional_info?.payer?.email ||
+      ""
+    ).trim().toLowerCase();
 
-      // REGLA DE SEGURIDAD 2: Si la suscripción en Mercado Pago ya tiene external_reference con el UUID de otro usuario de HABA:
-      const isUserUuid = (ref: string) =>
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test((ref || "").trim());
+    const payerFirstName = (
+      payData.payer?.first_name ||
+      payData.additional_info?.payer?.first_name ||
+      ""
+    ).trim();
 
-      if (p.external_reference && isUserUuid(p.external_reference) && p.external_reference !== userId) {
-        console.warn(
-          `[Mercado Pago Sync] Suscripción ${p.id} pertenece a otro usuario (${p.external_reference}). Rechazada para ${userId}.`
-        );
-        debugLog.push(`[${p.id}] external_reference mismatch: ${p.external_reference} !== ${userId}`);
-        return false;
-      }
+    const payerLastName = (
+      payData.payer?.last_name ||
+      payData.additional_info?.payer?.last_name ||
+      ""
+    ).trim();
 
-      // REGLA DE SEGURIDAD 3: Si la suscripción ya está asignada a otra cuenta de HABA en Supabase:
-      if (existingSubOwners[p.id] && existingSubOwners[p.id] !== userId) {
-        console.warn(
-          `[Mercado Pago Sync] Suscripción ${p.id} ya está activa en otra cuenta de Supabase (${existingSubOwners[p.id]}). Rechazada para ${userId}.`
-        );
-        debugLog.push(`[${p.id}] already owned in Supabase by: ${existingSubOwners[p.id]}`);
-        return false;
-      }
+    const cardholderName = (payData.card?.cardholder?.name || "").trim();
 
-      let pEmail = (
-        p.payer_email ||
-        p.payer?.email ||
-        p.additional_info?.payer?.email ||
-        ""
-      ).trim().toLowerCase();
-
-      // Si p no trae email directo en el objeto pero tiene id, consultar el detalle completo de Mercado Pago
-      if (!pEmail && p.id) {
-        try {
-          const isNumeric = /^\d+$/.test(String(p.id));
-          const detailUrl = isNumeric
-            ? `https://api.mercadopago.com/v1/payments/${p.id}`
-            : `https://api.mercadopago.com/preapproval/${p.id}`;
-
-          const detailRes = await fetch(detailUrl, {
-            headers: { Authorization: `Bearer ${accessToken}` },
-          });
-          if (detailRes.ok) {
-            const detailData = await detailRes.json();
-            pEmail = (
-              detailData.payer_email ||
-              detailData.payer?.email ||
-              detailData.additional_info?.payer?.email ||
-              ""
-            ).trim().toLowerCase();
-            debugLog.push(`[${p.id}] detail fetch OK: pEmail='${pEmail}', payerKeys: ${Object.keys(detailData.payer || {}).join(",")}, desc: '${detailData.description || detailData.reason}', extRef: '${detailData.external_reference}'`);
-          } else {
-            debugLog.push(`[${p.id}] detail fetch FAILED HTTP ${detailRes.status}`);
-          }
-        } catch (e: any) {
-          debugLog.push(`[${p.id}] detail fetch ERROR: ${e.message}`);
-        }
-      }
-
-      // Si el external_reference coincide exactamente con este usuario, es suyo aunque MP no devuelva payer_email en el listado de preapprovals
-      if (p.external_reference && p.external_reference === userId) {
-        debugLog.push(`[${p.id}] MATCH APPROVED by external_reference === userId (${pEmail || "unknown"})`);
-        return true;
-      }
-
-      // REGLA FUNDAMENTAL DE SEGURIDAD:
-      // Para validar una suscripción o pago por email, el correo del pagador DEBE coincidir
-      // con alguno de los emails candidatos del usuario (su email de cuenta o el alternativo provisto).
-      if (!pEmail || !candidateEmails.includes(pEmail)) {
-        debugLog.push(`[${p.id}] email mismatch: found '${pEmail}', expected one of [${candidateEmails.join(", ")}]`);
-        return false;
-      }
-
-      debugLog.push(`[${p.id}] MATCH APPROVED with email ${pEmail}`);
-      return true;
+    const extractedPayment = {
+      id: String(payData.id),
+      status: payData.status,
+      status_detail: payData.status_detail,
+      date_created: payData.date_created,
+      date_approved: payData.date_approved,
+      transaction_amount: payData.transaction_amount,
+      currency_id: payData.currency_id,
+      external_reference: payData.external_reference || null,
+      payment_method_id: payData.payment_method_id,
+      payment_type_id: payData.payment_type_id,
+      payer: {
+        id: payData.payer?.id,
+        email: payerEmail || undefined,
+        first_name: payerFirstName || undefined,
+        last_name: payerLastName || undefined,
+        identification_number: payData.payer?.identification?.number,
+        cardholder_name: cardholderName || undefined,
+      },
     };
 
-    // Prioridad 00: Búsqueda directa por Número de Operación o Cobro de Mercado Pago (ej: 185634306746)
-    if (directOperationId) {
-      try {
-        debugLog.push(`[directOperationId] Querying MP directly for: ${directOperationId}`);
-        // 1. Probar en /v1/payments/{directOperationId}
-        const payRes = await fetch(
-          `https://api.mercadopago.com/v1/payments/${encodeURIComponent(directOperationId)}`,
-          {
-            headers: { Authorization: `Bearer ${accessToken}` },
-          }
-        );
+    // Consultar todos los perfiles en Supabase para cruce asistido
+    const supabaseAdmin = getAdminClient();
+    const { data: profiles } = await supabaseAdmin.from("profiles").select("*");
+    const { data: authList } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
+    const authMap = new Map((authList?.users || []).map((u) => [u.id, u]));
 
-        if (payRes.ok) {
-          const directPay = await payRes.json();
-          const pStatus = directPay.status;
-          debugLog.push(`[directOperationId] Found payment #${directPay.id} with status='${pStatus}'`);
+    const normalize = (str: string) =>
+      (str || "")
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .trim();
 
-          if (pStatus === "refunded") {
-            return {
-              synced: false,
-              error: `La operación #${directPay.id} figura como REEMBOLSADA / DEVUELTA en Mercado Pago. Como el dinero fue reintegrado, no es válida para activar el plan.`,
-            };
-          }
-          if (pStatus === "cancelled") {
-            return {
-              synced: false,
-              error: `La operación #${directPay.id} figura como CANCELADA en Mercado Pago.`,
-            };
-          }
-          if (pStatus === "rejected") {
-            return {
-              synced: false,
-              error: `La operación #${directPay.id} fue RECHAZADA en Mercado Pago (${directPay.status_detail || "pago no acreditado"}).`,
-            };
-          }
-          if (pStatus === "in_process" || pStatus === "pending") {
-            return {
-              synced: false,
-              error: `La operación #${directPay.id} se encuentra PENDIENTE de acreditación en Mercado Pago.`,
-            };
-          }
+    const normCardholder = normalize(cardholderName);
+    const normPayerFirst = normalize(payerFirstName);
+    const normPayerLast = normalize(payerLastName);
+    const normFullPayer = normalize(`${payerFirstName} ${payerLastName}`.trim());
 
-          if (pStatus === "approved") {
-            const isUserUuid = (ref: string) =>
-              /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test((ref || "").trim());
+    const candidates: OrphanPaymentCandidate[] = [];
 
-            if (directPay.external_reference && isUserUuid(directPay.external_reference) && directPay.external_reference !== userId) {
-              return {
-                synced: false,
-                error: `La operación #${directPay.id} pertenece a otra cuenta de HABA.`,
-              };
-            }
+    for (const p of profiles || []) {
+      const authUser = authMap.get(p.id);
+      const userMeta = authUser?.user_metadata || {};
+      const appMeta = authUser?.app_metadata || {};
 
-            if (existingSubOwners[String(directPay.id)] && existingSubOwners[String(directPay.id)] !== userId) {
-              const owner = allUsers.find((u) => u.id === existingSubOwners[String(directPay.id)]);
-              return {
-                synced: false,
-                error: `La operación #${directPay.id} ya se encuentra activa en la cuenta de ${owner?.email || "otro usuario"}.`,
-              };
-            }
+      const fullName = (p.full_name || userMeta.full_name || "").trim();
+      const businessName = (p.business_name || userMeta.business_name || "").trim();
+      const userEmail = (p.email || authUser?.email || "").trim().toLowerCase();
+      const mpPayerEmail = (userMeta.mp_payer_email || appMeta.mp_payer_email || "").trim().toLowerCase();
+      const businessEmail = (p.business_email || userMeta.business_email || "").trim().toLowerCase();
+      const planEndDate = p.plan_end_date || appMeta.plan_end_date || null;
+      const lastPaymentId = p.last_payment_id || appMeta.last_payment_id;
 
-            paymentApproved = directPay;
-            const payerEmail = (directPay.payer?.email || "").trim().toLowerCase();
-            if (payerEmail && !candidateEmails.includes(payerEmail)) {
-              candidateEmails.push(payerEmail);
-            }
-          }
-        } else if (payRes.status === 404 || !/^\d+$/.test(directOperationId)) {
-          // 2. Si no es un pago v1, probar en /preapproval/{directOperationId}
-          const preRes = await fetch(
-            `https://api.mercadopago.com/preapproval/${encodeURIComponent(directOperationId)}`,
-            {
-              headers: { Authorization: `Bearer ${accessToken}` },
-            }
+      const alreadyHasThisPayment = String(lastPaymentId) === String(payData.id);
+
+      let score = 0;
+      const reasons: string[] = [];
+
+      // 1. Coincidencia exacta por external_reference (UUID)
+      if (payData.external_reference && payData.external_reference === p.id) {
+        score += 100;
+        reasons.push("Referencia directa vinculada al usuario (external_reference)");
+      }
+
+      // 2. Coincidencia de Email
+      if (payerEmail) {
+        if (userEmail === payerEmail) {
+          score += 80;
+          reasons.push(`Email idéntico de cuenta (${userEmail})`);
+        } else if (mpPayerEmail === payerEmail) {
+          score += 75;
+          reasons.push(`Coincide con email previo de Mercado Pago (${payerEmail})`);
+        } else if (businessEmail === payerEmail) {
+          score += 70;
+          reasons.push(`Coincide con email comercial (${payerEmail})`);
+        }
+      }
+
+      // 3. Coincidencia por Nombre y Apellido
+      const normUserFull = normalize(fullName);
+
+      if (normCardholder && normCardholder.length >= 3 && (normUserFull.includes(normCardholder) || normCardholder.includes(normUserFull))) {
+        score += 50;
+        reasons.push(`Nombre del titular de tarjeta coincide (${cardholderName})`);
+      } else if (normFullPayer && normFullPayer.length >= 3 && (normUserFull.includes(normFullPayer) || normFullPayer.includes(normUserFull))) {
+        score += 45;
+        reasons.push(`Nombre de cuenta MP coincide (${payerFirstName} ${payerLastName})`);
+      } else {
+        if (normPayerLast && normPayerLast.length >= 3 && normUserFull.includes(normPayerLast)) {
+          score += 30;
+          reasons.push(`Apellido coincide (${payerLastName})`);
+        }
+        if (normPayerFirst && normPayerFirst.length >= 3 && normUserFull.includes(normPayerFirst)) {
+          score += 20;
+          reasons.push(`Nombre de pila coincide (${payerFirstName})`);
+        }
+      }
+
+      // 4. Proximidad de Vencimiento Reciente (los pagos suelen ocurrir cerca del vencimiento)
+      if (planEndDate) {
+        const [y, m, d] = planEndDate.split("-").map((n: string) => parseInt(n, 10));
+        const endDt = new Date(Date.UTC(y, m - 1, d));
+        const nowDt = new Date();
+        const diffDays = Math.round((endDt.getTime() - nowDt.getTime()) / (1000 * 60 * 60 * 24));
+
+        if (diffDays >= -14 && diffDays <= 5) {
+          score += 15;
+          reasons.push(
+            diffDays < 0
+              ? `Plan vencido recientemente (hace ${Math.abs(diffDays)} días)`
+              : diffDays === 0
+              ? "Plan vence hoy"
+              : `Plan próximo a vencer (en ${diffDays} días)`
           );
-          if (preRes.ok) {
-            const directPre = await preRes.json();
-            const preStatus = directPre.status;
-            debugLog.push(`[directOperationId] Found preapproval #${directPre.id} with status='${preStatus}'`);
-
-            if (preStatus === "cancelled") {
-              return {
-                synced: false,
-                error: `La suscripción #${directPre.id} figura como CANCELADA en Mercado Pago.`,
-              };
-            }
-            if (preStatus === "paused") {
-              return {
-                synced: false,
-                error: `La suscripción #${directPre.id} figura como PAUSADA en Mercado Pago.`,
-              };
-            }
-            if (preStatus === "authorized" || preStatus === "pending") {
-              if (existingSubOwners[directPre.id] && existingSubOwners[directPre.id] !== userId) {
-                const owner = allUsers.find((u) => u.id === existingSubOwners[directPre.id]);
-                return {
-                  synced: false,
-                  error: `La suscripción #${directPre.id} ya se encuentra activa en la cuenta de ${owner?.email || "otro usuario"}.`,
-                };
-              }
-              preapproval = directPre;
-              const payerEmail = (directPre.payer_email || directPre.payer?.email || "").trim().toLowerCase();
-              if (payerEmail && !candidateEmails.includes(payerEmail)) {
-                candidateEmails.push(payerEmail);
-              }
-            }
-          }
         }
-      } catch (e: any) {
-        console.warn("[Mercado Pago Sync] Error consultando directOperationId:", e);
-        debugLog.push(`[directOperationId] Error: ${e.message}`);
       }
-    }
 
-    // Prioridad 0: Si viene un preapprovalId explícito (por ejemplo al volver de Mercado Pago en la URL)
-    if (!preapproval && !paymentApproved && explicitPreapprovalId) {
-      try {
-        const directRes = await fetch(
-          `https://api.mercadopago.com/preapproval/${explicitPreapprovalId}`,
-          {
-            headers: { Authorization: `Bearer ${accessToken}` },
-          }
-        );
-        if (directRes.ok) {
-          const directData = await directRes.json();
-          const validStatus =
-            directData.status === "authorized" ||
-            directData.status === "pending" ||
-            directData.status === "paused" ||
-            directData.status === "approved" ||
-            directData.status === "in_process";
-
-          const notOwnedByOther =
-            !existingSubOwners[directData.id] ||
-            existingSubOwners[directData.id] === userId;
-
-          const notRefOther =
-            !directData.external_reference ||
-            directData.external_reference === userId;
-
-          if (validStatus && notOwnedByOther && notRefOther) {
-            preapproval = directData;
-            const foundEmail = (
-              directData.payer_email ||
-              directData.payer?.email ||
-              ""
-            ).trim().toLowerCase();
-            if (foundEmail && !candidateEmails.includes(foundEmail)) {
-              candidateEmails.push(foundEmail);
-            }
-            try {
-              fetch(`https://api.mercadopago.com/preapproval/${directData.id}`, {
-                method: "PUT",
-                headers: {
-                  Authorization: `Bearer ${accessToken}`,
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({ external_reference: userId }),
-              }).catch(() => {});
-            } catch {}
-          }
-        }
-      } catch (e) {
-        console.warn("[Mercado Pago Sync] Error consultando por preapprovalId explícito:", e);
+      if (alreadyHasThisPayment) {
+        reasons.unshift("⚠️ ESTE PAGO YA FUE APLICADO A ESTA CUENTA");
       }
+
+      candidates.push({
+        userId: p.id,
+        fullName: fullName || "Sin nombre",
+        businessName: businessName || "",
+        email: userEmail,
+        accountNumber: p.account_number || userMeta.account_number || null,
+        planEndDate: planEndDate,
+        planType: p.plan_type || appMeta.plan_type || "prueba",
+        accountStatus: p.account_status || appMeta.account_status || p.status || "active",
+        alreadyHasThisPayment,
+        matchScore: score,
+        matchReasons: reasons,
+      });
     }
 
-    // 2. Buscar preapproval o pago en Mercado Pago:
-
-    // A. Prioridad 0: Por ID directo de preapproval si el usuario ya tiene uno guardado
-    const savedPreapprovalId = targetUser.app_metadata?.mp_preapproval_id;
-    if (!preapproval && savedPreapprovalId) {
-      try {
-        const directRes = await fetch(
-          `https://api.mercadopago.com/preapproval/${savedPreapprovalId}`,
-          {
-            headers: { Authorization: `Bearer ${accessToken}` },
-          }
-        );
-        if (directRes.ok) {
-          const directData = await directRes.json();
-          if (await isValidMatch(directData)) {
-            preapproval = directData;
-          }
-        }
-      } catch (e) {
-        console.warn("[Mercado Pago Sync] Error consultando por preapprovalId guardado:", e);
-      }
-    }
-
-    // B. Prioridad 1: Por external_reference = userId en Mercado Pago
-    if (!preapproval) {
-      try {
-        const searchRes = await fetch(
-          `https://api.mercadopago.com/preapproval/search?external_reference=${encodeURIComponent(userId)}`,
-          {
-            headers: { Authorization: `Bearer ${accessToken}` },
-          }
-        );
-        if (searchRes.ok) {
-          const searchData = await searchRes.json();
-          if (Array.isArray(searchData.results) && searchData.results.length > 0) {
-            for (const p of searchData.results) {
-              if (await isValidMatch(p)) {
-                preapproval = p;
-                break;
-              }
-            }
-          }
-        }
-      } catch (e) {
-        console.warn("[Mercado Pago Sync] Error buscando por external_reference:", e);
-      }
-    }
-
-    // C. Prioridad 2: Escanear los cobros y pagos más recientes de Mercado Pago (/v1/payments)
-    // Es el registro más directo y fiable porque contiene payer.email y status de inmediato sin depender de preapproval_email.
-    if (!preapproval && !paymentApproved) {
-      try {
-        const payRes = await fetch(
-          `https://api.mercadopago.com/v1/payments/search?sort=date_created&criteria=desc&limit=50`,
-          {
-            headers: { Authorization: `Bearer ${accessToken}` },
-          }
-        );
-        if (payRes.ok) {
-          const payData = await payRes.json();
-          if (Array.isArray(payData.results) && payData.results.length > 0) {
-            for (const p of payData.results) {
-              if (await isValidMatch(p)) {
-                paymentApproved = p;
-                break;
-              }
-            }
-          }
-        }
-      } catch (e) {
-        console.warn("[Mercado Pago Sync] Error buscando pagos recientes:", e);
-      }
-    }
-
-    // D. Prioridad 3: Buscar en las suscripciones del Plan Maestro de HABA (hasta 50)
-    const masterPlanId =
-      process.env.MP_PREAPPROVAL_PLAN_ID ||
-      process.env.MP_PLAN_ID ||
-      "bdef7d4f90264c1ca7be8c8569331414";
-
-    if (!preapproval && !paymentApproved && masterPlanId) {
-      try {
-        const planRes = await fetch(
-          `https://api.mercadopago.com/preapproval/search?preapproval_plan_id=${encodeURIComponent(masterPlanId)}&limit=50`,
-          {
-            headers: { Authorization: `Bearer ${accessToken}` },
-          }
-        );
-        if (planRes.ok) {
-          const planData = await planRes.json();
-          if (Array.isArray(planData.results) && planData.results.length > 0) {
-            const sortedResults = [...planData.results].sort((a: any, b: any) => {
-              const dateA = new Date(a.date_created || 0).getTime();
-              const dateB = new Date(b.date_created || 0).getTime();
-              return dateB - dateA;
-            });
-            for (const p of sortedResults) {
-              if (await isValidMatch(p)) {
-                preapproval = p;
-                try {
-                  fetch(`https://api.mercadopago.com/preapproval/${p.id}`, {
-                    method: "PUT",
-                    headers: {
-                      Authorization: `Bearer ${accessToken}`,
-                      "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({ external_reference: userId }),
-                  }).catch(() => {});
-                } catch {}
-                break;
-              }
-            }
-          }
-        }
-      } catch (e) {
-        console.warn("[Mercado Pago Sync] Error buscando por plan maestro:", e);
-      }
-    }
-
-    // E. Prioridad 4: Escanear las suscripciones generales de la cuenta MP (hasta 50)
-    if (!preapproval && !paymentApproved) {
-      try {
-        const recentRes = await fetch(
-          `https://api.mercadopago.com/preapproval/search?limit=50`,
-          {
-            headers: { Authorization: `Bearer ${accessToken}` },
-          }
-        );
-        if (recentRes.ok) {
-          const recentData = await recentRes.json();
-          if (Array.isArray(recentData.results) && recentData.results.length > 0) {
-            const sortedResults = [...recentData.results].sort((a: any, b: any) => {
-              const dateA = new Date(a.date_created || 0).getTime();
-              const dateB = new Date(b.date_created || 0).getTime();
-              return dateB - dateA;
-            });
-            for (const p of sortedResults) {
-              if (await isValidMatch(p)) {
-                preapproval = p;
-                try {
-                  fetch(`https://api.mercadopago.com/preapproval/${p.id}`, {
-                    method: "PUT",
-                    headers: {
-                      Authorization: `Bearer ${accessToken}`,
-                      "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({ external_reference: userId }),
-                  }).catch(() => {});
-                } catch {}
-                break;
-              }
-            }
-          }
-        }
-      } catch (e) {
-        console.warn("[Mercado Pago Sync] Error buscando suscripciones globales:", e);
-      }
-    }
-
-    if (!preapproval && !paymentApproved) {
-      console.warn("[Mercado Pago Sync] No match found. Debug logs:", debugLog);
-      return {
-        synced: false,
-        error: "No se encontró suscripción autorizada en Mercado Pago para este usuario.",
-        debug: {
-          candidateEmails,
-          debugLog: debugLog.slice(0, 30),
-        },
-      };
-    }
-
-    const currentPlan = getTrustedPlanMeta(targetUser);
-    const today = new Date().toISOString().split("T")[0];
-    const preapprovalId =
-      preapproval?.id ||
-      paymentApproved?.metadata?.preapproval_id ||
-      (paymentApproved?.id ? String(paymentApproved.id) : null) ||
-      targetUser.app_metadata?.mp_preapproval_id ||
-      targetUser.user_metadata?.mp_preapproval_id ||
-      currentPlan.mp_preapproval_id ||
-      null;
-
-    // REGLA DE SEGURIDAD 4: Salvaguarda final contra reasignación de suscripciones activas
-    if (preapprovalId && existingSubOwners[preapprovalId] && existingSubOwners[preapprovalId] !== userId) {
-      const ownerUser = allUsers.find((u) => u.id === existingSubOwners[preapprovalId]);
-      return {
-        synced: false,
-        error: `Esta suscripción ya se encuentra activa en la cuenta de ${ownerUser?.email || "otro usuario"}. Cada suscripción mensual es individual y válida para una sola cuenta.`,
-      };
-    }
-
-    let newEndDate: string;
-
-    const nextPaymentDateStr = preapproval?.next_payment_date
-      ? preapproval.next_payment_date.split("T")[0]
-      : null;
-
-    if (currentPlan.plan_type === "mensual") {
-      // REGLA CRÍTICA DE NEGOCIO:
-      // Si la usuaria YA tiene el Plan Mensual vigente, la sincronización NUNCA DEBE SUMAR DÍAS.
-      // Preservar estrictamente la fecha de fin que ya tiene.
-      newEndDate = currentPlan.plan_end_date || addDays(today, 30);
-    } else {
-      // Solo en caso de que el plan NO muestre mensual (estaba en prueba o vencido):
-      // Activar el plan mensual por primera vez (30 días exactos desde hoy)
-      newEndDate = addDays(today, 30);
-    }
-
-    // Salvaguarda: una sincronización nunca acorta una vigencia ya acreditada
-    if (currentPlan.plan_end_date && currentPlan.plan_end_date > newEndDate) {
-      newEndDate = currentPlan.plan_end_date;
-    }
-
-    // 5. Impactar en Supabase Auth (app_metadata y user_metadata)
-    const { error: updateAuthErr } = await supabaseAdmin.auth.admin.updateUserById(userId, {
-      app_metadata: {
-        ...targetUser.app_metadata,
-        plan_type: "mensual",
-        plan_start_date: currentPlan.plan_type === "mensual" ? currentPlan.plan_start_date : today,
-        plan_end_date: newEndDate,
-        account_status: "active",
-        mp_status: "authorized",
-        mp_preapproval_id: preapprovalId || currentPlan.mp_preapproval_id,
-        mp_payer_email: preapproval?.payer_email || paymentApproved?.payer?.email || targetUser.app_metadata?.mp_payer_email,
-      },
-      user_metadata: {
-        ...(targetUser.user_metadata || {}),
-        plan_type: "mensual",
-        plan_start_date: currentPlan.plan_type === "mensual" ? currentPlan.plan_start_date : today,
-        plan_end_date: newEndDate,
-        account_status: "active",
-        mp_status: "authorized",
-        mp_preapproval_id: preapprovalId || currentPlan.mp_preapproval_id,
-        mp_payer_email: preapproval?.payer_email || paymentApproved?.payer?.email || targetUser.user_metadata?.mp_payer_email,
-      },
+    // Ordenar: primero mayor score, y si score es igual, alfabético
+    candidates.sort((a, b) => {
+      if (b.matchScore !== a.matchScore) return b.matchScore - a.matchScore;
+      return a.fullName.localeCompare(b.fullName);
     });
 
-    if (updateAuthErr) {
-      console.error("[Mercado Pago Sync] Error actualizando Auth:", updateAuthErr.message);
-      return { synced: false, error: updateAuthErr.message };
-    }
-
-    // 6. Impactar en public.profiles
-    try {
-      await supabaseAdmin
-        .from("profiles")
-        .update({
-          status: "active",
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", userId);
-    } catch (err: any) {
-      console.warn("[Mercado Pago Sync] Error actualizando profiles:", err?.message);
-    }
-
-    console.log(
-      `[Mercado Pago Sync] Plan Mensual activado con éxito para ${userId} (${targetEmail}) hasta ${newEndDate}`
-    );
-
     return {
-      synced: true,
-      status: "authorized",
-      plan_type: "mensual",
-      plan_end_date: newEndDate,
-      mp_preapproval_id: preapprovalId,
+      success: true,
+      payment: extractedPayment,
+      candidates,
     };
   } catch (err: any) {
-    console.error("[Mercado Pago Sync] Error inesperado:", err);
-    return { synced: false, error: err.message };
+    console.error("[Mercado Pago Lookup] Error:", err);
+    return { success: false, error: err.message || "Error al consultar la API de Mercado Pago." };
   }
+}
+
+/**
+ * Asigna un pago huérfano a un usuario específico desde el panel /admin
+ */
+export async function assignOrphanPayment(options: {
+  paymentId: string;
+  targetUserId: string;
+}): Promise<ApplyPaymentResult> {
+  const { paymentId, targetUserId } = options;
+  const accessToken = process.env.MP_ACCESS_TOKEN;
+
+  if (!accessToken) {
+    return { success: false, error: "MP_ACCESS_TOKEN no configurado en el servidor." };
+  }
+
+  const cleanPaymentId = paymentId.trim();
+  if (!cleanPaymentId || !targetUserId) {
+    return { success: false, error: "Faltan parámetros paymentId o targetUserId." };
+  }
+
+  // 1. Consultar el pago en MP
+  const payRes = await fetch(
+    `https://api.mercadopago.com/v1/payments/${encodeURIComponent(cleanPaymentId)}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+
+  if (!payRes.ok) {
+    return { success: false, error: `No se pudo obtener el pago #${cleanPaymentId} de Mercado Pago.` };
+  }
+
+  const payment = await payRes.json();
+  if (payment.status !== "approved") {
+    return {
+      success: false,
+      error: `El pago #${cleanPaymentId} no está aprobado (estado actual: '${payment.status}').`,
+    };
+  }
+
+  // 2. Aplicar pago al usuario con las reglas de vigencia y anti-abuso
+  return applyApprovedPaymentToUser({
+    payment,
+    userId: targetUserId,
+  });
 }

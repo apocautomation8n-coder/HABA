@@ -242,10 +242,10 @@ export function isPlanExpiringSoon(
 }
 
 /**
- * Obtiene el link de suscripción / pago configurado para Mercado Pago (T6).
+ * @deprecated Los pagos ahora se generan dinámicamente vía Checkout Pro (/api/mercadopago/create-preference).
  */
 export function getSubscriptionUrl(): string {
-  return process.env.NEXT_PUBLIC_MP_SUBSCRIPTION_URL || "";
+  return "";
 }
 
 /**

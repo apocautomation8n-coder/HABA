@@ -73,11 +73,10 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
         headers["Authorization"] = `Bearer ${session.access_token}`;
       }
 
-      const res = await fetch("/api/mercadopago/create-subscription", {
+      const res = await fetch("/api/mercadopago/create-preference", {
         method: "POST",
         headers,
         body: JSON.stringify({
-          payer_email: cleanEmail || undefined,
           return_url: returnUrl,
         }),
       });
@@ -151,11 +150,11 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
               </span>
             </div>
             <p className="text-[11px] text-neutral-600 leading-relaxed">
-              Cobro mensual automático cada 30 días. Podés cancelar o pausar en cualquier momento.
+              Cobro único de 30 días de acceso completo a HABA. Sin suscripciones recurrentes bloqueadas.
             </p>
             <div className="pt-1 border-t border-[#CDEBD3]/60 flex items-center gap-2 text-[11px] text-[#1F7A4C] font-semibold">
               <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-              <span>Podés pagar con tu Mercado Pago, el de un familiar o con tarjeta.</span>
+              <span>Podés pagar con tu Mercado Pago, el de un familiar o con cualquier tarjeta.</span>
             </div>
           </div>
 

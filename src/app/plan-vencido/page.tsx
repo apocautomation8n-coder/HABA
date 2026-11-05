@@ -62,14 +62,16 @@ function PlanVencidoContent() {
           return;
         }
 
-        const preapprovalFromUrl = searchParams.get("preapproval_id");
-        // Si volvió de Mercado Pago con status=approved o preapproval_id, sincronizar de inmediato
-        if (isApprovedReturn || Boolean(preapprovalFromUrl)) {
+        const paymentIdFromUrl =
+          searchParams.get("payment_id") ||
+          searchParams.get("collection_id");
+        // Si volvió de Mercado Pago con status=approved o payment_id, sincronizar de inmediato
+        if (isApprovedReturn || Boolean(paymentIdFromUrl)) {
           try {
-            await fetch("/api/mercadopago/sync", {
+            await fetch("/api/mercadopago/sync-payment", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ preapproval_id: preapprovalFromUrl || undefined }),
+              body: JSON.stringify({ payment_id: paymentIdFromUrl || undefined }),
             });
           } catch {}
           const res = await fetch("/api/user/profile");
@@ -121,7 +123,7 @@ function PlanVencidoContent() {
       setSubscribing(true);
       setErrorMessage(null);
 
-      const res = await fetch("/api/mercadopago/create-subscription", {
+      const res = await fetch("/api/mercadopago/create-preference", {
         method: "POST",
       });
 
@@ -147,13 +149,15 @@ function PlanVencidoContent() {
     const emailParam = typeof customEmail === "string" ? customEmail : undefined;
     try {
       setVerifyingPayment(true);
-      const preapprovalFromUrl = searchParams.get("preapproval_id");
+      const paymentIdFromUrl =
+        searchParams.get("payment_id") ||
+        searchParams.get("collection_id");
       try {
-        await fetch("/api/mercadopago/sync", {
+        await fetch("/api/mercadopago/sync-payment", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            preapproval_id: preapprovalFromUrl || undefined,
+            payment_id: paymentIdFromUrl || undefined,
             email: emailParam || undefined,
           }),
         });
@@ -170,7 +174,7 @@ function PlanVencidoContent() {
       if (!emailParam) {
         const altEmail = typeof window !== "undefined"
           ? window.prompt(
-              "No detectamos un cobro con el correo de tu cuenta HABA.\n\nSi pagaste desde una cuenta de Mercado Pago con otro e-mail (ej: de un familiar o tu mail personal), ingresalo acá para asociarlo a tu cuenta:"
+              "No detectamos un cobro vinculado automáticamente a tu cuenta HABA.\n\nSi pagaste desde otra cuenta o con otro e-mail (ej: de un familiar o tu mail personal), ingresalo acá para asociarlo a tu cuenta:"
             )
           : null;
         if (altEmail && altEmail.trim().includes("@")) {

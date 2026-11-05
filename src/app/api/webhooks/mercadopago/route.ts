@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
-import { calculatePlanEndDate, getTrustedPlanMeta } from "@/lib/plan-helpers";
+import { applyApprovedPaymentToUser } from "@/lib/mercadopago";
+
+export const dynamic = "force-dynamic";
 
 function getAdminClient() {
   return createSupabaseClient(
@@ -16,17 +18,6 @@ function getAdminClient() {
   );
 }
 
-// Días de gracia sobre la fecha del próximo cobro: evita bloquear a una usuaria que
-// ya pagó mientras Mercado Pago acredita el cobro y envía la notificación.
-const PAYMENT_GRACE_DAYS = 3;
-
-function addDays(dateStr: string, days: number): string {
-  const [y, m, d] = dateStr.split("-").map((n) => parseInt(n, 10));
-  const date = new Date(Date.UTC(y, m - 1, d));
-  date.setUTCDate(date.getUTCDate() + days);
-  return date.toISOString().split("T")[0];
-}
-
 /**
  * Valida la firma HMAC-SHA256 x-signature de Mercado Pago si MP_WEBHOOK_SECRET está configurado.
  */
@@ -36,7 +27,7 @@ function verifyMercadoPagoSignature(
   dataId: string,
   secret: string
 ): boolean {
-  if (!secret) return true; // Si no hay secreto configurado, permitir
+  if (!secret) return true;
   if (!xSignatureHeader) return false;
 
   const parts = xSignatureHeader.split(",").reduce((acc: Record<string, string>, part) => {
@@ -49,7 +40,6 @@ function verifyMercadoPagoSignature(
   const v1 = parts["v1"];
   if (!ts || !v1) return false;
 
-  // Manifest template de Mercado Pago: id:[data.id en minúsculas];request-id:[x-request-id];ts:[ts];
   const manifest = `id:${dataId.toLowerCase()};request-id:${xRequestIdHeader || ""};ts:${ts};`;
   const computedHash = crypto.createHmac("sha256", secret).update(manifest).digest("hex");
 
@@ -76,284 +66,166 @@ export async function POST(request: Request) {
       const isValid = verifyMercadoPagoSignature(xSignature, xRequestId, String(dataId), webhookSecret);
       if (!isValid) {
         console.warn(
-          "[Webhook Mercado Pago] Advertencia: x-signature no verificada. Se validará la autenticidad del recurso directamente consultando la API de Mercado Pago."
+          "[Webhook Mercado Pago] Advertencia: x-signature no verificada. Se validará la autenticidad del recurso consultando la API de Mercado Pago."
         );
       }
     }
 
     const accessToken = process.env.MP_ACCESS_TOKEN;
     if (!accessToken) {
-      console.log("[Webhook Mercado Pago] Notificación recibida (MP_ACCESS_TOKEN no configurado en servidor)");
+      console.warn("[Webhook Mercado Pago] MP_ACCESS_TOKEN no configurado.");
       return NextResponse.json({ received: true, note: "MP_ACCESS_TOKEN no configurado" });
     }
 
-    // Clasificar eventos de suscripción y pagos
-    const isSubscription =
+    const isStandardPayment =
+      type === "payment" || action?.includes("payment") || url.searchParams.get("topic") === "payment";
+
+    const isPreapproval =
       type === "subscription_preapproval" ||
       type === "preapproval" ||
       action?.includes("preapproval");
-    const isRecurringPayment =
-      type === "subscription_authorized_payment" || action?.includes("authorized_payment");
-    const isStandardPayment =
-      type === "payment" || action?.includes("payment");
 
-    if ((!isSubscription && !isRecurringPayment && !isStandardPayment) || !dataId) {
+    if (!dataId) {
       return NextResponse.json({ received: true, ignored: true });
-    }
-
-    let preapprovalId: string | null = null;
-    let externalRef: string = "";
-    let payerEmail: string = "";
-    let status: string = "";
-    let nextPaymentDate: string | null = null;
-
-    if (isRecurringPayment) {
-      // Cobro recurrente autorizado
-      const payRes = await fetch(`https://api.mercadopago.com/authorized_payments/${dataId}`, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      if (!payRes.ok) {
-        console.error(`[Webhook Mercado Pago] Error ${payRes.status} consultando cobro ${dataId}`);
-        return NextResponse.json({ error: "No se pudo consultar el cobro en MP" }, { status: 502 });
-      }
-      const payment = await payRes.json();
-      if (!payment.preapproval_id) {
-        return NextResponse.json({ received: true, ignored: true });
-      }
-      preapprovalId = String(payment.preapproval_id);
-    } else if (isSubscription) {
-      preapprovalId = String(dataId);
-    } else if (isStandardPayment) {
-      // Notificación de pago puntual en API v1
-      const payRes = await fetch(`https://api.mercadopago.com/v1/payments/${dataId}`, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      if (payRes.ok) {
-        const payment = await payRes.json();
-        externalRef = (payment.external_reference || "").trim();
-        payerEmail = (payment.payer?.email || "").trim().toLowerCase();
-        status = payment.status === "approved" ? "authorized" : payment.status;
-        if (payment.metadata?.preapproval_id) {
-          preapprovalId = String(payment.metadata.preapproval_id);
-        } else if (payment.id) {
-          preapprovalId = String(payment.id);
-        }
-      }
-    }
-
-    // Si tenemos preapprovalId, consultar estado completo de la suscripción
-    if (preapprovalId) {
-      const mpRes = await fetch(`https://api.mercadopago.com/preapproval/${preapprovalId}`, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-
-      if (!mpRes.ok) {
-        console.error(`[Webhook Mercado Pago] Error ${mpRes.status} consultando preapproval ${preapprovalId}`);
-        return NextResponse.json({ error: "No se pudo consultar preapproval en MP" }, { status: 502 });
-      }
-
-      const preapproval = await mpRes.json();
-      status = preapproval.status; // "authorized", "paused", "cancelled"
-      payerEmail = (preapproval.payer_email || payerEmail || "").trim().toLowerCase();
-      externalRef = (preapproval.external_reference || externalRef || "").trim();
-      nextPaymentDate = preapproval.next_payment_date || null;
     }
 
     const supabaseAdmin = getAdminClient();
 
     // =========================================================================
-    // LOCALIZACIÓN UNÍVOCA DE USUARIO EN SUPABASE
-    // REGLA CRÍTICA:
-    // NUNCA depender del email del pagador de Mercado Pago. Una usuaria puede
-    // pagar con su MP personal (otro email). La trazabilidad está dada por
-    // external_reference = user.id (o profile.id).
+    // 3. Notificaciones de tipo PAYMENT (Checkout Pro / Cobro Único mensual)
     // =========================================================================
-    let targetUserId: string | null = null;
-    let targetUser: any = null;
+    if (isStandardPayment) {
+      const paymentId = String(dataId);
+      const payRes = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
 
-    // 1. Prioridad 1: external_reference directo como UUID en Supabase Auth o profiles.id
-    if (externalRef) {
-      const { data: userById } = await supabaseAdmin.auth.admin.getUserById(externalRef);
-      if (userById?.user) {
-        targetUserId = userById.user.id;
-        targetUser = userById.user;
-      } else {
-        const { data: profile } = await supabaseAdmin
-          .from("profiles")
-          .select("id")
-          .eq("id", externalRef)
-          .maybeSingle();
+      if (!payRes.ok) {
+        console.error(`[Webhook Mercado Pago] Error ${payRes.status} al consultar pago ${paymentId}`);
+        return NextResponse.json({ error: "No se pudo consultar el pago en Mercado Pago" }, { status: 502 });
+      }
 
-        if (profile?.id) {
-          const { data: userFromProfile } = await supabaseAdmin.auth.admin.getUserById(profile.id);
-          if (userFromProfile?.user) {
-            targetUserId = userFromProfile.user.id;
-            targetUser = userFromProfile.user;
+      const payment = await payRes.json();
+      console.log(`[Webhook Mercado Pago] Pago #${payment.id} recibido con status '${payment.status}'`);
+
+      if (payment.status === "approved") {
+        const externalRef = (payment.external_reference || "").trim();
+
+        // Validar formato UUID de Supabase (prohibido usar texto estático como "Haba suscripción mensual")
+        const isUserUuid = (ref: string) =>
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ref);
+
+        let userId: string | null = null;
+
+        if (externalRef && isUserUuid(externalRef)) {
+          // Verificar que el usuario exista en Supabase
+          const { data: userRes } = await supabaseAdmin.auth.admin.getUserById(externalRef);
+          if (userRes?.user) {
+            userId = userRes.user.id;
+          } else {
+            const { data: prof } = await supabaseAdmin.from("profiles").select("id").eq("id", externalRef).maybeSingle();
+            if (prof?.id) userId = prof.id;
+          }
+        }
+
+        if (!userId) {
+          console.warn(
+            `[Webhook Mercado Pago] Pago #${payment.id} aprobado pero su external_reference ('${externalRef}') no corresponde a un UUID unívoco de usuario de HABA. Tratado como pago huérfano.`
+          );
+          return NextResponse.json({ received: true, orphan: true, external_reference: externalRef });
+        }
+
+        // Asignar vigencia de 30 días desde la fecha del pago (o sumando 30 días si su plan aún no venció)
+        // y registrar last_payment_id en profiles
+        const applyResult = await applyApprovedPaymentToUser({
+          payment,
+          userId,
+        });
+
+        if (!applyResult.success) {
+          console.warn(`[Webhook Mercado Pago] Aviso al aplicar pago #${payment.id}: ${applyResult.error}`);
+        }
+
+        return NextResponse.json({
+          received: true,
+          applied: applyResult.success,
+          alreadyApplied: applyResult.alreadyApplied,
+          userId,
+          newEndDate: applyResult.newEndDate,
+          paymentId: payment.id.toString(),
+        });
+      }
+
+      return NextResponse.json({ received: true, status: payment.status });
+    }
+
+    // =========================================================================
+    // Soporte para Preapprovals Legados:
+    // Si llega notificación de preapproval cancelado ('cancelled'), actualizar
+    // mp_status = 'cancelled' en profiles SIN cortar el acceso hasta su plan_end_date.
+    // =========================================================================
+    if (isPreapproval) {
+      const preapprovalId = String(dataId);
+      const preRes = await fetch(`https://api.mercadopago.com/preapproval/${preapprovalId}`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+
+      if (preRes.ok) {
+        const preapproval = await preRes.json();
+        const preStatus = preapproval.status;
+        const externalRef = (preapproval.external_reference || "").trim();
+
+        if (preStatus === "cancelled" || preStatus === "paused") {
+          let targetUserId: string | null = null;
+
+          if (externalRef) {
+            const { data: prof } = await supabaseAdmin.from("profiles").select("id").eq("id", externalRef).maybeSingle();
+            if (prof?.id) targetUserId = prof.id;
+          }
+
+          if (!targetUserId) {
+            const { data: profByPre } = await supabaseAdmin
+              .from("profiles")
+              .select("id")
+              .eq("mp_preapproval_id", preapprovalId)
+              .maybeSingle();
+            if (profByPre?.id) targetUserId = profByPre.id;
+          }
+
+          if (targetUserId) {
+            // Actualizar mp_status en profiles SIN modificar plan_end_date
+            await supabaseAdmin
+              .from("profiles")
+              .update({
+                mp_status: preStatus,
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", targetUserId);
+
+            // También actualizar en Auth
+            const { data: authRes } = await supabaseAdmin.auth.admin.getUserById(targetUserId);
+            if (authRes?.user) {
+              await supabaseAdmin.auth.admin.updateUserById(targetUserId, {
+                app_metadata: {
+                  ...authRes.user.app_metadata,
+                  mp_status: preStatus,
+                },
+              });
+            }
+
+            console.log(
+              `[Webhook Mercado Pago] Preapproval legado ${preapprovalId} ${preStatus} para usuario ${targetUserId}. Acceso preservado hasta su plan_end_date.`
+            );
           }
         }
       }
+
+      return NextResponse.json({ received: true, preapproval: true });
     }
 
-    // 2. Fallback por mp_preapproval_id = resourceId
-    if (!targetUserId && preapprovalId) {
-      try {
-        const { data: authList } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
-        const found = (authList?.users || []).find(
-          (u) =>
-            u.app_metadata?.mp_preapproval_id === preapprovalId ||
-            u.user_metadata?.mp_preapproval_id === preapprovalId
-        );
-        if (found) {
-          targetUserId = found.id;
-          targetUser = found;
-        }
-      } catch (authSearchErr) {
-        console.warn("[Webhook Mercado Pago] Error buscando usuario por preapprovalId:", authSearchErr);
-      }
-    }
-
-    // 3. Fallback adicional por email si aún no se localizó
-    if (!targetUserId && payerEmail) {
-      console.warn(
-        `[Webhook Mercado Pago] ADVERTENCIA: external_reference y mp_preapproval_id ausentes. Buscando como fallback por email: ${payerEmail}`
-      );
-      const { data: listData } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
-      const found = listData?.users?.find((u: any) => {
-        const userEmail = (u.email || "").toLowerCase();
-        const userMpEmail = (u.user_metadata?.mp_payer_email || "").toLowerCase();
-        const businessEmail = (u.user_metadata?.business_email || "").toLowerCase();
-        const matchesEmail =
-          userEmail === payerEmail ||
-          userMpEmail === payerEmail ||
-          businessEmail === payerEmail;
-        if (!matchesEmail) return false;
-        const existingPreapproval = u.app_metadata?.mp_preapproval_id;
-        // Si el usuario ya tiene OTRA suscripción activa distinta asignada, NO atribuirle este nuevo preapproval
-        // (indica que pagó una cuenta secundaria de HABA con su mismo MP personal)
-        if (existingPreapproval && preapprovalId && existingPreapproval !== preapprovalId) {
-          return false;
-        }
-        return true;
-      });
-      if (found) {
-        targetUserId = found.id;
-        targetUser = found;
-      } else {
-        const { data: profileByEmail } = await supabaseAdmin
-          .from("profiles")
-          .select("id")
-          .ilike("email", payerEmail)
-          .maybeSingle();
-
-        if (profileByEmail?.id) {
-          const { data: userFromProf } = await supabaseAdmin.auth.admin.getUserById(profileByEmail.id);
-          if (userFromProf?.user) {
-            targetUserId = userFromProf.user.id;
-            targetUser = userFromProf.user;
-          }
-        }
-      }
-    }
-
-    if (!targetUserId || !targetUser) {
-      console.warn(
-        `[Webhook Mercado Pago] No se encontró usuario en HABA para ref '${externalRef}', preapproval '${preapprovalId}' ni email '${payerEmail}'`
-      );
-      return NextResponse.json({ received: true, matchedUser: false }, { status: 200 });
-    }
-
-    const currentPlan = getTrustedPlanMeta(targetUser);
-    const today = new Date().toISOString().split("T")[0];
-
-    if (status === "authorized" || status === "approved") {
-      let newEndDate: string;
-      const nextDateStr = nextPaymentDate ? nextPaymentDate.split("T")[0] : null;
-
-      if (currentPlan.plan_type === "mensual") {
-        if (nextDateStr && currentPlan.plan_end_date && nextDateStr > currentPlan.plan_end_date) {
-          newEndDate = nextDateStr;
-        } else {
-          newEndDate =
-            currentPlan.plan_end_date ||
-            nextDateStr ||
-            new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-        }
-      } else {
-        newEndDate =
-          nextDateStr ||
-          new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-      }
-
-      // Actualizar en tabla profiles:
-      // - plan_type = 'mensual'
-      // - account_status = 'activa'
-      // - mp_status = 'authorized'
-      // - mp_preapproval_id = resourceId
-      // - plan_end_date = newEndDate
-      try {
-        await supabaseAdmin
-          .from("profiles")
-          .update({
-            status: "active",
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", targetUserId);
-      } catch (err: any) {
-        console.warn("[Webhook Mercado Pago] Aviso actualizando profiles:", err?.message);
-      }
-
-      // Actualizar datos de Auth (app_metadata y user_metadata) para consistencia global
-      const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(targetUserId, {
-        app_metadata: {
-          ...targetUser.app_metadata,
-          plan_type: "mensual",
-          plan_start_date: today,
-          plan_end_date: newEndDate,
-          account_status: "activa",
-          status: "active",
-          mp_status: "authorized",
-          mp_preapproval_id: preapprovalId || currentPlan.mp_preapproval_id,
-          mp_payer_email: payerEmail || targetUser.app_metadata?.mp_payer_email,
-        },
-        user_metadata: {
-          ...(targetUser.user_metadata || {}),
-          plan_type: "mensual",
-          plan_start_date: today,
-          plan_end_date: newEndDate,
-          account_status: "activa",
-          status: "active",
-          mp_preapproval_id: preapprovalId || currentPlan.mp_preapproval_id,
-          mp_payer_email: payerEmail || targetUser.user_metadata?.mp_payer_email,
-        },
-      });
-
-      if (updateError) {
-        console.error("[Webhook Mercado Pago] No se pudo activar el plan en Auth:", updateError.message);
-        return NextResponse.json({ error: updateError.message }, { status: 500 });
-      }
-
-      console.log(
-        `[Webhook Mercado Pago] Suscripción activada exitosamente para usuario ${targetUserId} (${targetUser.email}) hasta ${newEndDate}. Preapproval: ${preapprovalId}`
-      );
-    } else if (status === "cancelled" || status === "paused") {
-      // Suscripción cancelada o pausada en Mercado Pago
-      const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(targetUserId, {
-        app_metadata: {
-          ...targetUser.app_metadata,
-          mp_status: status,
-        },
-      });
-      if (updateError) {
-        console.error("[Webhook Mercado Pago] No se pudo actualizar estado en Auth:", updateError.message);
-        return NextResponse.json({ error: updateError.message }, { status: 500 });
-      }
-
-      console.log(`[Webhook Mercado Pago] Suscripción ${status} para usuario ${targetUserId}`);
-    }
-
-    return NextResponse.json({ success: true, status, userId: targetUserId }, { status: 200 });
+    return NextResponse.json({ received: true, ignored: true });
   } catch (err: any) {
-    console.error("[Webhook Mercado Pago] Error inesperado en webhook:", err);
+    console.error("[Webhook Mercado Pago] Excepción procesando notificación:", err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

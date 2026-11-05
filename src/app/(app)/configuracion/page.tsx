@@ -119,7 +119,7 @@ export default function SettingsPage() {
       if (session?.access_token) {
         headers["Authorization"] = `Bearer ${session.access_token}`;
       }
-      const res = await fetch("/api/mercadopago/create-subscription", {
+      const res = await fetch("/api/mercadopago/create-preference", {
         method: "POST",
         headers,
         body: JSON.stringify({ return_url: "/configuracion?status=approved" }),
@@ -148,19 +148,15 @@ export default function SettingsPage() {
       if (!silent) setSyncingMP(true);
       setSyncNotice(null);
       const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
-      const urlPreapproval =
-        explicitPreapprovalId ||
-        urlParams?.get("preapproval_id");
       const urlPaymentId =
         explicitPaymentId ||
         urlParams?.get("payment_id") ||
         urlParams?.get("collection_id");
 
-      const res = await fetch("/api/mercadopago/sync", {
+      const res = await fetch("/api/mercadopago/sync-payment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          preapproval_id: urlPreapproval || undefined,
           payment_id: urlPaymentId || undefined,
           email: customInput || undefined,
         }),
@@ -169,7 +165,14 @@ export default function SettingsPage() {
       if (data.synced) {
         if (data.plan_type) setPlanType(data.plan_type);
         if (data.plan_end_date) setPlanEndDate(data.plan_end_date);
-        setSyncNotice("¡Tu suscripción mensual fue verificada y activada con éxito!");
+        setSyncNotice("¡Tu pago fue verificado y tu vigencia fue renovada con éxito!");
+      } else if (data.alreadyApplied) {
+        if (!silent) {
+          alert(
+            data.error ||
+              "El último cobro registrado ya fue aplicado a tu cuenta previamente. No se duplicaron días."
+          );
+        }
       } else {
         if (!customInput) {
           const inputVal = typeof window !== "undefined"
@@ -178,7 +181,7 @@ export default function SettingsPage() {
               )
             : null;
           if (inputVal && inputVal.trim().length >= 3) {
-            return handleSyncMercadoPago(false, urlPreapproval, inputVal.trim(), urlPaymentId);
+            return handleSyncMercadoPago(false, null, inputVal.trim(), urlPaymentId);
           }
         }
         if (!silent) {
