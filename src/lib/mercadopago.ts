@@ -20,7 +20,10 @@ function getAdminClient() {
  * - Si la cuenta tiene vigencia actual en el futuro (o vence hoy), se le suman 30 días a esa fecha.
  * - Si la cuenta ya está vencida o no tiene fecha configurada, se le suman 30 días a partir de hoy (Date.now()).
  */
-export function calculateNewPlanEndDate(currentEndDateStr: string | null | undefined): string {
+export function calculateNewPlanEndDate(
+  currentEndDateStr: string | null | undefined,
+  days: number = 30
+): string {
   const todayStr = new Date().toISOString().split("T")[0];
   let baseDate: Date;
 
@@ -34,8 +37,24 @@ export function calculateNewPlanEndDate(currentEndDateStr: string | null | undef
     baseDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   }
 
-  baseDate.setUTCDate(baseDate.getUTCDate() + 30);
+  baseDate.setUTCDate(baseDate.getUTCDate() + Math.max(1, Math.round(days)));
   return baseDate.toISOString().split("T")[0];
+}
+
+/**
+ * Días de plan que cubre un pago. El precio completo (o más) acredita 30 días. Un pago menor,
+ * por ejemplo el primer cobro proporcional de la suscripción anterior hasta el día 8, acredita
+ * solo los días proporcionales a lo que se pagó (mínimo 1). Si la moneda no coincide con la del
+ * plan no se puede comparar el monto y se acreditan los 30 días.
+ */
+export function getPlanDaysForPayment(payment: any): number {
+  const amount = Number(payment?.transaction_amount);
+  const expected = getExpectedPlanAmount();
+  const expectedCurrency = (process.env.MP_SUBSCRIPTION_CURRENCY || "ARS").toUpperCase();
+  const currency = payment?.currency_id ? String(payment.currency_id).toUpperCase() : expectedCurrency;
+  if (!isFinite(amount) || amount <= 0 || currency !== expectedCurrency) return 30;
+  if (amount >= expected * 0.99) return 30;
+  return Math.max(1, Math.min(30, Math.round((30 * amount) / expected)));
 }
 
 export interface CreatePreferenceResult {
@@ -266,7 +285,8 @@ export async function applyApprovedPaymentToUser(options: {
 
   const trustedMeta = getTrustedPlanMeta(authUser);
   const currentEndDate = profile?.plan_end_date || trustedMeta.plan_end_date;
-  const newEndDate = calculateNewPlanEndDate(currentEndDate);
+  const creditedDays = getPlanDaysForPayment(payment);
+  const newEndDate = calculateNewPlanEndDate(currentEndDate, creditedDays);
   const payerEmail =
     payment.payer?.email ||
     payment.additional_info?.payer?.email ||
@@ -334,7 +354,7 @@ export async function applyApprovedPaymentToUser(options: {
   }
 
   console.log(
-    `[Mercado Pago] Pago #${paymentIdStr} aplicado con éxito al usuario ${userId}. Nueva fecha: ${newEndDate}`
+    `[Mercado Pago] Pago #${paymentIdStr} aplicado con éxito al usuario ${userId} (${creditedDays} días). Nueva fecha: ${newEndDate}`
   );
 
   return {

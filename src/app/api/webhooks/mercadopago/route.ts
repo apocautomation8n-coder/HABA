@@ -128,6 +128,16 @@ export async function POST(request: Request) {
           }
         }
 
+        // Cobros de la suscripción anterior: llegan con la referencia fija "Haba suscripción mensual".
+        // Solo para esa referencia se busca la cuenta por el email de pago (coincidencia única);
+        // el registro mp_applied_payments impide acreditar el mismo pago dos veces.
+        if (!userId && /haba/i.test(externalRef)) {
+          userId = await findUserIdByPayerEmail(
+            supabaseAdmin,
+            payment.payer?.email || payment.additional_info?.payer?.email || payment.payer_email
+          );
+        }
+
         if (!userId) {
           console.warn(
             `[Webhook Mercado Pago] Pago #${payment.id} aprobado pero su external_reference ('${externalRef}') no corresponde a un UUID unívoco de usuario de HABA. Tratado como pago huérfano.`
@@ -192,8 +202,14 @@ export async function POST(request: Request) {
             if (profByPre?.id) targetUserId = profByPre.id;
           }
 
+          // Suscripciones del plan anterior: llegan con una referencia fija ("Haba suscripción mensual")
+          // y sin el id de la cuenta. Se busca a la usuaria por el email con el que pagó.
+          if (!targetUserId) {
+            targetUserId = await findUserIdByPayerEmail(supabaseAdmin, preapproval.payer_email);
+          }
+
           if (targetUserId) {
-            // Actualizar mp_status en profiles SIN modificar plan_end_date
+            // Actualizar mp_status SIN modificar plan_end_date: conserva los días que ya pagó
             await supabaseAdmin
               .from("profiles")
               .update({
@@ -228,4 +244,29 @@ export async function POST(request: Request) {
     console.error("[Webhook Mercado Pago] Excepción procesando notificación:", err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
+}
+
+/**
+ * Busca la cuenta de HABA por el email de quien pagó en Mercado Pago. Solo devuelve una cuenta
+ * cuando la coincidencia es única (email de la cuenta o email de pago guardado por el servidor).
+ */
+async function findUserIdByPayerEmail(supabaseAdmin: any, rawEmail: unknown): Promise<string | null> {
+  const email = typeof rawEmail === "string" ? rawEmail.trim().toLowerCase() : "";
+  if (!email || !email.includes("@")) return null;
+
+  try {
+    const { data: users } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
+    const matches = (users?.users || []).filter(
+      (u: any) =>
+        (u.email || "").toLowerCase() === email ||
+        String(u.app_metadata?.mp_payer_email || "").toLowerCase() === email
+    );
+    if (matches.length === 1) return matches[0].id;
+    if (matches.length > 1) {
+      console.warn(`[Webhook Mercado Pago] Email de pago ${email} coincide con varias cuentas; no se asigna.`);
+    }
+  } catch (err) {
+    console.warn("[Webhook Mercado Pago] No se pudo buscar la cuenta por email de pago:", err);
+  }
+  return null;
 }
