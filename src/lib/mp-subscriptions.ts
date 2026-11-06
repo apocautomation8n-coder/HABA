@@ -266,13 +266,19 @@ export async function getPlanCheckoutLink(options: {
  */
 export async function findAndSaveSubscriptionByReference(userId: string): Promise<any | null> {
   try {
+    // Orden: "sort=campo&criteria=desc" (el formato "campo:desc" lo rechaza Mercado Pago)
     const res = await fetch(
-      `${MP_API}/preapproval/search?external_reference=${encodeURIComponent(userId)}&sort=date_created:desc&limit=5`,
+      `${MP_API}/preapproval/search?external_reference=${encodeURIComponent(userId)}&sort=date_created&criteria=desc&limit=10`,
       { headers: mpHeaders() }
     );
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.warn("[Suscripción MP] Búsqueda por referencia respondió", res.status, await res.text().catch(() => ""));
+      return null;
+    }
     const data = await res.json();
-    const results: any[] = Array.isArray(data.results) ? data.results : [];
+    const results: any[] = (Array.isArray(data.results) ? data.results : [])
+      .filter((p: any) => String(p?.external_reference || "").trim() === userId)
+      .sort((a: any, b: any) => String(b?.date_created || "").localeCompare(String(a?.date_created || "")));
     const match =
       results.find((p) => p.status === "authorized") ||
       results.find((p) => p.status === "pending") ||

@@ -466,13 +466,37 @@ export async function syncUserPaymentWithMercadoPago(options: {
 
   // A. Si se proporcionó un ID de pago o número de comprobante explícito (ej: 185634306746)
   if (explicitPaymentId && /^\d+$/.test(explicitPaymentId.trim())) {
+    const operationId = explicitPaymentId.trim();
     try {
-      const payRes = await fetch(
-        `https://api.mercadopago.com/v1/payments/${encodeURIComponent(explicitPaymentId.trim())}`,
-        { headers: { Authorization: `Bearer ${accessToken}` } }
-      );
+      let payData: any = null;
+      const payRes = await fetch(`https://api.mercadopago.com/v1/payments/${encodeURIComponent(operationId)}`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
       if (payRes.ok) {
-        const payData = await payRes.json();
+        payData = await payRes.json();
+      } else {
+        // El comprobante de un cobro de suscripción trae el número del cobro (authorized_payment),
+        // que no es el del pago: se busca el pago a partir de él.
+        const apRes = await fetch(`https://api.mercadopago.com/authorized_payments/${encodeURIComponent(operationId)}`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (apRes.ok) {
+          const ap = await apRes.json();
+          const chargeId = ap?.payment?.id ? String(ap.payment.id) : "";
+          if (chargeId) {
+            const chargeRes = await fetch(`https://api.mercadopago.com/v1/payments/${encodeURIComponent(chargeId)}`, {
+              headers: { Authorization: `Bearer ${accessToken}` },
+            });
+            if (chargeRes.ok) {
+              payData = await chargeRes.json();
+              if (ap.preapproval_id && !payData?.metadata?.preapproval_id) {
+                payData = { ...payData, metadata: { ...(payData.metadata || {}), preapproval_id: String(ap.preapproval_id) } };
+              }
+            }
+          }
+        }
+      }
+      if (payData) {
         if (payData.status === "approved") {
           // Si el pago tiene external_reference y es otro UUID distinto, rechazar
           const isUserUuid = (ref: string) =>
@@ -485,8 +509,31 @@ export async function syncUserPaymentWithMercadoPago(options: {
               error: `El pago #${payData.id} pertenece a otra cuenta de HABA.`,
             };
           }
+          // Cobro de una suscripción: la referencia de la cuenta está en la suscripción, no en el pago
+          let subscriptionRef = "";
+          if (ref !== userId) {
+            const subId = String(
+              payData.metadata?.preapproval_id || payData.point_of_interaction?.transaction_data?.subscription_id || ""
+            ).trim();
+            if (subId) {
+              try {
+                const subRes = await fetch(`https://api.mercadopago.com/preapproval/${encodeURIComponent(subId)}`, {
+                  headers: { Authorization: `Bearer ${accessToken}` },
+                });
+                if (subRes.ok) subscriptionRef = String((await subRes.json())?.external_reference || "").trim();
+              } catch {
+                // sin dato de la suscripción
+              }
+            }
+          }
+          if (subscriptionRef && isUserUuid(subscriptionRef) && subscriptionRef !== userId) {
+            return {
+              synced: false,
+              error: `El pago #${payData.id} pertenece a la suscripción de otra cuenta de HABA.`,
+            };
+          }
           // Un pago sin referencia a esta cuenta solo lo puede asignar un administrador
-          if (!trusted && ref !== userId) {
+          if (!trusted && ref !== userId && subscriptionRef !== userId) {
             return {
               synced: false,
               error: `El pago #${payData.id} no está vinculado a tu cuenta. Escribinos y lo revisamos para acreditarlo.`,
