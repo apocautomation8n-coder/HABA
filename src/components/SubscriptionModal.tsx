@@ -104,8 +104,6 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
   const [done, setDone] = useState<"subscribed" | "cancelled" | null>(null);
   // Cómo quiere pagar: en Mercado Pago (saldo o sus tarjetas) o con tarjeta en el formulario
   const [method, setMethod] = useState<"mercadopago" | "card" | null>(null);
-  // Email de la cuenta de Mercado Pago con la que va a pagar (Mercado Pago exige que coincida)
-  const [mpEmail, setMpEmail] = useState("");
   const [redirecting, setRedirecting] = useState(false);
   const cardFormRef = useRef<any>(null);
 
@@ -124,7 +122,6 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
     setError(null);
     setDone(null);
     setMethod(null);
-    setMpEmail(defaultEmail || "");
     setRedirecting(false);
     setConfirmCancel(false);
     setFormReady(false);
@@ -182,18 +179,13 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
 
   // Pagar en Mercado Pago: HABA crea la suscripción con el id de la cuenta y manda al link personal
   const handleMercadoPago = async () => {
-    const email = mpEmail.trim().toLowerCase();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      setError("Ingresá el email de tu cuenta de Mercado Pago.");
-      return;
-    }
     try {
       setRedirecting(true);
       setError(null);
       const res = await fetch("/api/mercadopago/create-subscription", {
         method: "POST",
         headers: await authHeaders(),
-        body: JSON.stringify({ mode: "mercadopago", payer_email: email }),
+        body: JSON.stringify({ mode: "mercadopago" }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.success || !data.initPoint) {
@@ -479,10 +471,7 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
               </p>
               <button
                 type="button"
-                onClick={() => {
-                  setError(null);
-                  setMethod("mercadopago");
-                }}
+                onClick={handleMercadoPago}
                 disabled={redirecting}
                 className="w-full p-3.5 bg-white border border-[#C3EBC0] hover:border-[#3BB578] hover:bg-[#F6FBF7] rounded-2xl text-left flex items-center gap-3 transition disabled:opacity-70"
               >
@@ -492,7 +481,8 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
                 <div className="min-w-0 flex-1">
                   <span className="text-xs font-bold text-neutral-800 block">Con mi cuenta de Mercado Pago</span>
                   <span className="text-[11px] text-neutral-500 block leading-snug">
-                    Saldo, tarjeta de Mercado Pago o la tarjeta que tengas guardada. Te lleva a Mercado Pago.
+                    Saldo, tarjeta de Mercado Pago o cualquier tarjeta. Te lleva a Mercado Pago. Primer pago
+                    proporcional hasta el día 8.
                   </span>
                 </div>
                 <ExternalLink className="w-4 h-4 text-neutral-400 shrink-0" />
@@ -509,7 +499,8 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
                 <div className="min-w-0 flex-1">
                   <span className="text-xs font-bold text-neutral-800 block">Con tarjeta de crédito o débito</span>
                   <span className="text-[11px] text-neutral-500 block leading-snug">
-                    Cargás la tarjeta acá, en el formulario seguro de Mercado Pago. No sirve la tarjeta de Mercado Pago.
+                    Cargás la tarjeta acá, en el formulario seguro de Mercado Pago. No sirve la tarjeta de Mercado
+                    Pago. Primer pago proporcional hasta el día 8.
                   </span>
                 </div>
                 <ChevronRight className="w-4 h-4 text-neutral-400 shrink-0" />
@@ -517,63 +508,6 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
               <p className="text-[10px] text-neutral-400 text-center leading-snug pt-1">
                 En los dos casos la suscripción se renueva sola y podés cancelarla cuando quieras.
               </p>
-            </div>
-          )}
-
-          {/* Pagar con la cuenta de Mercado Pago: pedir el email de esa cuenta */}
-          {canSubscribe && method === "mercadopago" && (
-            <div className="p-5 space-y-3">
-              <div>
-                <label htmlFor="haba-sub-mp-email" className={labelClass}>
-                  Email de tu cuenta de Mercado Pago
-                </label>
-                <input
-                  id="haba-sub-mp-email"
-                  type="email"
-                  inputMode="email"
-                  autoComplete="email"
-                  value={mpEmail}
-                  onChange={(e) => setMpEmail(e.target.value)}
-                  placeholder="el email con el que entrás a Mercado Pago"
-                  className={inputClass}
-                />
-                <p className="text-[10px] text-neutral-500 leading-snug mt-1.5">
-                  Tiene que ser el mismo email con el que iniciás sesión en Mercado Pago. Si usás otro, Mercado Pago
-                  rechaza el pago.
-                </p>
-              </div>
-              <div className="flex items-center gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setError(null);
-                    setMethod(null);
-                  }}
-                  disabled={redirecting}
-                  className="w-1/3 py-2.5 border border-neutral-200 hover:bg-neutral-50 text-neutral-600 text-xs font-bold rounded-xl transition disabled:opacity-50"
-                >
-                  Volver
-                </button>
-                <button
-                  type="button"
-                  onClick={handleMercadoPago}
-                  disabled={redirecting}
-                  className="w-2/3 py-2.5 bg-[#3BB578] hover:bg-[#2E9E65] text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center justify-center gap-2 disabled:opacity-75"
-                >
-                  {redirecting ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      <span>Conectando con Mercado Pago...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Wallet className="w-3.5 h-3.5" />
-                      <span>Ir a pagar en Mercado Pago</span>
-                      <ExternalLink className="w-3 h-3 text-white/80" />
-                    </>
-                  )}
-                </button>
-              </div>
             </div>
           )}
 

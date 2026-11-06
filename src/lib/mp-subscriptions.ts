@@ -220,18 +220,17 @@ export async function createUserSubscription(options: {
 }
 
 /**
- * Suscripción SIN tarjeta: HABA la crea pendiente con el id de la cuenta y Mercado Pago devuelve un
- * link personal donde la usuaria elige cómo pagar (saldo de Mercado Pago, su tarjeta de Mercado
- * Pago o cualquier tarjeta). Sirve para las tarjetas con código de seguridad dinámico, que el
- * formulario de tarjeta no acepta. Mercado Pago no permite asociarla al plan en este modo, así que
- * no figura en "Clientes" del plan, pero renueva sola y cobros y bajas llegan con el id.
+ * Pagar con la cuenta de Mercado Pago (saldo, tarjeta de Mercado Pago o cualquier tarjeta):
+ * se manda a la usuaria al checkout del plan único con external_reference = id de su cuenta.
+ * Mercado Pago crea la suscripción ASOCIADA AL PLAN (cobro el día 8 con proporcional, figura en
+ * "Clientes") y respeta ese id, como se comprobó en producción. No se crea nada desde HABA:
+ * al pagar, el webhook o la vuelta a la app la vinculan por el id.
  */
-export async function createPendingSubscription(options: {
+export async function getPlanCheckoutLink(options: {
   user: any;
-  payerEmail: string;
   appUrl: string;
 }): Promise<CreateSubscriptionResult> {
-  const { user, payerEmail, appUrl } = options;
+  const { user, appUrl } = options;
 
   const existing = await getUserSubscription(user);
   if (existing && existing.status === "authorized") {
@@ -244,60 +243,71 @@ export async function createPendingSubscription(options: {
       error: "Ya tenés una suscripción activa. Se renueva sola cada mes.",
     };
   }
-  // Si quedó una pendiente sin activar, se reutiliza su link
-  if (existing && existing.status === "pending" && existing.init_point) {
-    return { success: true, status: "pending", preapprovalId: existing.id, initPoint: existing.init_point };
-  }
 
-  const amount = getExpectedPlanAmount();
-  const currency = (process.env.MP_SUBSCRIPTION_CURRENCY || "ARS").toUpperCase();
+  const planId = await resolvePlanId();
+  if (!planId) return { success: false, error: "La suscripción no está disponible por el momento." };
 
-  const res = await fetch(`${MP_API}/preapproval`, {
-    method: "POST",
-    headers: mpHeaders({ "X-Idempotency-Key": `haba-pend-${user.id}-${Date.now()}` }),
-    body: JSON.stringify({
-      reason: process.env.MP_SUBSCRIPTION_TITLE || "Haba Mensual",
-      external_reference: user.id,
-      payer_email: payerEmail,
-      auto_recurring: {
-        frequency: 1,
-        frequency_type: "months",
-        transaction_amount: amount,
-        currency_id: currency,
-      },
-      back_url: `${appUrl}/configuracion?status=approved`,
-      status: "pending",
-    }),
+  const params = new URLSearchParams({
+    preapproval_plan_id: planId,
+    external_reference: user.id,
+    back_url: `${appUrl}/configuracion?status=approved`,
   });
-  const data = await res.json().catch(() => ({}));
+  const initPoint = `https://www.mercadopago.com.ar/subscriptions/checkout?${params.toString()}`;
 
-  if (!res.ok || !data?.id || !data?.init_point) {
-    console.error("[Suscripción MP] Error al crear la suscripción pendiente:", res.status, data);
-    return { success: false, error: friendlyMpError(data, res.status) };
-  }
+  // Dejar registrado que esta cuenta inició la suscripción (sirve para vincular al volver)
+  await saveSubscriptionState(user.id, { status: "pending_checkout" });
 
-  await saveSubscriptionState(user.id, {
-    preapprovalId: String(data.id),
-    status: "pending",
-    payerEmail,
-  });
-
-  console.log(`[Suscripción MP] Suscripción pendiente ${data.id} creada para ${user.id}; se activa en Mercado Pago`);
-  return { success: true, status: "pending", preapprovalId: String(data.id), initPoint: data.init_point };
+  return { success: true, status: "pending", initPoint };
 }
 
 /**
- * Sincroniza la suscripción de la usuaria con Mercado Pago (por ejemplo al volver del link de
- * activación, antes de que llegue el aviso del webhook): registra el estado actual y, si ya está
- * autorizada, deja la cuenta vigente al menos hasta el próximo cobro. Los cobros en sí se acreditan
- * por el webhook, con su registro anti-duplicados.
+ * Busca en Mercado Pago la suscripción de esta cuenta por external_reference (la que crea el
+ * checkout del plan) y la guarda. Se usa al volver del checkout y en la sincronización manual.
+ */
+export async function findAndSaveSubscriptionByReference(userId: string): Promise<any | null> {
+  try {
+    const res = await fetch(
+      `${MP_API}/preapproval/search?external_reference=${encodeURIComponent(userId)}&sort=date_created:desc&limit=5`,
+      { headers: mpHeaders() }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    const results: any[] = Array.isArray(data.results) ? data.results : [];
+    const match =
+      results.find((p) => p.status === "authorized") ||
+      results.find((p) => p.status === "pending") ||
+      results[0];
+    if (!match || String(match.external_reference || "").trim() !== userId) return null;
+    await saveSubscriptionState(userId, {
+      preapprovalId: String(match.id),
+      status: match.status,
+      payerEmail: match.payer_email || null,
+      nextPaymentDate: match.next_payment_date || null,
+    });
+    return match;
+  } catch (err) {
+    console.warn("[Suscripción MP] No se pudo buscar la suscripción por referencia:", err);
+    return null;
+  }
+}
+
+/**
+ * Sincroniza la suscripción de la usuaria con Mercado Pago (por ejemplo al volver del checkout,
+ * antes de que llegue el aviso del webhook): registra el estado actual y, si ya está autorizada,
+ * alinea el vencimiento con el próximo cobro. Los cobros en sí se acreditan por el webhook, con su
+ * registro anti-duplicados. Si la cuenta no tiene suscripción guardada o la guardada no está
+ * autorizada, se busca por el id de la cuenta (la crea el checkout del plan).
  */
 export async function syncUserSubscription(userId: string): Promise<{ status: string | null; activated: boolean }> {
   const admin = getAdminClient();
   const { data: authRes } = await admin.auth.admin.getUserById(userId);
   const user = authRes?.user;
   if (!user) return { status: null, activated: false };
-  const pre = await getUserSubscription(user);
+  let pre = await getUserSubscription(user);
+  if (!pre || pre.status !== "authorized") {
+    const found = await findAndSaveSubscriptionByReference(userId);
+    if (found) pre = found;
+  }
   if (!pre) return { status: null, activated: false };
 
   const previous = String(user.app_metadata?.mp_status || "");

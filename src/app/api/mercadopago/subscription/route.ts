@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
-import { cancelUserSubscription, getRequestUser, getUserSubscription, saveSubscriptionState } from "@/lib/mp-subscriptions";
+import {
+  cancelUserSubscription,
+  findAndSaveSubscriptionByReference,
+  getRequestUser,
+  getUserSubscription,
+  saveSubscriptionState,
+} from "@/lib/mp-subscriptions";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +29,12 @@ export async function GET(request: Request) {
     if (!user?.id) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
 
     const publicKey = getPublicKey();
-    const pre = await getUserSubscription(user);
+    let pre = await getUserSubscription(user);
+    if (!pre || pre.status !== "authorized") {
+      // Puede haberse suscripto por el checkout del plan: buscar por el id de la cuenta
+      const found = await findAndSaveSubscriptionByReference(user.id);
+      if (found) pre = found;
+    }
     if (!pre) return NextResponse.json({ subscribed: false, publicKey });
 
     // Mantener el estado guardado al día si cambió en Mercado Pago (por ejemplo, baja desde su app)

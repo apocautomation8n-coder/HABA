@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { checkIsAdmin } from "@/lib/auth-helpers";
-import { createPendingSubscription, createUserSubscription, getRequestUser } from "@/lib/mp-subscriptions";
+import { createUserSubscription, getPlanCheckoutLink, getRequestUser } from "@/lib/mp-subscriptions";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +31,7 @@ export async function POST(request: Request) {
     if (mode === "card" && (!cardTokenId || cardTokenId.length > 200)) {
       return NextResponse.json({ error: "Faltan los datos de la tarjeta." }, { status: 400 });
     }
-    if (!payerEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payerEmail)) {
+    if (mode === "card" && (!payerEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payerEmail))) {
       return NextResponse.json({ error: "Ingresá un email válido." }, { status: 400 });
     }
 
@@ -41,7 +41,7 @@ export async function POST(request: Request) {
 
     const result =
       mode === "mercadopago"
-        ? await createPendingSubscription({ user, payerEmail, appUrl })
+        ? await getPlanCheckoutLink({ user, appUrl })
         : await createUserSubscription({ user, cardTokenId, payerEmail, appUrl });
     if (!result.success) {
       return NextResponse.json(result, { status: result.alreadySubscribed ? 409 : 400 });
