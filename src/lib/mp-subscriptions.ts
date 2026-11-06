@@ -516,6 +516,34 @@ export async function findUserIdBySavedPreapproval(preapprovalId: string): Promi
   return data?.id ? String(data.id) : null;
 }
 
+/**
+ * Cuenta que inició el checkout desde HABA poco antes de que Mercado Pago creara esta suscripción
+ * (sin id de cuenta). Solo si hay una única candidata; si hay varias, no se asigna sola.
+ */
+export async function findUserIdByCheckoutWindow(subscription: any): Promise<string | null> {
+  const subId = String(subscription?.id || "").trim();
+  const created = Date.parse(String(subscription?.date_created || ""));
+  if (!subId || !isFinite(created)) return null;
+  const ref = String(subscription?.external_reference || "").trim();
+  if (isHabaUserId(ref)) return null;
+  const owner = await findUserIdBySavedPreapproval(subId);
+  if (owner) return owner;
+  const { data } = await getAdminClient().auth.admin.listUsers({ perPage: 1000 });
+  const candidates = (data?.users || []).filter((u: any) => {
+    const meta = u.app_metadata || {};
+    if (meta.mp_status !== "pending_checkout") return false;
+    const started = Date.parse(String(meta.mp_checkout_started_at || ""));
+    if (!isFinite(started)) return false;
+    // Empezó el checkout hasta 3 horas antes (y no después) de que se creara la suscripción
+    return started <= created + 5 * 60 * 1000 && created - started <= 3 * 60 * 60 * 1000;
+  });
+  if (candidates.length === 1) return String(candidates[0].id);
+  if (candidates.length > 1) {
+    console.warn(`[Suscripción MP] ${candidates.length} cuentas iniciaron el checkout cerca de ${subId}; no se asigna sola.`);
+  }
+  return null;
+}
+
 export async function findAndSaveSubscriptionByReference(
   userId: string,
   userEmail?: string | null

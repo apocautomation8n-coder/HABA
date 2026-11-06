@@ -4,7 +4,7 @@ import {
   findAndSaveSubscriptionByReference,
   getRequestUser,
   getUserSubscription,
-  saveSubscriptionState,
+  syncUserSubscription,
 } from "@/lib/mp-subscriptions";
 
 export const dynamic = "force-dynamic";
@@ -37,9 +37,11 @@ export async function GET(request: Request) {
     }
     if (!pre) return NextResponse.json({ subscribed: false, publicKey });
 
-    // Mantener el estado guardado al día si cambió en Mercado Pago (por ejemplo, baja desde su app)
+    // Si cambió el estado en Mercado Pago (se activó, o baja desde su app), sincronizar la cuenta:
+    // guarda el estado y, si está activa, deja el vencimiento en el próximo cobro + gracia.
+    // Así el plan se actualiza al abrir Ajustes aunque la usuaria no haya vuelto desde Mercado Pago.
     if (pre.status && pre.status !== user.app_metadata?.mp_status) {
-      await saveSubscriptionState(user.id, { status: pre.status, nextPaymentDate: pre.next_payment_date || null });
+      await syncUserSubscription(user.id);
     }
 
     return NextResponse.json({

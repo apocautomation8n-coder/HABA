@@ -4,6 +4,7 @@ import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { applyApprovedPaymentToUser } from "@/lib/mercadopago";
 import {
   ensurePlanEndDateAtLeast,
+  findUserIdByCheckoutWindow,
   findUserIdBySavedPreapproval,
   getPreapproval,
   isHabaUserId,
@@ -134,6 +135,8 @@ export async function POST(request: Request) {
       }
       // Suscripción ya vinculada a una cuenta (las del link del plan no traen el id de la cuenta)
       if (!userId) userId = await findUserIdBySavedPreapproval(preapprovalId);
+      // Checkout iniciado desde HABA y Mercado Pago no guardó el id: la cuenta que lo empezó
+      if (!userId && preapproval) userId = await findUserIdByCheckoutWindow(preapproval);
       if (!userId && (!preRef || /haba/i.test(preRef))) {
         userId = await findUserIdByPayerEmail(supabaseAdmin, preapproval?.payer_email);
       }
@@ -244,6 +247,7 @@ export async function POST(request: Request) {
             // Suscripción del link del plan (sin id de cuenta): primero la cuenta que ya la tiene
             // guardada; si no, por el email de quien pagó
             userId = await findUserIdBySavedPreapproval(preapprovalId);
+            if (!userId && subscription) userId = await findUserIdByCheckoutWindow(subscription);
             if (!userId && (!subRef || /haba/i.test(subRef))) {
               userId = await findUserIdByPayerEmail(supabaseAdmin, subscription?.payer_email);
             }
