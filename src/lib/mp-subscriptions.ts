@@ -264,6 +264,16 @@ export async function getPlanCheckoutLink(options: {
  * Busca en Mercado Pago la suscripción de esta cuenta por external_reference (la que crea el
  * checkout del plan) y la guarda. Se usa al volver del checkout y en la sincronización manual.
  */
+const SEARCH_PAGE_SIZE = 20;
+
+/** Cuenta de HABA que ya tiene guardada esta suscripción (vinculada por el webhook, al actualizar o por Gio). */
+export async function findUserIdBySavedPreapproval(preapprovalId: string): Promise<string | null> {
+  const id = String(preapprovalId || "").trim();
+  if (!id) return null;
+  const { data } = await getAdminClient().from("profiles").select("id").eq("mp_preapproval_id", id).maybeSingle();
+  return data?.id ? String(data.id) : null;
+}
+
 export async function findAndSaveSubscriptionByReference(
   userId: string,
   userEmail?: string | null
@@ -274,20 +284,27 @@ export async function findAndSaveSubscriptionByReference(
     // Mercado Pago no documenta el filtro por external_reference en /preapproval/search y rechaza
     // cualquier parámetro de orden ("Invalid sorting value format"): se consultan las suscripciones
     // del plan (y las del email de la cuenta) sin orden y se filtra y ordena acá.
-    const queries = [`external_reference=${encodeURIComponent(userId)}&limit=10`];
-    if (planId) queries.push(`preapproval_plan_id=${encodeURIComponent(planId)}&limit=100`);
-    if (email) queries.push(`payer_email=${encodeURIComponent(email)}&limit=10`);
+    const queries = [`external_reference=${encodeURIComponent(userId)}`];
+    if (planId) queries.push(`preapproval_plan_id=${encodeURIComponent(planId)}`);
+    if (email) queries.push(`payer_email=${encodeURIComponent(email)}`);
 
     const seen = new Map<string, any>();
     for (const q of queries) {
-      const res = await fetch(`${MP_API}/preapproval/search?${q}`, { headers: mpHeaders() });
-      if (!res.ok) {
-        console.warn("[Suscripción MP] Búsqueda de suscripciones respondió", res.status, q.split("&")[0]);
-        continue;
-      }
-      const data = await res.json().catch(() => ({}));
-      for (const p of Array.isArray(data?.results) ? data.results : []) {
-        if (p?.id && !seen.has(String(p.id))) seen.set(String(p.id), p);
+      // Páginas de 20 (tamaño comprobado con la API) hasta agotar los resultados
+      for (let offset = 0, page = 0; page < 15; page++, offset += SEARCH_PAGE_SIZE) {
+        const res = await fetch(`${MP_API}/preapproval/search?${q}&limit=${SEARCH_PAGE_SIZE}&offset=${offset}`, {
+          headers: mpHeaders(),
+        });
+        if (!res.ok) {
+          console.warn("[Suscripción MP] Búsqueda de suscripciones respondió", res.status, q.split("&")[0]);
+          break;
+        }
+        const data = await res.json().catch(() => ({}));
+        const results: any[] = Array.isArray(data?.results) ? data.results : [];
+        for (const p of results) {
+          if (p?.id && !seen.has(String(p.id))) seen.set(String(p.id), p);
+        }
+        if (results.length < SEARCH_PAGE_SIZE) break;
       }
     }
     const byDateDesc = (a: any, b: any) => String(b?.date_created || "").localeCompare(String(a?.date_created || ""));

@@ -4,6 +4,7 @@ import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { applyApprovedPaymentToUser } from "@/lib/mercadopago";
 import {
   ensurePlanEndDateAtLeast,
+  findUserIdBySavedPreapproval,
   getPreapproval,
   isHabaUserId,
   saveSubscriptionState,
@@ -131,7 +132,9 @@ export async function POST(request: Request) {
         const { data: userRes } = await supabaseAdmin.auth.admin.getUserById(preRef);
         if (userRes?.user) userId = userRes.user.id;
       }
-      if (!userId && /haba/i.test(preRef)) {
+      // Suscripción ya vinculada a una cuenta (las del link del plan no traen el id de la cuenta)
+      if (!userId) userId = await findUserIdBySavedPreapproval(preapprovalId);
+      if (!userId && (!preRef || /haba/i.test(preRef))) {
         userId = await findUserIdByPayerEmail(supabaseAdmin, preapproval?.payer_email);
       }
       if (!userId) {
@@ -237,9 +240,13 @@ export async function POST(request: Request) {
               userId = userRes.user.id;
               subscriptionNextPayment = subscription?.next_payment_date || null;
             }
-          } else if (/haba/i.test(subRef)) {
-            // Suscripción del plan anterior: vincular por el email de quien pagó
-            userId = await findUserIdByPayerEmail(supabaseAdmin, subscription?.payer_email);
+          } else {
+            // Suscripción del link del plan (sin id de cuenta): primero la cuenta que ya la tiene
+            // guardada; si no, por el email de quien pagó
+            userId = await findUserIdBySavedPreapproval(preapprovalId);
+            if (!userId && (!subRef || /haba/i.test(subRef))) {
+              userId = await findUserIdByPayerEmail(supabaseAdmin, subscription?.payer_email);
+            }
             if (userId) subscriptionNextPayment = subscription?.next_payment_date || null;
           }
         }
