@@ -148,28 +148,104 @@ export async function linkSubscriptionFromAppliedPayments(userId: string): Promi
 
 export interface LinkAllResult {
   revisadas: number;
-  vinculadas: { email: string; suscripcion: string; estado: string }[];
+  vinculadas: { email: string; suscripcion: string; estado: string; como: "pago" | "email" }[];
   sinSuscripcion: string[];
+  /** Suscripciones activas del plan que no se pudieron unir a ninguna cuenta */
+  sinCuenta: { suscripcion: string; nombre: string; emailPago: string; monto: number | null; alta: string }[];
 }
 
 /**
- * Pasada única: vincula a cada cuenta con pagos acreditados su suscripción en Mercado Pago (las
- * del link del plan no traen el id de la cuenta). Así los cobros mensuales se acreditan solos.
+ * Pasada única: vincula cada cuenta con su suscripción en Mercado Pago (las del link del plan no
+ * traen el id de la cuenta). Primero por el pago ya acreditado a la cuenta, después por el email
+ * con el que se pagó cada suscripción activa del plan. Informa las que quedan sin cuenta.
  */
 export async function linkAllSubscriptions(): Promise<LinkAllResult> {
   const admin = getAdminClient();
   const { data } = await admin.auth.admin.listUsers({ perPage: 1000 });
   const users: any[] = data?.users || [];
-  const result: LinkAllResult = { revisadas: 0, vinculadas: [], sinSuscripcion: [] };
+  const { data: profileRows } = await admin.from("profiles").select("id, email, last_payment_id, mp_preapproval_id");
+  const profiles = new Map<string, any>((profileRows || []).map((r: any) => [String(r.id), r]));
+  const result: LinkAllResult = { revisadas: 0, vinculadas: [], sinSuscripcion: [], sinCuenta: [] };
+
+  const linkedSubs = new Set<string>();
+  const linkedUsers = new Set<string>();
   for (const u of users) {
+    const id = String(u.app_metadata?.mp_preapproval_id || profiles.get(String(u.id))?.mp_preapproval_id || "").trim();
+    if (id && u.app_metadata?.mp_status === "authorized") {
+      linkedSubs.add(id);
+      linkedUsers.add(String(u.id));
+    }
+  }
+
+  // A) Cuentas con pagos acreditados: el pago dice a qué suscripción pertenece
+  for (const u of users) {
+    if (linkedUsers.has(String(u.id))) continue;
     const meta = u.app_metadata || {};
-    const hasPayments = Boolean(meta.last_payment_id) || (Array.isArray(meta.applied_payment_ids) && meta.applied_payment_ids.length > 0);
+    const prof = profiles.get(String(u.id));
+    const hasPayments =
+      Boolean(meta.last_payment_id) ||
+      Boolean(prof?.last_payment_id) ||
+      (Array.isArray(meta.applied_payment_ids) && meta.applied_payment_ids.length > 0);
     if (!hasPayments) continue;
-    if (meta.mp_preapproval_id && meta.mp_status === "authorized") continue;
     result.revisadas++;
     const pre = await linkSubscriptionFromAppliedPayments(u.id);
-    if (pre) result.vinculadas.push({ email: u.email || u.id, suscripcion: String(pre.id), estado: String(pre.status || "") });
-    else result.sinSuscripcion.push(u.email || u.id);
+    if (pre) {
+      result.vinculadas.push({ email: u.email || u.id, suscripcion: String(pre.id), estado: String(pre.status || ""), como: "pago" });
+      linkedSubs.add(String(pre.id));
+      linkedUsers.add(String(u.id));
+    } else {
+      result.sinSuscripcion.push(u.email || u.id);
+    }
+  }
+
+  // B) Suscripciones activas del plan todavía sin cuenta: por el email con el que se pagó
+  const planId = await resolvePlanId();
+  if (planId) {
+    const subs = await searchPreapprovals(`preapproval_plan_id=${encodeURIComponent(planId)}`);
+    for (const s of subs) {
+      const subId = String(s?.id || "");
+      if (!subId || s?.status !== "authorized" || linkedSubs.has(subId)) continue;
+      const ref = String(s?.external_reference || "").trim();
+      let userId: string | null = null;
+      if (isHabaUserId(ref)) {
+        userId = users.some((u) => String(u.id) === ref) ? ref : null;
+      }
+      let pre: any = s;
+      if (!userId) {
+        pre = (await getPreapproval(subId)) || s;
+        const email = String(pre?.payer_email || "").trim().toLowerCase();
+        if (email) {
+          const matches = users.filter(
+            (u) =>
+              String(u.email || "").toLowerCase() === email ||
+              String(u.app_metadata?.mp_payer_email || "").toLowerCase() === email ||
+              String(profiles.get(String(u.id))?.email || "").toLowerCase() === email
+          );
+          if (matches.length === 1) userId = String(matches[0].id);
+        }
+      }
+      if (userId && !linkedUsers.has(userId)) {
+        result.revisadas++;
+        await saveSubscriptionState(userId, {
+          preapprovalId: subId,
+          status: String(pre?.status || "authorized"),
+          payerEmail: pre?.payer_email || null,
+          nextPaymentDate: pre?.next_payment_date || null,
+        });
+        const u = users.find((x) => String(x.id) === userId);
+        result.vinculadas.push({ email: u?.email || userId, suscripcion: subId, estado: String(pre?.status || ""), como: "email" });
+        linkedSubs.add(subId);
+        linkedUsers.add(userId);
+      } else {
+        result.sinCuenta.push({
+          suscripcion: subId,
+          nombre: `${s?.payer_first_name || ""} ${s?.payer_last_name || ""}`.trim() || String(s?.payer_id || ""),
+          emailPago: String(pre?.payer_email || ""),
+          monto: s?.summarized?.last_charged_amount ?? s?.auto_recurring?.transaction_amount ?? null,
+          alta: String(s?.date_created || "").split("T")[0],
+        });
+      }
+    }
   }
   return result;
 }
@@ -353,6 +429,25 @@ export async function getPlanCheckoutLink(options: {
  */
 const SEARCH_PAGE_SIZE = 20;
 
+/** Búsqueda de suscripciones paginada de a 20 (tamaño comprobado con la API) hasta agotar los resultados. */
+async function searchPreapprovals(query: string): Promise<any[]> {
+  const out: any[] = [];
+  for (let offset = 0, page = 0; page < 15; page++, offset += SEARCH_PAGE_SIZE) {
+    const res = await fetch(`${MP_API}/preapproval/search?${query}&limit=${SEARCH_PAGE_SIZE}&offset=${offset}`, {
+      headers: mpHeaders(),
+    });
+    if (!res.ok) {
+      console.warn("[Suscripción MP] Búsqueda de suscripciones respondió", res.status, query.split("&")[0]);
+      break;
+    }
+    const data = await res.json().catch(() => ({}));
+    const results: any[] = Array.isArray(data?.results) ? data.results : [];
+    out.push(...results);
+    if (results.length < SEARCH_PAGE_SIZE) break;
+  }
+  return out;
+}
+
 /** Cuenta de HABA que ya tiene guardada esta suscripción (vinculada por el webhook, al actualizar o por Gio). */
 export async function findUserIdBySavedPreapproval(preapprovalId: string): Promise<string | null> {
   const id = String(preapprovalId || "").trim();
@@ -377,21 +472,8 @@ export async function findAndSaveSubscriptionByReference(
 
     const seen = new Map<string, any>();
     for (const q of queries) {
-      // Páginas de 20 (tamaño comprobado con la API) hasta agotar los resultados
-      for (let offset = 0, page = 0; page < 15; page++, offset += SEARCH_PAGE_SIZE) {
-        const res = await fetch(`${MP_API}/preapproval/search?${q}&limit=${SEARCH_PAGE_SIZE}&offset=${offset}`, {
-          headers: mpHeaders(),
-        });
-        if (!res.ok) {
-          console.warn("[Suscripción MP] Búsqueda de suscripciones respondió", res.status, q.split("&")[0]);
-          break;
-        }
-        const data = await res.json().catch(() => ({}));
-        const results: any[] = Array.isArray(data?.results) ? data.results : [];
-        for (const p of results) {
-          if (p?.id && !seen.has(String(p.id))) seen.set(String(p.id), p);
-        }
-        if (results.length < SEARCH_PAGE_SIZE) break;
+      for (const p of await searchPreapprovals(q)) {
+        if (p?.id && !seen.has(String(p.id))) seen.set(String(p.id), p);
       }
     }
     const byDateDesc = (a: any, b: any) => String(b?.date_created || "").localeCompare(String(a?.date_created || ""));

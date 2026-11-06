@@ -408,9 +408,15 @@ export default function AdminPage() {
       }
       const vinculadas: { email: string; estado: string }[] = data.vinculadas || [];
       const sin: string[] = data.sinSuscripcion || [];
+      const sinCuenta: { nombre: string; emailPago: string; monto: number | null; alta: string }[] = data.sinCuenta || [];
       alert(
-        `Cuentas revisadas: ${data.revisadas}\nVinculadas: ${vinculadas.length}\nSin suscripción encontrada: ${sin.length}` +
-          (sin.length ? `\n\nSin suscripción:\n${sin.join("\n")}` : "")
+        `Cuentas revisadas: ${data.revisadas}\nVinculadas: ${vinculadas.length}\nCuentas con pagos sin suscripción: ${sin.length}\nSuscripciones activas sin cuenta: ${sinCuenta.length}` +
+          (sinCuenta.length
+            ? `\n\nSuscripciones sin cuenta (cuando les cobre el 8, asignalas con "Resolver Pago Huérfano"):\n${sinCuenta
+                .map((x) => `- ${x.nombre}${x.emailPago ? ` (${x.emailPago})` : ""} · $${x.monto ?? "?"} · alta ${x.alta}`)
+                .join("\n")}`
+            : "") +
+          (sin.length ? `\n\nCuentas con pagos sin suscripción:\n${sin.join("\n")}` : "")
       );
       await loadUsers();
     } catch (err: any) {
