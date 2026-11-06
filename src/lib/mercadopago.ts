@@ -532,8 +532,15 @@ export async function syncUserPaymentWithMercadoPago(options: {
               error: `El pago #${payData.id} pertenece a la suscripción de otra cuenta de HABA.`,
             };
           }
-          // Un pago sin referencia a esta cuenta solo lo puede asignar un administrador
-          if (!trusted && ref !== userId && subscriptionRef !== userId) {
+          // Un pago sin referencia a esta cuenta solo lo puede asignar un administrador, salvo que
+          // sea de una suscripción con la referencia vieja pagada con el email de la propia cuenta
+          const accountEmail = String(authRes?.user?.email || "").trim().toLowerCase();
+          const paidWithAccountEmail =
+            Boolean(accountEmail) &&
+            String(payData.payer?.email || payData.additional_info?.payer?.email || "").trim().toLowerCase() === accountEmail;
+          const legacyRef = (r: string) => Boolean(r) && !isUserUuid(r) && /haba/i.test(r);
+          const ownLegacyCharge = paidWithAccountEmail && (legacyRef(ref) || legacyRef(subscriptionRef));
+          if (!trusted && ref !== userId && subscriptionRef !== userId && !ownLegacyCharge) {
             return {
               synced: false,
               error: `El pago #${payData.id} no está vinculado a tu cuenta. Escribinos y lo revisamos para acreditarlo.`,

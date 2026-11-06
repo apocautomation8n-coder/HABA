@@ -271,11 +271,12 @@ export async function findAndSaveSubscriptionByReference(
   try {
     const email = String(userEmail || "").trim().toLowerCase();
     const planId = await resolvePlanId();
-    // Mercado Pago no documenta el filtro por external_reference en /preapproval/search: se
-    // consultan las suscripciones del plan (y las del email de la cuenta) y se filtra acá.
-    const queries = [`external_reference=${encodeURIComponent(userId)}&sort=date_created&criteria=desc&limit=10`];
-    if (planId) queries.push(`preapproval_plan_id=${encodeURIComponent(planId)}&sort=date_created&criteria=desc&limit=100`);
-    if (email) queries.push(`payer_email=${encodeURIComponent(email)}&sort=date_created&criteria=desc&limit=10`);
+    // Mercado Pago no documenta el filtro por external_reference en /preapproval/search y rechaza
+    // cualquier parámetro de orden ("Invalid sorting value format"): se consultan las suscripciones
+    // del plan (y las del email de la cuenta) sin orden y se filtra y ordena acá.
+    const queries = [`external_reference=${encodeURIComponent(userId)}&limit=10`];
+    if (planId) queries.push(`preapproval_plan_id=${encodeURIComponent(planId)}&limit=100`);
+    if (email) queries.push(`payer_email=${encodeURIComponent(email)}&limit=10`);
 
     const seen = new Map<string, any>();
     for (const q of queries) {
@@ -299,12 +300,17 @@ export async function findAndSaveSubscriptionByReference(
       .sort(byDateDesc);
     let match = pick(byRef);
 
-    // 2) Sin referencia, activa, del plan y pagada con el email de la cuenta, y no vinculada a otra cuenta
+    // 2) Sin id de cuenta (vacío o la referencia vieja "Haba suscripción mensual"), activa, del plan,
+    //    pagada con el email de la cuenta y no vinculada a otra cuenta
+    const withoutAccountId = (p: any) => {
+      const ref = String(p?.external_reference || "").trim();
+      return !ref || (!isHabaUserId(ref) && /haba/i.test(ref));
+    };
     if (!match && email) {
       const byEmail = [...seen.values()]
         .filter(
           (p) =>
-            !String(p?.external_reference || "").trim() &&
+            withoutAccountId(p) &&
             p?.status === "authorized" &&
             String(p?.payer_email || "").trim().toLowerCase() === email &&
             (!planId || String(p?.preapproval_plan_id || "") === planId)
