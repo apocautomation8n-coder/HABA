@@ -83,8 +83,95 @@ export async function getUserSubscription(user: any): Promise<any | null> {
   const preapprovalId = String(user?.app_metadata?.mp_preapproval_id || "").trim();
   if (!preapprovalId) return null;
   const pre = await getPreapproval(preapprovalId);
-  if (!pre || String(pre.external_reference || "").trim() !== user.id) return null;
+  if (!pre) return null;
+  // Las del link del plan no traen el id de la cuenta: valen porque el id lo guardó el servidor.
+  // Se descarta solo si pertenece explícitamente a otra cuenta.
+  const ref = String(pre.external_reference || "").trim();
+  if (ref !== user.id && isHabaUserId(ref)) return null;
   return pre;
+}
+
+/** Ids de los pagos ya acreditados a la cuenta, del más reciente al más viejo. */
+function appliedPaymentIdsOf(authUser: any, profile: any): string[] {
+  const ids: string[] = [];
+  const push = (v: unknown) => {
+    const s = String(v || "").trim();
+    if (/^\d+$/.test(s) && !ids.includes(s)) ids.push(s);
+  };
+  push(authUser?.app_metadata?.last_payment_id);
+  push(profile?.last_payment_id);
+  const list = Array.isArray(authUser?.app_metadata?.applied_payment_ids) ? authUser.app_metadata.applied_payment_ids : [];
+  for (const id of [...list].reverse()) push(id);
+  return ids;
+}
+
+/**
+ * Vincula la suscripción de la cuenta a partir de un pago ya acreditado: el pago de Mercado Pago
+ * dice a qué suscripción pertenece (transaction_data.subscription_id). Es la forma segura de
+ * vincular las suscripciones del link del plan, que no traen el id de la cuenta.
+ */
+export async function linkSubscriptionFromAppliedPayments(userId: string): Promise<any | null> {
+  const admin = getAdminClient();
+  const { data: authRes } = await admin.auth.admin.getUserById(userId);
+  const authUser = authRes?.user;
+  if (!authUser) return null;
+  const { data: profile } = await admin.from("profiles").select("id, last_payment_id").eq("id", userId).maybeSingle();
+  const paymentIds = appliedPaymentIdsOf(authUser, profile).slice(0, 3);
+  for (const paymentId of paymentIds) {
+    try {
+      const res = await fetch(`${MP_API}/v1/payments/${encodeURIComponent(paymentId)}`, { headers: mpHeaders() });
+      if (!res.ok) continue;
+      const payment = await res.json();
+      const subId = String(
+        payment?.point_of_interaction?.transaction_data?.subscription_id || payment?.metadata?.preapproval_id || ""
+      ).trim();
+      if (!subId) continue;
+      const pre = await getPreapproval(subId);
+      if (!pre) continue;
+      const ref = String(pre.external_reference || "").trim();
+      if (ref !== userId && isHabaUserId(ref)) continue;
+      const owner = await findUserIdBySavedPreapproval(subId);
+      if (owner && owner !== userId) continue;
+      await saveSubscriptionState(userId, {
+        preapprovalId: String(pre.id),
+        status: pre.status,
+        payerEmail: pre.payer_email || payment?.payer?.email || null,
+        nextPaymentDate: pre.next_payment_date || null,
+      });
+      return pre;
+    } catch (err) {
+      console.warn("[Suscripción MP] No se pudo vincular por el pago", paymentId, err);
+    }
+  }
+  return null;
+}
+
+export interface LinkAllResult {
+  revisadas: number;
+  vinculadas: { email: string; suscripcion: string; estado: string }[];
+  sinSuscripcion: string[];
+}
+
+/**
+ * Pasada única: vincula a cada cuenta con pagos acreditados su suscripción en Mercado Pago (las
+ * del link del plan no traen el id de la cuenta). Así los cobros mensuales se acreditan solos.
+ */
+export async function linkAllSubscriptions(): Promise<LinkAllResult> {
+  const admin = getAdminClient();
+  const { data } = await admin.auth.admin.listUsers({ perPage: 1000 });
+  const users: any[] = data?.users || [];
+  const result: LinkAllResult = { revisadas: 0, vinculadas: [], sinSuscripcion: [] };
+  for (const u of users) {
+    const meta = u.app_metadata || {};
+    const hasPayments = Boolean(meta.last_payment_id) || (Array.isArray(meta.applied_payment_ids) && meta.applied_payment_ids.length > 0);
+    if (!hasPayments) continue;
+    if (meta.mp_preapproval_id && meta.mp_status === "authorized") continue;
+    result.revisadas++;
+    const pre = await linkSubscriptionFromAppliedPayments(u.id);
+    if (pre) result.vinculadas.push({ email: u.email || u.id, suscripcion: String(pre.id), estado: String(pre.status || "") });
+    else result.sinSuscripcion.push(u.email || u.id);
+  }
+  return result;
 }
 
 /** Guarda el estado de la suscripción en app_metadata (no editable por la usuaria) y en profiles. */
@@ -317,7 +404,13 @@ export async function findAndSaveSubscriptionByReference(
       .sort(byDateDesc);
     let match = pick(byRef);
 
-    // 2) Sin id de cuenta (vacío o la referencia vieja "Haba suscripción mensual"), activa, del plan,
+    // 2) Por el pago ya acreditado a la cuenta (dice a qué suscripción pertenece)
+    if (!match) {
+      const linked = await linkSubscriptionFromAppliedPayments(userId);
+      if (linked) return linked;
+    }
+
+    // 3) Sin id de cuenta (vacío o la referencia vieja "Haba suscripción mensual"), activa, del plan,
     //    pagada con el email de la cuenta y no vinculada a otra cuenta
     const withoutAccountId = (p: any) => {
       const ref = String(p?.external_reference || "").trim();

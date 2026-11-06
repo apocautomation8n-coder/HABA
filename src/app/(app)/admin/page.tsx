@@ -389,6 +389,36 @@ export default function AdminPage() {
   };
 
   const [syncingUserId, setSyncingUserId] = useState<string | null>(null);
+  const [linkingSubscriptions, setLinkingSubscriptions] = useState(false);
+
+  const handleLinkSubscriptions = async () => {
+    if (
+      !window.confirm(
+        "Vincular cada cuenta con pagos a su suscripción de Mercado Pago. No cambia fechas ni planes; solo une la cuenta con su suscripción para que los cobros mensuales se acrediten solos. ¿Continuar?"
+      )
+    )
+      return;
+    try {
+      setLinkingSubscriptions(true);
+      const res = await fetch("/api/admin/link-subscriptions", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        alert("No se pudieron vincular las suscripciones: " + (data.error || "error desconocido"));
+        return;
+      }
+      const vinculadas: { email: string; estado: string }[] = data.vinculadas || [];
+      const sin: string[] = data.sinSuscripcion || [];
+      alert(
+        `Cuentas revisadas: ${data.revisadas}\nVinculadas: ${vinculadas.length}\nSin suscripción encontrada: ${sin.length}` +
+          (sin.length ? `\n\nSin suscripción:\n${sin.join("\n")}` : "")
+      );
+      await loadUsers();
+    } catch (err: any) {
+      alert("Error al vincular suscripciones: " + err.message);
+    } finally {
+      setLinkingSubscriptions(false);
+    }
+  };
 
   const handleExportCSV = () => {
     if (filteredUsers.length === 0) return;
@@ -795,6 +825,18 @@ export default function AdminPage() {
           >
             <Receipt className="w-4 h-4 text-[#3BB578]" />
             <span>Resolver Pago Huérfano</span>
+          </button>
+
+          {/* Botón Vincular suscripciones (una pasada: cada cuenta con pagos queda unida a su suscripción) */}
+          <button
+            type="button"
+            onClick={handleLinkSubscriptions}
+            disabled={linkingSubscriptions}
+            title="Vincular cada cuenta con pagos a su suscripción de Mercado Pago, para que los cobros mensuales se acrediten solos"
+            className="py-2.5 px-3.5 bg-white hover:bg-neutral-50 text-[#2B2B2B] border border-[#EAF0E8] rounded-2xl shadow-xs transition flex items-center gap-1.5 text-xs font-bold active:scale-[0.98] disabled:opacity-50 cursor-pointer"
+          >
+            <RefreshCw className={`w-4 h-4 text-[#3BB578] ${linkingSubscriptions ? "animate-spin" : ""}`} />
+            <span>{linkingSubscriptions ? "Vinculando..." : "Vincular suscripciones"}</span>
           </button>
 
           {/* Botón Exportar CSV */}

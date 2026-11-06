@@ -598,9 +598,15 @@ export async function syncUserPaymentWithMercadoPago(options: {
           if (p.status !== "approved") continue;
           const pEmail = (p.payer?.email || p.additional_info?.payer?.email || "").toLowerCase();
           if (pEmail === candidateClean) {
-            if (p.external_reference && p.external_reference !== userId) continue;
-            // Sin referencia a la cuenta: exigir el precio completo del plan
-            if (p.external_reference !== userId && !paymentCoversPlan(p)) continue;
+            const pRef = String(p.external_reference || "").trim();
+            const pRefIsUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(pRef);
+            if (pRef && pRef !== userId && (pRefIsUuid || !/haba/i.test(pRef))) continue;
+            // Cobro de una suscripción del plan (proporcional): vale con el email de la cuenta
+            const isSubscriptionCharge = Boolean(
+              p.point_of_interaction?.transaction_data?.subscription_id || p.metadata?.preapproval_id
+            );
+            // Sin referencia a la cuenta ni suscripción: exigir el precio completo del plan
+            if (pRef !== userId && !isSubscriptionCharge && !paymentCoversPlan(p)) continue;
             approvedPayment = p;
             break;
           }
