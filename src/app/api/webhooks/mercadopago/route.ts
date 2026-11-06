@@ -154,7 +154,7 @@ export async function POST(request: Request) {
       const applyResult = await applyApprovedPaymentToUser({
         payment,
         userId,
-        minEndDate: preapproval?.next_payment_date || null,
+        subscriptionNextPaymentDate: preapproval?.next_payment_date || null,
       });
       // Si el mismo pago ya se acreditó por otra notificación, igual se alinea el vencimiento
       // con la fecha del próximo cobro (solo extiende).
@@ -260,7 +260,7 @@ export async function POST(request: Request) {
         const applyResult = await applyApprovedPaymentToUser({
           payment,
           userId,
-          minEndDate: subscriptionNextPayment,
+          subscriptionNextPaymentDate: subscriptionNextPayment,
         });
 
         if (!applyResult.success) {

@@ -12,7 +12,7 @@
  */
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { createClient as createServerClient } from "@/lib/supabase/server";
-import { getExpectedPlanAmount } from "@/lib/mercadopago";
+import { addDaysToDate, getExpectedPlanAmount, SUBSCRIPTION_GRACE_DAYS } from "@/lib/mercadopago";
 
 const MP_API = "https://api.mercadopago.com";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -307,7 +307,7 @@ export async function syncUserSubscription(userId: string): Promise<{ status: st
     nextPaymentDate: pre.next_payment_date || null,
   });
   if (pre.status === "authorized") {
-    await ensurePlanEndDateAtLeast(userId, pre.next_payment_date || null);
+    await alignPlanEndDateToNextPayment(userId, pre.next_payment_date || null);
   }
   return { status: pre.status, activated: pre.status === "authorized" && previous !== "authorized" };
 }
@@ -350,6 +350,29 @@ export async function ensurePlanEndDateAtLeast(userId: string, date: string | nu
   if (!authUser) return;
   const current = String(authUser.app_metadata?.plan_end_date || "");
   if (current && current >= target) return;
+  await admin.auth.admin.updateUserById(userId, {
+    app_metadata: { ...authUser.app_metadata, plan_end_date: target, plan_type: "mensual" },
+    user_metadata: { ...(authUser.user_metadata || {}), plan_end_date: target, plan_type: "mensual" },
+  });
+  await admin
+    .from("profiles")
+    .update({ plan_end_date: target, plan_type: "mensual", updated_at: new Date().toISOString() })
+    .eq("id", userId);
+}
+
+/**
+ * Con una suscripción activa, el vencimiento de la cuenta es el próximo cobro + días de gracia:
+ * ni antes (no pierde días pagados) ni después (un vencimiento viejo guardado no regala meses).
+ */
+export async function alignPlanEndDateToNextPayment(userId: string, nextPaymentDate: string | null | undefined) {
+  const next = nextPaymentDate ? String(nextPaymentDate).split("T")[0] : "";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(next)) return;
+  const target = addDaysToDate(next, SUBSCRIPTION_GRACE_DAYS);
+  const admin = getAdminClient();
+  const { data: authRes } = await admin.auth.admin.getUserById(userId);
+  const authUser = authRes?.user;
+  if (!authUser) return;
+  if (String(authUser.app_metadata?.plan_end_date || "") === target) return;
   await admin.auth.admin.updateUserById(userId, {
     app_metadata: { ...authUser.app_metadata, plan_end_date: target, plan_type: "mensual" },
     user_metadata: { ...(authUser.user_metadata || {}), plan_end_date: target, plan_type: "mensual" },

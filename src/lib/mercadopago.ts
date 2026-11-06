@@ -150,6 +150,17 @@ export interface ApplyPaymentResult {
   error?: string;
 }
 
+/** Días de gracia después del próximo cobro de una suscripción, por si Mercado Pago demora el cobro. */
+export const SUBSCRIPTION_GRACE_DAYS = 3;
+
+/** Suma días a una fecha YYYY-MM-DD sin mirar la fecha de hoy (a diferencia de calculateNewPlanEndDate). */
+export function addDaysToDate(dateStr: string, days: number): string {
+  const [y, m, d] = dateStr.split("T")[0].split("-").map((n) => parseInt(n, 10));
+  const base = new Date(Date.UTC(y, m - 1, d));
+  base.setUTCDate(base.getUTCDate() + Math.round(days));
+  return base.toISOString().split("T")[0];
+}
+
 /** Cuántos IDs de pagos acreditados se guardan en app_metadata como respaldo del registro. */
 const APPLIED_PAYMENT_IDS_LIMIT = 100;
 
@@ -197,8 +208,15 @@ export async function applyApprovedPaymentToUser(options: {
    * la cuenta sigue vigente hasta ese día, cuando Mercado Pago vuelve a cobrar y se renueva.
    */
   minEndDate?: string | null;
+  /**
+   * Fecha del próximo cobro de una suscripción activa. Cuando se conoce, el vencimiento queda
+   * exactamente en esa fecha (más los días de gracia): ni antes ni después. Evita que un
+   * vencimiento viejo guardado en la cuenta se sume a un pago nuevo y regale meses.
+   */
+  subscriptionNextPaymentDate?: string | null;
 }): Promise<ApplyPaymentResult> {
-  const { payment, userId, source = "webhook", minEndDate } = options;
+  const { payment, userId, source = "webhook", subscriptionNextPaymentDate } = options;
+  const minEndDate = options.minEndDate ?? subscriptionNextPaymentDate ?? null;
 
   if (!payment || payment.status !== "approved") {
     return {
@@ -295,6 +313,13 @@ export async function applyApprovedPaymentToUser(options: {
   const minEnd = minEndDate ? String(minEndDate).split("T")[0] : null;
   if (minEnd && /^\d{4}-\d{2}-\d{2}$/.test(minEnd) && minEnd > newEndDate) {
     newEndDate = minEnd;
+  }
+  // Suscripción activa: el vencimiento es el próximo cobro + días de gracia, nunca más allá
+  const nextCharge = subscriptionNextPaymentDate ? String(subscriptionNextPaymentDate).split("T")[0] : null;
+  if (nextCharge && /^\d{4}-\d{2}-\d{2}$/.test(nextCharge)) {
+    const cap = addDaysToDate(nextCharge, SUBSCRIPTION_GRACE_DAYS);
+    if (newEndDate > cap) newEndDate = cap;
+    if (newEndDate < cap) newEndDate = cap;
   }
   const payerEmail =
     payment.payer?.email ||
@@ -558,10 +583,36 @@ export async function syncUserPaymentWithMercadoPago(options: {
   }
 
   // Solo si el pago aprobado es nuevo (id !== last_payment_id), aplicar los 30 días
+  // Si el pago pertenece a una suscripción activa, el vencimiento se alinea con su próximo cobro
+  let syncNextPayment: string | null = null;
+  const syncPreapprovalId = String(
+    approvedPayment.metadata?.preapproval_id ||
+      approvedPayment.point_of_interaction?.transaction_data?.subscription_id ||
+      authRes?.user?.app_metadata?.mp_preapproval_id ||
+      ""
+  ).trim();
+  if (syncPreapprovalId) {
+    try {
+      const preRes = await fetch(`https://api.mercadopago.com/preapproval/${encodeURIComponent(syncPreapprovalId)}`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (preRes.ok) {
+        const pre = await preRes.json();
+        const ref = String(pre?.external_reference || "").trim();
+        if (pre?.status === "authorized" && (ref === userId || /haba/i.test(ref))) {
+          syncNextPayment = pre.next_payment_date || null;
+        }
+      }
+    } catch {
+      // sin dato del próximo cobro: se acreditan los días del pago
+    }
+  }
+
   const applyResult = await applyApprovedPaymentToUser({
     payment: approvedPayment,
     userId,
     source: "sync",
+    subscriptionNextPaymentDate: syncNextPayment,
   });
 
   if (!applyResult.success) {
