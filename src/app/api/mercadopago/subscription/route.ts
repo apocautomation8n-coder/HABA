@@ -32,7 +32,7 @@ export async function GET(request: Request) {
     let pre = await getUserSubscription(user);
     if (!pre || pre.status !== "authorized") {
       // Puede haberse suscripto por el checkout del plan: buscar por el id de la cuenta
-      const found = await findAndSaveSubscriptionByReference(user.id);
+      const found = await findAndSaveSubscriptionByReference(user.id, user.email);
       if (found) pre = found;
     }
     if (!pre) return NextResponse.json({ subscribed: false, publicKey });

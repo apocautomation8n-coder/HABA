@@ -632,6 +632,7 @@ export async function syncUserPaymentWithMercadoPago(options: {
   // Solo si el pago aprobado es nuevo (id !== last_payment_id), aplicar los 30 días
   // Si el pago pertenece a una suscripción activa, el vencimiento se alinea con su próximo cobro
   let syncNextPayment: string | null = null;
+  let linkedPreapproval: any = null;
   const syncPreapprovalId = String(
     approvedPayment.metadata?.preapproval_id ||
       approvedPayment.point_of_interaction?.transaction_data?.subscription_id ||
@@ -646,8 +647,9 @@ export async function syncUserPaymentWithMercadoPago(options: {
       if (preRes.ok) {
         const pre = await preRes.json();
         const ref = String(pre?.external_reference || "").trim();
-        if (pre?.status === "authorized" && (ref === userId || /haba/i.test(ref))) {
+        if (pre?.status === "authorized" && (ref === userId || /haba/i.test(ref) || (trusted && !ref))) {
           syncNextPayment = pre.next_payment_date || null;
+          linkedPreapproval = pre;
         }
       }
     } catch {
@@ -668,6 +670,29 @@ export async function syncUserPaymentWithMercadoPago(options: {
       alreadyApplied: applyResult.alreadyApplied,
       error: applyResult.error || "No se pudo aplicar el pago a la cuenta.",
     };
+  }
+
+  // Dejar la suscripción registrada en la cuenta (estado, id y próximo cobro)
+  if (linkedPreapproval?.id) {
+    try {
+      const { data: freshRes } = await supabaseAdmin.auth.admin.getUserById(userId);
+      const current = freshRes?.user?.app_metadata || {};
+      await supabaseAdmin.auth.admin.updateUserById(userId, {
+        app_metadata: {
+          ...(current as Record<string, any>),
+          mp_status: "authorized",
+          mp_preapproval_id: String(linkedPreapproval.id),
+          ...(linkedPreapproval.payer_email ? { mp_payer_email: String(linkedPreapproval.payer_email) } : {}),
+          ...(syncNextPayment ? { mp_next_payment_date: syncNextPayment } : {}),
+        },
+      });
+      await supabaseAdmin
+        .from("profiles")
+        .update({ mp_status: "authorized", mp_preapproval_id: String(linkedPreapproval.id), updated_at: new Date().toISOString() })
+        .eq("id", userId);
+    } catch (err) {
+      console.warn("[Mercado Pago Sync] No se pudo registrar la suscripción en la cuenta:", err);
+    }
   }
 
   return {

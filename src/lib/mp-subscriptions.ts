@@ -264,26 +264,67 @@ export async function getPlanCheckoutLink(options: {
  * Busca en Mercado Pago la suscripción de esta cuenta por external_reference (la que crea el
  * checkout del plan) y la guarda. Se usa al volver del checkout y en la sincronización manual.
  */
-export async function findAndSaveSubscriptionByReference(userId: string): Promise<any | null> {
+export async function findAndSaveSubscriptionByReference(
+  userId: string,
+  userEmail?: string | null
+): Promise<any | null> {
   try {
-    // Orden: "sort=campo&criteria=desc" (el formato "campo:desc" lo rechaza Mercado Pago)
-    const res = await fetch(
-      `${MP_API}/preapproval/search?external_reference=${encodeURIComponent(userId)}&sort=date_created&criteria=desc&limit=10`,
-      { headers: mpHeaders() }
-    );
-    if (!res.ok) {
-      console.warn("[Suscripción MP] Búsqueda por referencia respondió", res.status, await res.text().catch(() => ""));
-      return null;
+    const email = String(userEmail || "").trim().toLowerCase();
+    const planId = await resolvePlanId();
+    // Mercado Pago no documenta el filtro por external_reference en /preapproval/search: se
+    // consultan las suscripciones del plan (y las del email de la cuenta) y se filtra acá.
+    const queries = [`external_reference=${encodeURIComponent(userId)}&sort=date_created&criteria=desc&limit=10`];
+    if (planId) queries.push(`preapproval_plan_id=${encodeURIComponent(planId)}&sort=date_created&criteria=desc&limit=100`);
+    if (email) queries.push(`payer_email=${encodeURIComponent(email)}&sort=date_created&criteria=desc&limit=10`);
+
+    const seen = new Map<string, any>();
+    for (const q of queries) {
+      const res = await fetch(`${MP_API}/preapproval/search?${q}`, { headers: mpHeaders() });
+      if (!res.ok) {
+        console.warn("[Suscripción MP] Búsqueda de suscripciones respondió", res.status, q.split("&")[0]);
+        continue;
+      }
+      const data = await res.json().catch(() => ({}));
+      for (const p of Array.isArray(data?.results) ? data.results : []) {
+        if (p?.id && !seen.has(String(p.id))) seen.set(String(p.id), p);
+      }
     }
-    const data = await res.json();
-    const results: any[] = (Array.isArray(data.results) ? data.results : [])
-      .filter((p: any) => String(p?.external_reference || "").trim() === userId)
-      .sort((a: any, b: any) => String(b?.date_created || "").localeCompare(String(a?.date_created || "")));
-    const match =
-      results.find((p) => p.status === "authorized") ||
-      results.find((p) => p.status === "pending") ||
-      results[0];
-    if (!match || String(match.external_reference || "").trim() !== userId) return null;
+    const byDateDesc = (a: any, b: any) => String(b?.date_created || "").localeCompare(String(a?.date_created || ""));
+    const pick = (list: any[]) =>
+      list.find((p) => p.status === "authorized") || list.find((p) => p.status === "pending") || list[0];
+
+    // 1) Con el id de la cuenta como referencia (checkout del plan y formulario de tarjeta)
+    const byRef = [...seen.values()]
+      .filter((p) => String(p?.external_reference || "").trim() === userId)
+      .sort(byDateDesc);
+    let match = pick(byRef);
+
+    // 2) Sin referencia, activa, del plan y pagada con el email de la cuenta, y no vinculada a otra cuenta
+    if (!match && email) {
+      const byEmail = [...seen.values()]
+        .filter(
+          (p) =>
+            !String(p?.external_reference || "").trim() &&
+            p?.status === "authorized" &&
+            String(p?.payer_email || "").trim().toLowerCase() === email &&
+            (!planId || String(p?.preapproval_plan_id || "") === planId)
+        )
+        .sort(byDateDesc);
+      for (const candidate of byEmail) {
+        const { data: other } = await getAdminClient()
+          .from("profiles")
+          .select("id")
+          .eq("mp_preapproval_id", String(candidate.id))
+          .neq("id", userId)
+          .maybeSingle();
+        if (!other?.id) {
+          match = candidate;
+          break;
+        }
+      }
+    }
+    if (!match) return null;
+
     await saveSubscriptionState(userId, {
       preapprovalId: String(match.id),
       status: match.status,
@@ -292,7 +333,7 @@ export async function findAndSaveSubscriptionByReference(userId: string): Promis
     });
     return match;
   } catch (err) {
-    console.warn("[Suscripción MP] No se pudo buscar la suscripción por referencia:", err);
+    console.warn("[Suscripción MP] No se pudo buscar la suscripción de la cuenta:", err);
     return null;
   }
 }
@@ -311,7 +352,7 @@ export async function syncUserSubscription(userId: string): Promise<{ status: st
   if (!user) return { status: null, activated: false };
   let pre = await getUserSubscription(user);
   if (!pre || pre.status !== "authorized") {
-    const found = await findAndSaveSubscriptionByReference(userId);
+    const found = await findAndSaveSubscriptionByReference(userId, user.email);
     if (found) pre = found;
   }
   if (!pre) return { status: null, activated: false };

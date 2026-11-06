@@ -40,12 +40,15 @@ async function handleSyncPayment(request: Request) {
     }
 
     const requestedUserId = url.searchParams.get("userId") || body.userId;
+    const rawEmail = String(body.email || url.searchParams.get("email") || "").trim();
+    // Un número en el campo del correo es el número de operación del comprobante
+    const emailIsOperation = /^\d{6,}$/.test(rawEmail);
     const paymentId =
       body.payment_id ||
       url.searchParams.get("payment_id") ||
       body.collection_id ||
       url.searchParams.get("collection_id") ||
-      undefined;
+      (emailIsOperation ? rawEmail : undefined);
 
     const trusted = Boolean(isServiceRole) || checkIsAdmin(user);
     let targetUserId = user?.id || requestedUserId;

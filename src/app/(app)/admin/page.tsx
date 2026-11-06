@@ -406,15 +406,17 @@ export default function AdminPage() {
   const syncUserMercadoPago = async (targetUser: UserProfile, customEmail?: string) => {
     try {
       setSyncingUserId(targetUser.id);
-      const emailToUse = customEmail || targetUser.email || "";
-      const res = await fetch(
-        `/api/mercadopago/sync-payment?userId=${targetUser.id}&email=${encodeURIComponent(emailToUse)}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userId: targetUser.id, email: emailToUse }),
-        }
-      );
+      // El cuadro acepta un correo de Mercado Pago o el número de operación del comprobante
+      const typed = (customEmail || "").trim();
+      const paymentId = /^\d{6,}$/.test(typed) ? typed : "";
+      const emailToUse = paymentId ? targetUser.email || "" : typed || targetUser.email || "";
+      const params = new URLSearchParams({ userId: targetUser.id, email: emailToUse });
+      if (paymentId) params.set("payment_id", paymentId);
+      const res = await fetch(`/api/mercadopago/sync-payment?${params.toString()}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: targetUser.id, email: emailToUse, ...(paymentId ? { payment_id: paymentId } : {}) }),
+      });
       const data = await res.json();
       if (data.synced) {
         alert(
