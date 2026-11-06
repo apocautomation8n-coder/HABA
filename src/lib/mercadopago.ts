@@ -511,6 +511,7 @@ export async function syncUserPaymentWithMercadoPago(options: {
           }
           // Cobro de una suscripción: la referencia de la cuenta está en la suscripción, no en el pago
           let subscriptionRef = "";
+          let unownedPlanCharge = false;
           if (ref !== userId) {
             const subId = String(
               payData.metadata?.preapproval_id || payData.point_of_interaction?.transaction_data?.subscription_id || ""
@@ -520,7 +521,20 @@ export async function syncUserPaymentWithMercadoPago(options: {
                 const subRes = await fetch(`https://api.mercadopago.com/preapproval/${encodeURIComponent(subId)}`, {
                   headers: { Authorization: `Bearer ${accessToken}` },
                 });
-                if (subRes.ok) subscriptionRef = String((await subRes.json())?.external_reference || "").trim();
+                if (subRes.ok) {
+                  const sub = await subRes.json();
+                  subscriptionRef = String(sub?.external_reference || "").trim();
+                  // Suscripción del plan (de HABA) sin id de cuenta y sin dueño en HABA: el número del
+                  // comprobante solo lo tiene quien pagó, así que la propia cuenta puede acreditarlo
+                  if (sub?.status === "authorized" && (!subscriptionRef || !isUserUuid(subscriptionRef))) {
+                    const { data: owner } = await supabaseAdmin
+                      .from("profiles")
+                      .select("id")
+                      .eq("mp_preapproval_id", subId)
+                      .maybeSingle();
+                    unownedPlanCharge = !owner?.id || String(owner.id) === userId;
+                  }
+                }
               } catch {
                 // sin dato de la suscripción
               }
@@ -540,7 +554,7 @@ export async function syncUserPaymentWithMercadoPago(options: {
             String(payData.payer?.email || payData.additional_info?.payer?.email || "").trim().toLowerCase() === accountEmail;
           const legacyRef = (r: string) => Boolean(r) && !isUserUuid(r) && /haba/i.test(r);
           const ownLegacyCharge = paidWithAccountEmail && (legacyRef(ref) || legacyRef(subscriptionRef));
-          if (!trusted && ref !== userId && subscriptionRef !== userId && !ownLegacyCharge) {
+          if (!trusted && ref !== userId && subscriptionRef !== userId && !ownLegacyCharge && !unownedPlanCharge) {
             return {
               synced: false,
               error: `El pago #${payData.id} no está vinculado a tu cuenta. Escribinos y lo revisamos para acreditarlo.`,
@@ -660,7 +674,7 @@ export async function syncUserPaymentWithMercadoPago(options: {
       if (preRes.ok) {
         const pre = await preRes.json();
         const ref = String(pre?.external_reference || "").trim();
-        if (pre?.status === "authorized" && (ref === userId || /haba/i.test(ref) || (trusted && !ref))) {
+        if (pre?.status === "authorized" && (ref === userId || !ref || /haba/i.test(ref))) {
           syncNextPayment = pre.next_payment_date || null;
           linkedPreapproval = pre;
         }

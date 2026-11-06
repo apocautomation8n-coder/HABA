@@ -306,7 +306,13 @@ export async function linkAllSubscriptions(): Promise<LinkAllResult> {
 /** Guarda el estado de la suscripción en app_metadata (no editable por la usuaria) y en profiles. */
 export async function saveSubscriptionState(
   userId: string,
-  state: { preapprovalId?: string | null; status: string; payerEmail?: string | null; nextPaymentDate?: string | null }
+  state: {
+    preapprovalId?: string | null;
+    status: string;
+    payerEmail?: string | null;
+    nextPaymentDate?: string | null;
+    checkoutStartedAt?: string | null;
+  }
 ) {
   const admin = getAdminClient();
   const { data: authRes } = await admin.auth.admin.getUserById(userId);
@@ -319,6 +325,7 @@ export async function saveSubscriptionState(
         ...(state.preapprovalId ? { mp_preapproval_id: state.preapprovalId } : {}),
         ...(state.payerEmail ? { mp_payer_email: state.payerEmail } : {}),
         ...(state.nextPaymentDate ? { mp_next_payment_date: state.nextPaymentDate } : {}),
+        ...(state.checkoutStartedAt ? { mp_checkout_started_at: state.checkoutStartedAt } : {}),
       },
       user_metadata: {
         ...(authUser.user_metadata || {}),
@@ -471,7 +478,7 @@ export async function getPlanCheckoutLink(options: {
   const initPoint = `https://www.mercadopago.com.ar/subscriptions/checkout?${params.toString()}`;
 
   // Dejar registrado que esta cuenta inició la suscripción (sirve para vincular al volver)
-  await saveSubscriptionState(user.id, { status: "pending_checkout" });
+  await saveSubscriptionState(user.id, { status: "pending_checkout", checkoutStartedAt: new Date().toISOString() });
 
   return { success: true, status: "pending", initPoint };
 }
@@ -545,12 +552,39 @@ export async function findAndSaveSubscriptionByReference(
       if (linked) return linked;
     }
 
-    // 3) Sin id de cuenta (vacío o la referencia vieja "Haba suscripción mensual"), activa, del plan,
-    //    pagada con el email de la cuenta y no vinculada a otra cuenta
     const withoutAccountId = (p: any) => {
       const ref = String(p?.external_reference || "").trim();
       return !ref || (!isHabaUserId(ref) && /haba/i.test(ref));
     };
+    const notOwnedByAnother = async (p: any) => {
+      const owner = await findUserIdBySavedPreapproval(String(p.id));
+      return !owner || owner === userId;
+    };
+
+    // 3) Al volver del checkout iniciado desde HABA: Mercado Pago a veces no guarda el id de la
+    //    cuenta (sobre todo al pagar desde su app). La suscripción del plan creada después de
+    //    empezar el checkout y sin dueño es la de esta cuenta, siempre que sea la única candidata.
+    if (!match) {
+      const { data: authRes } = await getAdminClient().auth.admin.getUserById(userId);
+      const startedAt = String(authRes?.user?.app_metadata?.mp_checkout_started_at || "");
+      if (startedAt) {
+        const since = new Date(new Date(startedAt).getTime() - 10 * 60 * 1000).toISOString();
+        const candidates = [...seen.values()].filter(
+          (p) =>
+            withoutAccountId(p) &&
+            p?.status === "authorized" &&
+            (!planId || String(p?.preapproval_plan_id || "") === planId) &&
+            String(p?.date_created || "") >= since
+        );
+        const free: any[] = [];
+        for (const c of candidates) if (await notOwnedByAnother(c)) free.push(c);
+        if (free.length === 1) match = free[0];
+        else if (free.length > 1) console.warn(`[Suscripción MP] ${free.length} suscripciones nuevas sin dueño; no se asigna sola.`);
+      }
+    }
+
+    // 4) Sin id de cuenta (vacío o la referencia vieja "Haba suscripción mensual"), activa, del plan,
+    //    pagada con el email de la cuenta y no vinculada a otra cuenta
     if (!match && email) {
       const byEmail = [...seen.values()]
         .filter(
