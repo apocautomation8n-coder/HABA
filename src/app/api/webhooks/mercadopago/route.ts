@@ -217,24 +217,30 @@ export async function POST(request: Request) {
         // se toma de ahí el id de la cuenta y la fecha del próximo cobro.
         let subscriptionNextPayment: string | null = null;
         let subscription: any = null;
-        if (!userId) {
-          const preapprovalId = String(
-            payment.metadata?.preapproval_id || payment.point_of_interaction?.transaction_data?.subscription_id || ""
-          ).trim();
-          if (preapprovalId) {
-            subscription = await getPreapproval(preapprovalId);
-            const subRef = String(subscription?.external_reference || "").trim();
-            if (isHabaUserId(subRef)) {
-              const { data: userRes } = await supabaseAdmin.auth.admin.getUserById(subRef);
-              if (userRes?.user) {
-                userId = userRes.user.id;
-                subscriptionNextPayment = subscription?.next_payment_date || null;
-              }
-            } else if (/haba/i.test(subRef)) {
-              // Suscripción del plan anterior: vincular por el email de quien pagó
-              userId = await findUserIdByPayerEmail(supabaseAdmin, subscription?.payer_email);
-              if (userId) subscriptionNextPayment = subscription?.next_payment_date || null;
+        const preapprovalId = String(
+          payment.metadata?.preapproval_id || payment.point_of_interaction?.transaction_data?.subscription_id || ""
+        ).trim();
+        if (preapprovalId) {
+          subscription = await getPreapproval(preapprovalId);
+          const subRef = String(subscription?.external_reference || "").trim();
+          if (userId) {
+            // El pago ya trae el id de la cuenta: la suscripción solo aporta la fecha del próximo
+            // cobro (el vencimiento queda ahí + gracia, sin sumar los días de prueba que tuviera)
+            if (!subRef || subRef === userId || /haba/i.test(subRef)) {
+              subscriptionNextPayment = subscription?.next_payment_date || null;
+            } else {
+              subscription = null;
             }
+          } else if (isHabaUserId(subRef)) {
+            const { data: userRes } = await supabaseAdmin.auth.admin.getUserById(subRef);
+            if (userRes?.user) {
+              userId = userRes.user.id;
+              subscriptionNextPayment = subscription?.next_payment_date || null;
+            }
+          } else if (/haba/i.test(subRef)) {
+            // Suscripción del plan anterior: vincular por el email de quien pagó
+            userId = await findUserIdByPayerEmail(supabaseAdmin, subscription?.payer_email);
+            if (userId) subscriptionNextPayment = subscription?.next_payment_date || null;
           }
         }
 
