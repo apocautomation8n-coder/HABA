@@ -146,6 +146,34 @@ export async function linkSubscriptionFromAppliedPayments(userId: string): Promi
   return null;
 }
 
+/**
+ * Email de pago (y último pago) por suscripción, a partir de los pagos recientes de la cuenta de
+ * Mercado Pago. Cada pago de suscripción trae el id de la suscripción y el email del pagador.
+ */
+async function payerEmailBySubscriptionFromRecentPayments(): Promise<Map<string, { email: string; paymentId: string }>> {
+  const map = new Map<string, { email: string; paymentId: string }>();
+  const PAGE = 100;
+  for (let offset = 0, page = 0; page < 5; page++, offset += PAGE) {
+    const res = await fetch(
+      `${MP_API}/v1/payments/search?sort=date_created&criteria=desc&limit=${PAGE}&offset=${offset}`,
+      { headers: mpHeaders() }
+    );
+    if (!res.ok) break;
+    const data = await res.json().catch(() => ({}));
+    const results: any[] = Array.isArray(data?.results) ? data.results : [];
+    for (const p of results) {
+      if (p?.status !== "approved") continue;
+      const subId = String(
+        p?.point_of_interaction?.transaction_data?.subscription_id || p?.metadata?.preapproval_id || ""
+      ).trim();
+      const email = String(p?.payer?.email || p?.additional_info?.payer?.email || "").trim().toLowerCase();
+      if (subId && email && !map.has(subId)) map.set(subId, { email, paymentId: String(p.id) });
+    }
+    if (results.length < PAGE) break;
+  }
+  return map;
+}
+
 export interface LinkAllResult {
   revisadas: number;
   vinculadas: { email: string; suscripcion: string; estado: string; como: "pago" | "email" }[];
@@ -198,10 +226,14 @@ export async function linkAllSubscriptions(): Promise<LinkAllResult> {
     }
   }
 
-  // B) Suscripciones activas del plan todavía sin cuenta: por el email con el que se pagó
+  // B) Suscripciones activas del plan todavía sin cuenta: por el email con el que se pagó.
+  //    La suscripción no trae el email: se toma de sus pagos (los pagos recientes dicen a qué
+  //    suscripción pertenecen y con qué email se pagaron).
   const planId = await resolvePlanId();
   if (planId) {
-    const subs = await searchPreapprovals(`preapproval_plan_id=${encodeURIComponent(planId)}`);
+    const payerBySub = await payerEmailBySubscriptionFromRecentPayments();
+    const subsRaw = await searchPreapprovals(`preapproval_plan_id=${encodeURIComponent(planId)}&status=authorized`);
+    const subs = [...new Map(subsRaw.filter((s) => s?.id).map((s) => [String(s.id), s])).values()];
     for (const s of subs) {
       const subId = String(s?.id || "");
       if (!subId || s?.status !== "authorized" || linkedSubs.has(subId)) continue;
@@ -211,9 +243,11 @@ export async function linkAllSubscriptions(): Promise<LinkAllResult> {
         userId = users.some((u) => String(u.id) === ref) ? ref : null;
       }
       let pre: any = s;
+      let payerEmail = "";
       if (!userId) {
         pre = (await getPreapproval(subId)) || s;
-        const email = String(pre?.payer_email || "").trim().toLowerCase();
+        payerEmail = String(pre?.payer_email || payerBySub.get(subId)?.email || "").trim().toLowerCase();
+        const email = payerEmail;
         if (email) {
           const matches = users.filter(
             (u) =>
@@ -229,7 +263,7 @@ export async function linkAllSubscriptions(): Promise<LinkAllResult> {
         await saveSubscriptionState(userId, {
           preapprovalId: subId,
           status: String(pre?.status || "authorized"),
-          payerEmail: pre?.payer_email || null,
+          payerEmail: payerEmail || pre?.payer_email || null,
           nextPaymentDate: pre?.next_payment_date || null,
         });
         const u = users.find((x) => String(x.id) === userId);
@@ -240,7 +274,7 @@ export async function linkAllSubscriptions(): Promise<LinkAllResult> {
         result.sinCuenta.push({
           suscripcion: subId,
           nombre: `${s?.payer_first_name || ""} ${s?.payer_last_name || ""}`.trim() || String(s?.payer_id || ""),
-          emailPago: String(pre?.payer_email || ""),
+          emailPago: payerEmail || String(pre?.payer_email || ""),
           monto: s?.summarized?.last_charged_amount ?? s?.auto_recurring?.transaction_amount ?? null,
           alta: String(s?.date_created || "").split("T")[0],
         });
