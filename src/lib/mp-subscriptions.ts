@@ -179,7 +179,7 @@ export interface LinkAllResult {
   vinculadas: { email: string; suscripcion: string; estado: string; como: "pago" | "email" }[];
   sinSuscripcion: string[];
   /** Suscripciones activas del plan que no se pudieron unir a ninguna cuenta */
-  sinCuenta: { suscripcion: string; nombre: string; emailPago: string; monto: number | null; alta: string }[];
+  sinCuenta: { suscripcion: string; nombre: string; emailPago: string; monto: number | null; alta: string; razon: string }[];
 }
 
 /**
@@ -195,11 +195,24 @@ export async function linkAllSubscriptions(): Promise<LinkAllResult> {
   const profiles = new Map<string, any>((profileRows || []).map((r: any) => [String(r.id), r]));
   const result: LinkAllResult = { revisadas: 0, vinculadas: [], sinSuscripcion: [], sinCuenta: [] };
 
+  // Suscripciones activas del plan en Mercado Pago (sin duplicados de la paginación)
+  const planId = await resolvePlanId();
+  const subsRaw = planId
+    ? await searchPreapprovals(`preapproval_plan_id=${encodeURIComponent(planId)}&status=authorized`)
+    : [];
+  // (se filtra acá por estado: no se confía en que la API aplique el parámetro)
+  const subs = [
+    ...new Map(subsRaw.filter((s) => s?.id && s?.status === "authorized").map((s) => [String(s.id), s])).values(),
+  ];
+  const authorizedIds = new Set(subs.map((s) => String(s.id)));
+
+  // Una cuenta cuenta como vinculada solo si su suscripción guardada es una activa del plan
+  // (un id viejo, cancelado o equivocado no vale: se vuelve a vincular)
   const linkedSubs = new Set<string>();
   const linkedUsers = new Set<string>();
   for (const u of users) {
     const id = String(u.app_metadata?.mp_preapproval_id || profiles.get(String(u.id))?.mp_preapproval_id || "").trim();
-    if (id && u.app_metadata?.mp_status === "authorized") {
+    if (id && authorizedIds.has(id)) {
       linkedSubs.add(id);
       linkedUsers.add(String(u.id));
     }
@@ -229,11 +242,8 @@ export async function linkAllSubscriptions(): Promise<LinkAllResult> {
   // B) Suscripciones activas del plan todavía sin cuenta: por el email con el que se pagó.
   //    La suscripción no trae el email: se toma de sus pagos (los pagos recientes dicen a qué
   //    suscripción pertenecen y con qué email se pagaron).
-  const planId = await resolvePlanId();
   if (planId) {
     const payerBySub = await payerEmailBySubscriptionFromRecentPayments();
-    const subsRaw = await searchPreapprovals(`preapproval_plan_id=${encodeURIComponent(planId)}&status=authorized`);
-    const subs = [...new Map(subsRaw.filter((s) => s?.id).map((s) => [String(s.id), s])).values()];
     for (const s of subs) {
       const subId = String(s?.id || "");
       if (!subId || s?.status !== "authorized" || linkedSubs.has(subId)) continue;
@@ -244,6 +254,7 @@ export async function linkAllSubscriptions(): Promise<LinkAllResult> {
       }
       let pre: any = s;
       let payerEmail = "";
+      let razon = "";
       if (!userId) {
         pre = (await getPreapproval(subId)) || s;
         payerEmail = String(pre?.payer_email || payerBySub.get(subId)?.email || "").trim().toLowerCase();
@@ -256,7 +267,14 @@ export async function linkAllSubscriptions(): Promise<LinkAllResult> {
               String(profiles.get(String(u.id))?.email || "").toLowerCase() === email
           );
           if (matches.length === 1) userId = String(matches[0].id);
+          else razon = matches.length === 0 ? "ninguna cuenta de HABA tiene ese correo" : "varias cuentas tienen ese correo";
+        } else {
+          razon = "sin correo de pago (pago anterior a los últimos 500)";
         }
+      }
+      if (userId && linkedUsers.has(userId)) {
+        const u = users.find((x) => String(x.id) === userId);
+        razon = `la cuenta ${u?.email || userId} ya está vinculada a otra suscripción activa`;
       }
       if (userId && !linkedUsers.has(userId)) {
         result.revisadas++;
@@ -277,6 +295,7 @@ export async function linkAllSubscriptions(): Promise<LinkAllResult> {
           emailPago: payerEmail || String(pre?.payer_email || ""),
           monto: s?.summarized?.last_charged_amount ?? s?.auto_recurring?.transaction_amount ?? null,
           alta: String(s?.date_created || "").split("T")[0],
+          razon,
         });
       }
     }
