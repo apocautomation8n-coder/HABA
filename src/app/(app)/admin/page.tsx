@@ -89,6 +89,8 @@ interface UserProfile {
   phone?: string;
   is_new?: boolean;
   registration_source?: string;
+  /** Motivo si la cuenta parece falsa (correo temporal o repetido) */
+  suspicious?: string | null;
   mp_status?: string | null;
   mp_preapproval_id?: string | null;
 }
@@ -1466,6 +1468,14 @@ export default function AdminPage() {
                       </div>
 
                       <p className="text-xs text-[#7A7A7A] mt-0.5">{u.email}</p>
+                      {u.suspicious && (
+                        <span
+                          title="Revisá esta cuenta: puede ser falsa"
+                          className="inline-flex mt-1 text-[10px] font-bold px-2 py-0.5 rounded-full border bg-rose-50 text-rose-700 border-rose-200"
+                        >
+                          Sospechosa: {u.suspicious}
+                        </span>
+                      )}
 
                       {u.business_name && (
                         <p className="text-[11px] text-[#7A7A7A] mt-0.5">

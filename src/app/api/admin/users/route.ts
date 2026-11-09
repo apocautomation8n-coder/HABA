@@ -1,3 +1,4 @@
+import { canonicalEmail, isDisposableEmail } from "@/lib/email-guard";
 import { NextResponse } from "next/server";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
@@ -96,6 +97,20 @@ export async function GET(request: Request) {
     const { data: authData } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
     const authMap = new Map(authData?.users?.map((u) => [u.id, u]) || []);
 
+    // Señales de cuenta sospechosa: correo temporal o el mismo correo con variantes en otra cuenta
+    const canonicalCount = new Map<string, number>();
+    for (const u of authData?.users || []) {
+      const c = canonicalEmail(u.email || "");
+      if (c) canonicalCount.set(c, (canonicalCount.get(c) || 0) + 1);
+    }
+    const suspicionOf = (email: string | null | undefined): string | null => {
+      const e = String(email || "");
+      if (!e) return null;
+      if (isDisposableEmail(e)) return "Correo temporal";
+      if ((canonicalCount.get(canonicalEmail(e)) || 0) > 1) return "Correo repetido en otra cuenta";
+      return null;
+    };
+
     const users = (profiles || []).map((p) => {
       const authUser = authMap.get(p.id);
       const meta = authUser?.user_metadata || {};
@@ -139,6 +154,7 @@ export async function GET(request: Request) {
         avatar_url: avatarUrl,
         is_new: isNew,
         registration_source: meta.registration_source || "admin",
+        suspicious: suspicionOf(authUser?.email || p.email),
         mp_status: trusted.mp_status,
         mp_preapproval_id: trusted.mp_preapproval_id,
       };
@@ -181,6 +197,7 @@ export async function GET(request: Request) {
         avatar_url: meta.avatar_url || null,
         is_new: true,
         registration_source: meta.registration_source || "public",
+        suspicious: suspicionOf(u.email),
         mp_status: trusted.mp_status,
         mp_preapproval_id: trusted.mp_preapproval_id,
       });

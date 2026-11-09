@@ -3,6 +3,10 @@ import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { buildInitialUserMetadata, splitPlanMetadata } from "@/lib/plan-helpers";
 import { TERMS_VERSION, isTermsEnabled } from "@/lib/terms";
 import { getNextGlobalAccountNumber } from "@/lib/account";
+import { canonicalEmail, checkRegistrationEmail } from "@/lib/email-guard";
+
+/** Máximo de cuentas nuevas por IP en 24 horas (persistente: no depende de la memoria del servidor). */
+const MAX_ACCOUNTS_PER_IP_PER_DAY = 3;
 
 /**
  * Registro público de usuarias (T5).
@@ -83,6 +87,12 @@ export async function POST(request: Request) {
     if (password.length < 6 || password.length > 200) {
       return NextResponse.json({ error: "La contraseña debe tener al menos 6 caracteres." }, { status: 400 });
     }
+    // Correos temporales, dominios que no reciben mails y errores de tipeo
+    const emailCheck = await checkRegistrationEmail(email);
+    if (!emailCheck.ok) {
+      return NextResponse.json({ error: emailCheck.error }, { status: 400 });
+    }
+
     if (isTermsEnabled() && body.acceptedTerms !== true) {
       return NextResponse.json(
         { error: "Es obligatorio leer y aceptar las Bases y Condiciones para registrarte." },
@@ -105,6 +115,38 @@ export async function POST(request: Request) {
     const admin = createSupabaseClient(url, serviceKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
+
+    // Mismo correo con variantes (puntos o "+algo") y muchas cuentas desde la misma conexión
+    try {
+      const { data: existing } = await admin.auth.admin.listUsers({ perPage: 1000 });
+      const list = existing?.users || [];
+      const canonical = canonicalEmail(email);
+      if (list.some((u) => canonicalEmail(u.email || "") === canonical)) {
+        return NextResponse.json(
+          {
+            error:
+              "Ya existe una cuenta con este correo (o una variante del mismo). Si es tuya, iniciá sesión o restablecé tu contraseña.",
+          },
+          { status: 409 }
+        );
+      }
+      if (ip !== "unknown") {
+        const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
+        const fromIp = list.filter(
+          (u) =>
+            String(u.app_metadata?.registration_ip || "") === ip && Date.parse(String(u.created_at || "")) >= dayAgo
+        ).length;
+        if (fromIp >= MAX_ACCOUNTS_PER_IP_PER_DAY) {
+          return NextResponse.json(
+            { error: "Se crearon demasiadas cuentas desde esta conexión hoy. Si necesitás ayuda, escribinos." },
+            { status: 429 }
+          );
+        }
+      }
+    } catch (guardErr) {
+      console.warn("[Registro] No se pudo verificar duplicados:", guardErr);
+    }
+
     const nextAccountNumber = await getNextGlobalAccountNumber(admin);
 
     const anon = createSupabaseClient(url, anonKey, {
@@ -159,6 +201,7 @@ export async function POST(request: Request) {
           app_metadata: {
             ...appMetadata,
             account_number: nextAccountNumber,
+            registration_ip: ip,
           },
         });
 
@@ -205,6 +248,7 @@ export async function POST(request: Request) {
         app_metadata: {
           ...appMetadata,
           account_number: nextAccountNumber,
+          registration_ip: ip,
         },
         user_metadata: {
           ...(data.user.user_metadata || {}),
