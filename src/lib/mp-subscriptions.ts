@@ -213,8 +213,17 @@ export interface SubscriptionsReport {
 export async function buildSubscriptionsReport(): Promise<SubscriptionsReport> {
   const admin = getAdminClient();
   const planId = await resolvePlanId();
-  const subsRaw = planId ? await searchPreapprovals(`preapproval_plan_id=${encodeURIComponent(planId)}`) : [];
-  const subs = [...new Map(subsRaw.filter((s) => s?.id).map((s) => [String(s.id), s])).values()];
+  // Todas las suscripciones de la cuenta de Mercado Pago (incluye las de HABA fuera del plan, que
+  // cobran otro día); si la búsqueda sin filtro no devuelve nada, las del plan
+  let subsRaw = await searchPreapprovals("status=authorized");
+  subsRaw = subsRaw.concat(await searchPreapprovals("status=paused"));
+  if (planId) subsRaw = subsRaw.concat(await searchPreapprovals(`preapproval_plan_id=${encodeURIComponent(planId)}`));
+  const planTitle = (process.env.MP_SUBSCRIPTION_TITLE || "Haba Mensual").trim().toLowerCase();
+  const isHabaSub = (s: any) =>
+    (planId && String(s?.preapproval_plan_id || "") === planId) ||
+    /haba/i.test(String(s?.reason || "")) ||
+    String(s?.reason || "").trim().toLowerCase() === planTitle;
+  const subs = [...new Map(subsRaw.filter((s) => s?.id && isHabaSub(s)).map((s) => [String(s.id), s])).values()];
 
   const { data } = await admin.auth.admin.listUsers({ perPage: 1000 });
   const users: any[] = data?.users || [];
@@ -257,6 +266,7 @@ export async function buildSubscriptionsReport(): Promise<SubscriptionsReport> {
     if (s.status === "authorized" && sem === "red") obs.push("Sin cobros aprobados");
     if (s.status === "paused") obs.push("Pausada por Mercado Pago (cobros rechazados)");
     if (s.status === "cancelled") obs.push("Cancelada");
+    if (planId && String(s?.preapproval_plan_id || "") !== planId) obs.push("Fuera del plan: cobra en otra fecha");
     if (!acc && s.status === "authorized") obs.push("Sin cuenta de HABA vinculada");
     if (u && (activeByUser.get(String(u.id)) || 0) > 1 && s.status === "authorized") obs.push("La cuenta tiene más de una suscripción activa");
     return {
@@ -415,8 +425,9 @@ export async function reconcileSubscriptionCharges(
       if (list.length === 1) subId = String(list[0].id);
       else if (list.length === 0 && all.length === 1) subId = String(all[0].id);
     }
-    // Solo cobros de HABA: de una suscripción del plan o con el id de una cuenta como referencia
-    const isPlanCharge = Boolean(subId) && (!planId || !payPlan || payPlan === planId);
+    // Solo cobros de HABA: de una suscripción del plan (o de una suscripción de HABA fuera del plan,
+    // como las del sistema anterior que cobran otro día) o con el id de una cuenta como referencia
+    const isPlanCharge = Boolean(subId) && (!planId || !payPlan || payPlan === planId || looksLikeHaba);
     if (!isPlanCharge && !isHabaUserId(ref)) {
       if (looksLikeHaba) {
         result.noReconocidos.push({
