@@ -307,6 +307,10 @@ export interface ReconcileResult {
   acreditados: { email: string; pago: string; monto: number | null; fecha: string; vence: string }[];
   yaAcreditados: number;
   sinCuenta: { pago: string; suscripcion: string; pagador: string; emailPago: string; monto: number | null; fecha: string }[];
+  /** Cobros de HABA que no se reconocieron como de una suscripción (para diagnóstico) */
+  noReconocidos: { pago: string; descripcion: string; referencia: string; monto: number | null; fecha: string; tipo: string }[];
+  /** true si se cortó por el límite por corrida: hay que volver a correrla */
+  truncado: boolean;
 }
 
 /**
@@ -314,13 +318,25 @@ export interface ReconcileResult {
  * HABA los que todavía no se acreditaron (por ejemplo, si el aviso de Mercado Pago no llegó).
  * No depende del webhook. Cada pago se acredita una sola vez (registro mp_applied_payments).
  */
-export async function reconcileSubscriptionCharges(options: { sinceDays?: number } = {}): Promise<ReconcileResult> {
+export async function reconcileSubscriptionCharges(
+  options: { sinceDays?: number; maxApply?: number } = {}
+): Promise<ReconcileResult> {
   const sinceDays = Math.min(Math.max(options.sinceDays ?? 20, 1), 60);
+  // Límite de acreditaciones por corrida (cada una son varias llamadas): evita que el botón se corte
+  const maxApply = Math.min(Math.max(options.maxApply ?? 25, 1), 200);
   const admin = getAdminClient();
   const planId = await resolvePlanId();
   const begin = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000).toISOString();
   const end = new Date(Date.now() + 60 * 60 * 1000).toISOString();
-  const result: ReconcileResult = { desde: begin.split("T")[0], pagosRevisados: 0, acreditados: [], yaAcreditados: 0, sinCuenta: [] };
+  const result: ReconcileResult = {
+    desde: begin.split("T")[0],
+    pagosRevisados: 0,
+    acreditados: [],
+    yaAcreditados: 0,
+    sinCuenta: [],
+    noReconocidos: [],
+    truncado: false,
+  };
 
   // 1) Pagos aprobados del período (paginado)
   const payments: any[] = [];
@@ -358,6 +374,21 @@ export async function reconcileSubscriptionCharges(options: { sinceDays?: number
   const { data: ledger } = await admin.from("mp_applied_payments").select("payment_id");
   for (const row of ledger || []) if (row?.payment_id) applied.add(String(row.payment_id));
 
+  // Suscripciones del plan por pagador de Mercado Pago: los cobros mensuales pueden no traer el id
+  // de la suscripción, pero sí el id del pagador, y la suscripción activa de ese pagador es única.
+  const subsByPayer = new Map<string, any[]>();
+  if (planId) {
+    const planSubs = await searchPreapprovals(`preapproval_plan_id=${encodeURIComponent(planId)}`);
+    for (const s of planSubs) {
+      const payerId = String(s?.payer_id || "").trim();
+      if (!payerId || !s?.id) continue;
+      const list = subsByPayer.get(payerId) || [];
+      if (!list.some((x) => String(x.id) === String(s.id))) list.push(s);
+      subsByPayer.set(payerId, list);
+    }
+  }
+  const planTitle = (process.env.MP_SUBSCRIPTION_TITLE || "Haba Mensual").trim().toLowerCase();
+
   const preCache = new Map<string, any>();
   const getPre = async (id: string) => {
     if (!preCache.has(id)) preCache.set(id, await getPreapproval(id));
@@ -367,15 +398,44 @@ export async function reconcileSubscriptionCharges(options: { sinceDays?: number
   for (const p of payments) {
     if (p?.status !== "approved") continue;
     const paymentId = String(p.id);
-    const subId = String(p?.point_of_interaction?.transaction_data?.subscription_id || p?.metadata?.preapproval_id || "").trim();
+    let subId = String(p?.point_of_interaction?.transaction_data?.subscription_id || p?.metadata?.preapproval_id || "").trim();
     const payPlan = String(p?.point_of_interaction?.transaction_data?.plan_id || "").trim();
     const ref = String(p?.external_reference || "").trim();
+    const description = String(p?.description || "").trim().toLowerCase();
+    const payerId = String(p?.payer?.id || "").trim();
+    const looksLikeHaba =
+      /haba/i.test(ref) || (planTitle && description === planTitle) || /haba/i.test(description) ||
+      String(p?.point_of_interaction?.type || "").toUpperCase() === "SUBSCRIPTIONS" ||
+      String(p?.operation_type || "") === "recurring_payment";
+    // Cobro sin id de suscripción (cobro mensual): por el pagador de Mercado Pago
+    if (!subId && looksLikeHaba && payerId) {
+      const list = (subsByPayer.get(payerId) || []).filter((s) => s.status === "authorized");
+      const all = subsByPayer.get(payerId) || [];
+      if (list.length === 1) subId = String(list[0].id);
+      else if (list.length === 0 && all.length === 1) subId = String(all[0].id);
+    }
     // Solo cobros de HABA: de una suscripción del plan o con el id de una cuenta como referencia
     const isPlanCharge = Boolean(subId) && (!planId || !payPlan || payPlan === planId);
-    if (!isPlanCharge && !isHabaUserId(ref)) continue;
+    if (!isPlanCharge && !isHabaUserId(ref)) {
+      if (looksLikeHaba) {
+        result.noReconocidos.push({
+          pago: paymentId,
+          descripcion: String(p?.description || ""),
+          referencia: ref,
+          monto: p?.transaction_amount ?? null,
+          fecha: String(p?.date_approved || p?.date_created || "").split("T")[0],
+          tipo: `${p?.operation_type || ""}/${p?.point_of_interaction?.type || ""}`,
+        });
+      }
+      continue;
+    }
     result.pagosRevisados++;
     if (applied.has(paymentId)) {
       result.yaAcreditados++;
+      continue;
+    }
+    if (result.acreditados.length >= maxApply) {
+      result.truncado = true;
       continue;
     }
 

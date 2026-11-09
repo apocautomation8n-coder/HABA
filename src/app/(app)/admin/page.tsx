@@ -417,8 +417,17 @@ export default function AdminPage() {
       const acreditados: { email: string; monto: number | null; fecha: string; vence: string }[] = data.acreditados || [];
       const sinCuenta: { pago: string; pagador: string; emailPago: string; monto: number | null; fecha: string }[] =
         data.sinCuenta || [];
+      const noReconocidos: { pago: string; descripcion: string; referencia: string; monto: number | null; fecha: string; tipo: string }[] =
+        data.noReconocidos || [];
       alert(
-        `Cobros revisados desde el ${data.desde}: ${data.pagosRevisados}\nAcreditados ahora: ${acreditados.length}\nYa estaban acreditados: ${data.yaAcreditados}\nSin cuenta de HABA: ${sinCuenta.length}` +
+        `Cobros revisados desde el ${data.desde}: ${data.pagosRevisados}\nAcreditados ahora: ${acreditados.length}\nYa estaban acreditados: ${data.yaAcreditados}\nSin cuenta de HABA: ${sinCuenta.length}\nCobros no reconocidos como suscripción: ${noReconocidos.length}` +
+          (data.truncado ? "\n\nHAY MÁS COBROS POR ACREDITAR: volvé a tocar el botón." : "") +
+          (noReconocidos.length
+            ? `\n\nNo reconocidos (pasale esta lista a soporte):\n${noReconocidos
+                .slice(0, 15)
+                .map((x) => `- N° ${x.pago} · $${x.monto ?? "?"} · ${x.fecha} · ${x.descripcion || "-"} · ref "${x.referencia}" · ${x.tipo}`)
+                .join("\n")}${noReconocidos.length > 15 ? `\n(y ${noReconocidos.length - 15} más)` : ""}`
+            : "") +
           (acreditados.length
             ? `\n\nAcreditados:\n${acreditados.map((a) => `- ${a.email} · $${a.monto ?? "?"} · ${a.fecha} · vence ${a.vence}`).join("\n")}`
             : "") +
