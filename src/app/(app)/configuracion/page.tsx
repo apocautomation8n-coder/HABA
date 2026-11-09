@@ -33,6 +33,7 @@ import {
   Palette,
   Pipette,
   Globe,
+  HelpCircle,
 } from "lucide-react";
 import { ProfileAvatar, isRealUserAvatar } from "@/components/ProfileAvatar";
 import { HabaMascot } from "@/components/HabaMascot";
@@ -90,6 +91,7 @@ export default function SettingsPage() {
   // Estado de la suscripción automática en Mercado Pago (lo guarda el servidor en app_metadata)
   const [mpStatus, setMpStatus] = useState<string>("");
   const [mpNextPaymentDate, setMpNextPaymentDate] = useState<string>("");
+  const [showSubscriptionHelp, setShowSubscriptionHelp] = useState(false);
   const [planStartDate, setPlanStartDate] = useState<string>("");
   const [planEndDate, setPlanEndDate] = useState<string>("");
   const [accountStatus, setAccountStatus] = useState<AccountStatus>("active");
@@ -812,8 +814,17 @@ export default function SettingsPage() {
               <Calendar className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-[10.5px] font-bold uppercase tracking-wider text-neutral-400">
+              <h3 className="text-[10.5px] font-bold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
                 Tu Suscripción
+                <button
+                  type="button"
+                  onClick={() => setShowSubscriptionHelp((v) => !v)}
+                  aria-label="Cómo funciona la suscripción"
+                  title="Cómo funciona la suscripción"
+                  className="w-4 h-4 rounded-full text-neutral-400 hover:text-[#3BB578] flex items-center justify-center cursor-pointer"
+                >
+                  <HelpCircle className="w-3.5 h-3.5" />
+                </button>
               </h3>
               <p className="text-sm font-bold text-[#2B2B2B] font-display">
                 Plan {PLAN_NAMES[planType] || planType}
@@ -849,6 +860,35 @@ export default function SettingsPage() {
             </span>
           </div>
         </div>
+
+        {showSubscriptionHelp && (
+          <div className="p-3.5 bg-[#F6FBF7] rounded-2xl border border-[#C3EBC0] text-[11.5px] text-[#2B2B2B] leading-relaxed space-y-2">
+            <p className="font-bold text-[#1F7A4C]">Cómo funciona la suscripción</p>
+            <ul className="list-disc pl-4 space-y-1.5">
+              <li>
+                Mercado Pago te cobra el <strong>día 8</strong> de cada mes. Si te suscribís otro día, el primer pago es
+                proporcional hasta el 8.
+              </li>
+              <li>
+                <strong>Si un cobro se rechaza</strong> (sin saldo, tarjeta vencida), Mercado Pago lo reintenta solo durante
+                unos días. Tenés unos días de margen para que entre; cuando se acredita, tu plan se renueva.
+              </li>
+              <li>
+                Para cambiar la tarjeta o pagar con saldo, entrá en Mercado Pago a <em>Suscripciones</em> y usá{" "}
+                <strong>“Cambiar medio de pago”</strong>. <strong>No toques “Pagar” ni “Volver a suscribirme”</strong>: eso
+                crea una segunda suscripción y te cobraría dos veces.
+              </li>
+              <li>
+                Si igual te quedó una suscripción repetida, cancelá la vieja en Mercado Pago y mandale a Gio el número de
+                operación del pago nuevo para que lo vincule a tu cuenta.
+              </li>
+              <li>
+                Podés cancelar cuando quieras desde <em>Mi suscripción</em>: dejás de pagar y seguís usando HABA hasta el
+                último día pagado.
+              </li>
+            </ul>
+          </div>
+        )}
 
         <div className="p-3 bg-[#F6F7F2] rounded-2xl border border-[#EAF0E8] space-y-2 text-xs">
           <div className="flex items-center justify-between text-neutral-600">
