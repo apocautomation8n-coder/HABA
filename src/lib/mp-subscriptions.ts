@@ -12,7 +12,12 @@
  */
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { createClient as createServerClient } from "@/lib/supabase/server";
-import { addDaysToDate, getExpectedPlanAmount, SUBSCRIPTION_GRACE_DAYS } from "@/lib/mercadopago";
+import {
+  addDaysToDate,
+  applyApprovedPaymentToUser,
+  getExpectedPlanAmount,
+  SUBSCRIPTION_GRACE_DAYS,
+} from "@/lib/mercadopago";
 
 const MP_API = "https://api.mercadopago.com";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -294,6 +299,156 @@ export async function buildSubscriptionsReport(): Promise<SubscriptionsReport> {
     .sort((a, b) => a.nombre.localeCompare(b.nombre));
 
   return { generadoEl: new Date().toISOString(), filas, cuentasSinSuscripcion };
+}
+
+export interface ReconcileResult {
+  desde: string;
+  pagosRevisados: number;
+  acreditados: { email: string; pago: string; monto: number | null; fecha: string; vence: string }[];
+  yaAcreditados: number;
+  sinCuenta: { pago: string; suscripcion: string; pagador: string; emailPago: string; monto: number | null; fecha: string }[];
+}
+
+/**
+ * Conciliación: recorre los cobros aprobados de los últimos días en Mercado Pago y acredita en
+ * HABA los que todavía no se acreditaron (por ejemplo, si el aviso de Mercado Pago no llegó).
+ * No depende del webhook. Cada pago se acredita una sola vez (registro mp_applied_payments).
+ */
+export async function reconcileSubscriptionCharges(options: { sinceDays?: number } = {}): Promise<ReconcileResult> {
+  const sinceDays = Math.min(Math.max(options.sinceDays ?? 20, 1), 60);
+  const admin = getAdminClient();
+  const planId = await resolvePlanId();
+  const begin = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000).toISOString();
+  const end = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  const result: ReconcileResult = { desde: begin.split("T")[0], pagosRevisados: 0, acreditados: [], yaAcreditados: 0, sinCuenta: [] };
+
+  // 1) Pagos aprobados del período (paginado)
+  const payments: any[] = [];
+  const PAGE = 100;
+  for (let offset = 0, page = 0; page < 10; page++, offset += PAGE) {
+    const q =
+      `sort=date_approved&criteria=desc&range=date_approved&begin_date=${encodeURIComponent(begin)}` +
+      `&end_date=${encodeURIComponent(end)}&status=approved&limit=${PAGE}&offset=${offset}`;
+    const res = await fetch(`${MP_API}/v1/payments/search?${q}`, { headers: mpHeaders() });
+    if (!res.ok) {
+      console.warn("[Conciliación MP] Búsqueda de pagos respondió", res.status);
+      break;
+    }
+    const data = await res.json().catch(() => ({}));
+    const results: any[] = Array.isArray(data?.results) ? data.results : [];
+    payments.push(...results);
+    if (results.length < PAGE) break;
+  }
+
+  // 2) Cuentas y pagos ya acreditados
+  const { data } = await admin.auth.admin.listUsers({ perPage: 1000 });
+  const users: any[] = data?.users || [];
+  const { data: profileRows } = await admin.from("profiles").select("id, email, mp_preapproval_id, last_payment_id");
+  const profiles = new Map<string, any>((profileRows || []).map((r: any) => [String(r.id), r]));
+  const userBySub = new Map<string, any>();
+  const applied = new Set<string>();
+  for (const u of users) {
+    const prof = profiles.get(String(u.id));
+    const subId = String(u.app_metadata?.mp_preapproval_id || prof?.mp_preapproval_id || "").trim();
+    if (subId && !userBySub.has(subId)) userBySub.set(subId, u);
+    for (const id of [u.app_metadata?.last_payment_id, prof?.last_payment_id, ...(u.app_metadata?.applied_payment_ids || [])]) {
+      if (id) applied.add(String(id));
+    }
+  }
+  const { data: ledger } = await admin.from("mp_applied_payments").select("payment_id");
+  for (const row of ledger || []) if (row?.payment_id) applied.add(String(row.payment_id));
+
+  const preCache = new Map<string, any>();
+  const getPre = async (id: string) => {
+    if (!preCache.has(id)) preCache.set(id, await getPreapproval(id));
+    return preCache.get(id);
+  };
+
+  for (const p of payments) {
+    if (p?.status !== "approved") continue;
+    const paymentId = String(p.id);
+    const subId = String(p?.point_of_interaction?.transaction_data?.subscription_id || p?.metadata?.preapproval_id || "").trim();
+    const payPlan = String(p?.point_of_interaction?.transaction_data?.plan_id || "").trim();
+    const ref = String(p?.external_reference || "").trim();
+    // Solo cobros de HABA: de una suscripción del plan o con el id de una cuenta como referencia
+    const isPlanCharge = Boolean(subId) && (!planId || !payPlan || payPlan === planId);
+    if (!isPlanCharge && !isHabaUserId(ref)) continue;
+    result.pagosRevisados++;
+    if (applied.has(paymentId)) {
+      result.yaAcreditados++;
+      continue;
+    }
+
+    // Cuenta: referencia del pago → suscripción vinculada → referencia de la suscripción → ventana del checkout → email
+    let user: any = null;
+    if (isHabaUserId(ref)) user = users.find((u) => String(u.id) === ref) || null;
+    let pre: any = null;
+    if (subId) {
+      if (!user) user = userBySub.get(subId) || null;
+      pre = await getPre(subId);
+      const subRef = String(pre?.external_reference || "").trim();
+      if (!user && isHabaUserId(subRef)) user = users.find((u) => String(u.id) === subRef) || null;
+      if (!user && pre) {
+        const byWindow = await findUserIdByCheckoutWindow(pre);
+        if (byWindow) user = users.find((u) => String(u.id) === byWindow) || null;
+      }
+    }
+    if (!user) {
+      const email = String(p?.payer?.email || p?.additional_info?.payer?.email || pre?.payer_email || "").trim().toLowerCase();
+      if (email) {
+        const matches = users.filter(
+          (u) =>
+            String(u.email || "").toLowerCase() === email ||
+            String(u.app_metadata?.mp_payer_email || "").toLowerCase() === email ||
+            String(profiles.get(String(u.id))?.email || "").toLowerCase() === email
+        );
+        if (matches.length === 1) user = matches[0];
+      }
+    }
+    if (!user) {
+      result.sinCuenta.push({
+        pago: paymentId,
+        suscripcion: subId,
+        pagador: `${p?.payer?.first_name || pre?.payer_first_name || ""} ${p?.payer?.last_name || pre?.payer_last_name || ""}`.trim(),
+        emailPago: String(p?.payer?.email || pre?.payer_email || ""),
+        monto: p?.transaction_amount ?? null,
+        fecha: String(p?.date_approved || p?.date_created || "").split("T")[0],
+      });
+      continue;
+    }
+
+    const applyResult = await applyApprovedPaymentToUser({
+      payment: p,
+      userId: String(user.id),
+      source: "sync",
+      subscriptionNextPaymentDate: pre?.status === "authorized" ? pre?.next_payment_date || null : null,
+    });
+    if (applyResult.success) {
+      applied.add(paymentId);
+      result.acreditados.push({
+        email: String(user.email || user.id),
+        pago: paymentId,
+        monto: p?.transaction_amount ?? null,
+        fecha: String(p?.date_approved || p?.date_created || "").split("T")[0],
+        vence: String(applyResult.newEndDate || ""),
+      });
+      if (subId && pre) {
+        await saveSubscriptionState(String(user.id), {
+          preapprovalId: subId,
+          status: String(pre.status || "authorized"),
+          payerEmail: pre.payer_email || p?.payer?.email || null,
+          nextPaymentDate: pre.next_payment_date || null,
+        });
+        userBySub.set(subId, user);
+      }
+    } else if (applyResult.alreadyApplied) {
+      result.yaAcreditados++;
+      applied.add(paymentId);
+    } else {
+      console.warn(`[Conciliación MP] No se pudo acreditar el pago ${paymentId}: ${applyResult.error}`);
+    }
+  }
+  return result;
 }
 
 export interface LinkAllResult {

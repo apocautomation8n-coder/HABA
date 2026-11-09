@@ -392,6 +392,49 @@ export default function AdminPage() {
   const [syncingUserId, setSyncingUserId] = useState<string | null>(null);
   const [linkingSubscriptions, setLinkingSubscriptions] = useState(false);
   const [exportingSubscriptions, setExportingSubscriptions] = useState(false);
+  const [reconciling, setReconciling] = useState(false);
+
+  /** Acredita en HABA los cobros aprobados en Mercado Pago que no se acreditaron (no depende del webhook). */
+  const handleReconcileCharges = async () => {
+    if (
+      !window.confirm(
+        "Revisar los cobros aprobados en Mercado Pago de los últimos 20 días y acreditar en HABA los que falten. Cada cobro se acredita una sola vez. ¿Continuar?"
+      )
+    )
+      return;
+    try {
+      setReconciling(true);
+      const res = await fetch("/api/admin/reconcile-charges", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sinceDays: 20 }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        alert("No se pudieron acreditar los cobros: " + (data.error || "error desconocido"));
+        return;
+      }
+      const acreditados: { email: string; monto: number | null; fecha: string; vence: string }[] = data.acreditados || [];
+      const sinCuenta: { pago: string; pagador: string; emailPago: string; monto: number | null; fecha: string }[] =
+        data.sinCuenta || [];
+      alert(
+        `Cobros revisados desde el ${data.desde}: ${data.pagosRevisados}\nAcreditados ahora: ${acreditados.length}\nYa estaban acreditados: ${data.yaAcreditados}\nSin cuenta de HABA: ${sinCuenta.length}` +
+          (acreditados.length
+            ? `\n\nAcreditados:\n${acreditados.map((a) => `- ${a.email} · $${a.monto ?? "?"} · ${a.fecha} · vence ${a.vence}`).join("\n")}`
+            : "") +
+          (sinCuenta.length
+            ? `\n\nSin cuenta (asignalos con "Resolver Pago Huérfano" usando el número de operación):\n${sinCuenta
+                .map((x) => `- ${x.pagador}${x.emailPago ? ` (${x.emailPago})` : ""} · $${x.monto ?? "?"} · ${x.fecha} · N° ${x.pago}`)
+                .join("\n")}`
+            : "")
+      );
+      await loadUsers();
+    } catch (err: any) {
+      alert("Error al acreditar cobros: " + err.message);
+    } finally {
+      setReconciling(false);
+    }
+  };
 
   /** CSV con las suscripciones de Mercado Pago cruzadas con las cuentas de HABA (lo que MP no exporta). */
   const handleExportSubscriptions = async () => {
@@ -918,6 +961,18 @@ export default function AdminPage() {
           >
             <RefreshCw className={`w-4 h-4 text-[#3BB578] ${linkingSubscriptions ? "animate-spin" : ""}`} />
             <span>{linkingSubscriptions ? "Vinculando..." : "Vincular suscripciones"}</span>
+          </button>
+
+          {/* Botón Acreditar cobros: concilia con Mercado Pago sin depender del webhook */}
+          <button
+            type="button"
+            onClick={handleReconcileCharges}
+            disabled={reconciling}
+            title="Revisar los cobros aprobados en Mercado Pago de los últimos 20 días y acreditar en HABA los que falten"
+            className="py-2.5 px-3.5 bg-white hover:bg-neutral-50 text-[#2B2B2B] border border-[#EAF0E8] rounded-2xl shadow-xs transition flex items-center gap-1.5 text-xs font-bold active:scale-[0.98] disabled:opacity-50 cursor-pointer"
+          >
+            <RefreshCw className={`w-4 h-4 text-[#3BB578] ${reconciling ? "animate-spin" : ""}`} />
+            <span>{reconciling ? "Acreditando..." : "Acreditar cobros MP"}</span>
           </button>
 
           {/* Botón Exportar suscripciones de Mercado Pago cruzadas con cuentas */}
