@@ -52,6 +52,7 @@ import {
   getPlanStatusInfo,
   formatDateDisplay,
   getTrustedPlanMeta,
+  getSubscriptionViewInfo,
 } from "@/lib/plan-helpers";
 import { SubscriptionModal } from "@/components/SubscriptionModal";
 
@@ -88,6 +89,7 @@ export default function SettingsPage() {
   const [planType, setPlanType] = useState<PlanType>("prueba");
   // Estado de la suscripción automática en Mercado Pago (lo guarda el servidor en app_metadata)
   const [mpStatus, setMpStatus] = useState<string>("");
+  const [mpNextPaymentDate, setMpNextPaymentDate] = useState<string>("");
   const [planStartDate, setPlanStartDate] = useState<string>("");
   const [planEndDate, setPlanEndDate] = useState<string>("");
   const [accountStatus, setAccountStatus] = useState<AccountStatus>("active");
@@ -274,6 +276,7 @@ export default function SettingsPage() {
           setPlanEndDate(trustedPlan.plan_end_date);
           setAccountStatus(trustedPlan.account_status);
           setMpStatus(String(user.app_metadata?.mp_status || ""));
+          setMpNextPaymentDate(String(trustedPlan.mp_next_payment_date || ""));
           if (user.user_metadata?.account_number) {
             setAccountNumber(user.user_metadata.account_number);
           }
@@ -711,6 +714,8 @@ export default function SettingsPage() {
   const planStatusInfo = getPlanStatusInfo(planEndDate);
   // Con la suscripción activa el plan se renueva solo: no corresponde "próximo a vencer"
   const subscriptionActive = planType === "mensual" && mpStatus === "authorized" && planStatusInfo.status !== "vencido";
+  // Para la usuaria el vencimiento es el día del próximo cobro; los días de gracia son internos
+  const subscriptionView = subscriptionActive ? getSubscriptionViewInfo(mpNextPaymentDate, planEndDate) : null;
 
   return (
     <div className="w-full flex flex-col space-y-5 font-body pb-8">
@@ -820,12 +825,14 @@ export default function SettingsPage() {
             {/* Badge estado del plan */}
             <span
               className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
-                subscriptionActive
+                subscriptionView
+                  ? `${subscriptionView.badgeBg} ${subscriptionView.badgeText} ${subscriptionView.badgeBorder}`
+                  : subscriptionActive
                   ? "bg-[#DCF4D7] text-[#1F7A4C] border-[#C3EBC0]"
                   : `${planStatusInfo.badgeBg} ${planStatusInfo.badgeText} ${planStatusInfo.badgeBorder}`
               }`}
             >
-              {subscriptionActive ? "Renovación automática" : planStatusInfo.label}
+              {subscriptionView ? subscriptionView.label : subscriptionActive ? "Renovación automática" : planStatusInfo.label}
             </span>
 
             {/* Badge estado de cuenta */}
@@ -854,7 +861,7 @@ export default function SettingsPage() {
           <div className="flex items-center justify-between text-neutral-600">
             <span className="text-[11px] text-[#7A7A7A]">Fecha de vencimiento:</span>
             <span className="font-bold text-[#2B2B2B]">
-              {formatDateDisplay(planEndDate)}
+              {formatDateDisplay(subscriptionView ? subscriptionView.shownEndDate : planEndDate)}
             </span>
           </div>
 
@@ -863,8 +870,16 @@ export default function SettingsPage() {
               <Clock className="w-3.5 h-3.5 text-neutral-400" />
               Vigencia restante:
             </span>
-            <span className={`font-bold ${subscriptionActive ? "text-[#1F7A4C]" : planStatusInfo.badgeText}`}>
-              {subscriptionActive ? "Se renueva sola cada día 8" : planStatusInfo.rowText}
+            <span
+              className={`font-bold ${
+                subscriptionView ? subscriptionView.badgeText : subscriptionActive ? "text-[#1F7A4C]" : planStatusInfo.badgeText
+              }`}
+            >
+              {subscriptionView
+                ? subscriptionView.rowText
+                : subscriptionActive
+                ? "Se renueva sola cada día 8"
+                : planStatusInfo.rowText}
             </span>
           </div>
 

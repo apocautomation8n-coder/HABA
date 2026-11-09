@@ -276,6 +276,8 @@ export interface TrustedPlanMeta {
   account_status: AccountStatus;
   mp_status: string | null;
   mp_preapproval_id: string | null;
+  /** Fecha del próximo cobro de la suscripción automática (la guarda el servidor) */
+  mp_next_payment_date: string | null;
 }
 
 interface UserWithAppMetadata {
@@ -299,6 +301,100 @@ export function getTrustedPlanMeta(user: UserWithAppMetadata | null | undefined)
     account_status: (app.account_status as AccountStatus) || "active",
     mp_status: app.mp_status || null,
     mp_preapproval_id: app.mp_preapproval_id || null,
+    mp_next_payment_date: app.mp_next_payment_date || null,
+  };
+}
+
+export interface SubscriptionViewInfo {
+  /** "antes": todavía no llegó el día de cobro · "gracia": el cobro no entró y corren los días de gracia · "vencido" */
+  phase: "antes" | "gracia" | "vencido";
+  /** Fecha que ve la usuaria como vencimiento: el día del próximo cobro (la gracia es interna) */
+  shownEndDate: string;
+  daysToCharge: number;
+  graceDaysLeft: number;
+  label: string;
+  rowText: string;
+  badgeBg: string;
+  badgeText: string;
+  badgeBorder: string;
+}
+
+/**
+ * Cómo se muestra una suscripción automática activa. Para la usuaria el vencimiento es el día del
+ * próximo cobro (el 8); los días de gracia posteriores son internos y, si el cobro no entró, se
+ * muestran como "cobro pendiente" con un color cada vez más rojo.
+ */
+export function getSubscriptionViewInfo(
+  nextPaymentDate: string | null | undefined,
+  planEndDate: string | null | undefined
+): SubscriptionViewInfo | null {
+  const next = String(nextPaymentDate || "").split("T")[0];
+  const end = String(planEndDate || "").split("T")[0];
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(next)) return null;
+  const toLocalDate = (s: string) => {
+    const [y, m, d] = s.split("-").map((n) => parseInt(n, 10));
+    return new Date(y, m - 1, d, 0, 0, 0, 0);
+  };
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dayMs = 24 * 60 * 60 * 1000;
+  const daysToCharge = Math.round((toLocalDate(next).getTime() - today.getTime()) / dayMs);
+  const graceDaysLeft = /^\d{4}-\d{2}-\d{2}$/.test(end)
+    ? Math.round((toLocalDate(end).getTime() - today.getTime()) / dayMs)
+    : 0;
+
+  if (daysToCharge >= 0) {
+    return {
+      phase: "antes",
+      shownEndDate: next,
+      daysToCharge,
+      graceDaysLeft,
+      label: "Renovación automática",
+      rowText:
+        daysToCharge === 0
+          ? "Se renueva hoy"
+          : daysToCharge === 1
+          ? "Se renueva mañana"
+          : `Se renueva en ${daysToCharge} días`,
+      badgeBg: "bg-[#DCF4D7]",
+      badgeText: "text-[#1F7A4C]",
+      badgeBorder: "border-[#C3EBC0]",
+    };
+  }
+  if (graceDaysLeft >= 0) {
+    // Gracia: cada día que pasa, más rojo
+    const elapsed = Math.abs(daysToCharge); // 1, 2, 3...
+    const tone =
+      elapsed <= 1
+        ? { bg: "bg-amber-50", text: "text-amber-700", border: "border-amber-200" }
+        : elapsed === 2
+        ? { bg: "bg-orange-50", text: "text-orange-700", border: "border-orange-200" }
+        : { bg: "bg-rose-100", text: "text-rose-700", border: "border-rose-200" };
+    return {
+      phase: "gracia",
+      shownEndDate: next,
+      daysToCharge,
+      graceDaysLeft,
+      label: "Cobro pendiente",
+      rowText:
+        graceDaysLeft === 0
+          ? "Último día: el cobro todavía no se acreditó"
+          : `El cobro no se acreditó · ${graceDaysLeft} ${graceDaysLeft === 1 ? "día" : "días"} para regularizar`,
+      badgeBg: tone.bg,
+      badgeText: tone.text,
+      badgeBorder: tone.border,
+    };
+  }
+  return {
+    phase: "vencido",
+    shownEndDate: next,
+    daysToCharge,
+    graceDaysLeft,
+    label: "Vencido",
+    rowText: "El cobro no se acreditó y se agotaron los días de gracia",
+    badgeBg: "bg-rose-100",
+    badgeText: "text-rose-700",
+    badgeBorder: "border-rose-200",
   };
 }
 
