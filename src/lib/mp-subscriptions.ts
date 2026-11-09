@@ -737,6 +737,8 @@ export async function createUserSubscription(options: {
       payer_email: payerEmail,
       card_token_id: cardTokenId,
       back_url: `${appUrl}/configuracion?status=approved`,
+      // Aviso de cobros directo a HABA, sin depender de la configuración del panel de Mercado Pago
+      ...(appUrl.startsWith("https://") ? { notification_url: `${appUrl}/api/webhooks/mercadopago` } : {}),
       status: "authorized",
     }),
   });
