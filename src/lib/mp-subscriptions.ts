@@ -174,6 +174,128 @@ async function payerEmailBySubscriptionFromRecentPayments(): Promise<Map<string,
   return map;
 }
 
+export interface SubscriptionReportRow {
+  suscripcion: string;
+  estado: string;
+  /** green: al día · yellow: último cobro rechazado (MP reintenta) · red: sin cobros */
+  semaforo: string;
+  pagador: string;
+  alta: string;
+  ultimoCobroFecha: string;
+  ultimoCobroMonto: number | null;
+  cobrosAprobados: number | null;
+  proximoCobro: string;
+  cuentaNumero: string;
+  cuentaNombre: string;
+  cuentaEmail: string;
+  cuentaPlan: string;
+  cuentaVence: string;
+  observacion: string;
+}
+
+export interface SubscriptionsReport {
+  generadoEl: string;
+  filas: SubscriptionReportRow[];
+  /** Cuentas con plan mensual que no tienen ninguna suscripción activa asociada */
+  cuentasSinSuscripcion: { numero: string; nombre: string; email: string; vence: string }[];
+}
+
+/**
+ * Cruce de las suscripciones del plan en Mercado Pago con las cuentas de HABA: estado, último
+ * cobro (aprobado o rechazado), próximo cobro y a qué cuenta corresponde cada una. Es lo que
+ * Mercado Pago no deja exportar desde el menú de suscripciones.
+ */
+export async function buildSubscriptionsReport(): Promise<SubscriptionsReport> {
+  const admin = getAdminClient();
+  const planId = await resolvePlanId();
+  const subsRaw = planId ? await searchPreapprovals(`preapproval_plan_id=${encodeURIComponent(planId)}`) : [];
+  const subs = [...new Map(subsRaw.filter((s) => s?.id).map((s) => [String(s.id), s])).values()];
+
+  const { data } = await admin.auth.admin.listUsers({ perPage: 1000 });
+  const users: any[] = data?.users || [];
+  const { data: profileRows } = await admin.from("profiles").select("*");
+  const profiles = new Map<string, any>((profileRows || []).map((r: any) => [String(r.id), r]));
+
+  const accountBySub = new Map<string, any>();
+  for (const u of users) {
+    const prof = profiles.get(String(u.id));
+    const id = String(u.app_metadata?.mp_preapproval_id || prof?.mp_preapproval_id || "").trim();
+    if (id && !accountBySub.has(id)) accountBySub.set(id, u);
+  }
+  const accountOf = (u: any) => {
+    const prof = profiles.get(String(u.id)) || {};
+    const meta = u.app_metadata || {};
+    const um = u.user_metadata || {};
+    return {
+      numero: String(um.account_number || prof.account_number || ""),
+      nombre: String(prof.full_name || um.full_name || prof.business_name || um.business_name || ""),
+      email: String(u.email || prof.email || ""),
+      plan: String(meta.plan_type || prof.plan_type || ""),
+      vence: String(meta.plan_end_date || prof.plan_end_date || "").split("T")[0],
+    };
+  };
+
+  const dateOnly = (v: unknown) => String(v || "").split("T")[0];
+  const activeByUser = new Map<string, number>();
+  for (const s of subs) {
+    if (s?.status !== "authorized") continue;
+    const u = accountBySub.get(String(s.id));
+    if (u) activeByUser.set(String(u.id), (activeByUser.get(String(u.id)) || 0) + 1);
+  }
+
+  const filas: SubscriptionReportRow[] = subs.map((s) => {
+    const u = accountBySub.get(String(s.id));
+    const acc = u ? accountOf(u) : null;
+    const sem = String(s?.summarized?.semaphore || "");
+    const obs: string[] = [];
+    if (s.status === "authorized" && sem === "yellow") obs.push("Último cobro rechazado: Mercado Pago reintenta");
+    if (s.status === "authorized" && sem === "red") obs.push("Sin cobros aprobados");
+    if (s.status === "paused") obs.push("Pausada por Mercado Pago (cobros rechazados)");
+    if (s.status === "cancelled") obs.push("Cancelada");
+    if (!acc && s.status === "authorized") obs.push("Sin cuenta de HABA vinculada");
+    if (u && (activeByUser.get(String(u.id)) || 0) > 1 && s.status === "authorized") obs.push("La cuenta tiene más de una suscripción activa");
+    return {
+      suscripcion: String(s.id),
+      estado: String(s.status || ""),
+      semaforo: sem,
+      pagador: `${s?.payer_first_name || ""} ${s?.payer_last_name || ""}`.trim(),
+      alta: dateOnly(s?.date_created),
+      ultimoCobroFecha: dateOnly(s?.summarized?.last_charged_date),
+      ultimoCobroMonto: s?.summarized?.last_charged_amount ?? null,
+      cobrosAprobados: s?.summarized?.charged_quantity ?? null,
+      proximoCobro: s.status === "authorized" ? dateOnly(s?.next_payment_date) : "",
+      cuentaNumero: acc?.numero || "",
+      cuentaNombre: acc?.nombre || "",
+      cuentaEmail: acc?.email || "",
+      cuentaPlan: acc?.plan || "",
+      cuentaVence: acc?.vence || "",
+      observacion: obs.join(" · "),
+    };
+  });
+  const order: Record<string, number> = { authorized: 0, paused: 1, pending: 2, cancelled: 3 };
+  filas.sort(
+    (a, b) =>
+      (order[a.estado] ?? 9) - (order[b.estado] ?? 9) ||
+      (a.semaforo === "yellow" ? -1 : 0) - (b.semaforo === "yellow" ? -1 : 0) ||
+      a.pagador.localeCompare(b.pagador)
+  );
+
+  const cuentasSinSuscripcion = users
+    .filter((u) => {
+      const meta = u.app_metadata || {};
+      if (meta.plan_type !== "mensual") return false;
+      const n = activeByUser.get(String(u.id)) || 0;
+      return n === 0;
+    })
+    .map((u) => {
+      const a = accountOf(u);
+      return { numero: a.numero, nombre: a.nombre, email: a.email, vence: a.vence };
+    })
+    .sort((a, b) => a.nombre.localeCompare(b.nombre));
+
+  return { generadoEl: new Date().toISOString(), filas, cuentasSinSuscripcion };
+}
+
 export interface LinkAllResult {
   revisadas: number;
   vinculadas: { email: string; suscripcion: string; estado: string; como: "pago" | "email" }[];

@@ -38,6 +38,7 @@ import {
 import { HabaMascot } from "@/components/HabaMascot";
 import { isRealUserAvatar } from "@/components/ProfileAvatar";
 import { createClient } from "@/lib/supabase/client";
+import { downloadCsv } from "@/lib/exporters";
 import { checkIsAdmin } from "@/lib/auth-helpers";
 import { useModalThemeColor } from "@/hooks/useModalThemeColor";
 import {
@@ -390,6 +391,74 @@ export default function AdminPage() {
 
   const [syncingUserId, setSyncingUserId] = useState<string | null>(null);
   const [linkingSubscriptions, setLinkingSubscriptions] = useState(false);
+  const [exportingSubscriptions, setExportingSubscriptions] = useState(false);
+
+  /** CSV con las suscripciones de Mercado Pago cruzadas con las cuentas de HABA (lo que MP no exporta). */
+  const handleExportSubscriptions = async () => {
+    try {
+      setExportingSubscriptions(true);
+      const res = await fetch("/api/admin/subscriptions-report", { cache: "no-store" });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        alert("No se pudo armar el informe: " + (data.error || "error desconocido"));
+        return;
+      }
+      type Row = {
+        suscripcion: string;
+        estado: string;
+        semaforo: string;
+        pagador: string;
+        alta: string;
+        ultimoCobroFecha: string;
+        ultimoCobroMonto: number | null;
+        cobrosAprobados: number | null;
+        proximoCobro: string;
+        cuentaNumero: string;
+        cuentaNombre: string;
+        cuentaEmail: string;
+        cuentaPlan: string;
+        cuentaVence: string;
+        observacion: string;
+      };
+      const estadoLabel: Record<string, string> = {
+        authorized: "Activa",
+        paused: "Pausada",
+        pending: "Pendiente",
+        cancelled: "Cancelada",
+      };
+      const cobroLabel: Record<string, string> = { green: "Aprobado", yellow: "Rechazado", red: "Sin cobros" };
+      const rows: Row[] = data.filas || [];
+      downloadCsv<Row>("suscripciones-mercadopago", [
+        { header: "Pagador (Mercado Pago)", value: (r) => r.pagador },
+        { header: "Estado suscripción", value: (r) => estadoLabel[r.estado] || r.estado },
+        { header: "Último cobro", value: (r) => cobroLabel[r.semaforo] || r.semaforo },
+        { header: "Fecha último cobro", value: (r) => r.ultimoCobroFecha },
+        { header: "Monto último cobro", value: (r) => r.ultimoCobroMonto },
+        { header: "Cobros aprobados", value: (r) => r.cobrosAprobados },
+        { header: "Próximo cobro", value: (r) => r.proximoCobro },
+        { header: "Alta suscripción", value: (r) => r.alta },
+        { header: "N° cuenta HABA", value: (r) => r.cuentaNumero },
+        { header: "Nombre en HABA", value: (r) => r.cuentaNombre },
+        { header: "Email HABA", value: (r) => r.cuentaEmail },
+        { header: "Plan HABA", value: (r) => r.cuentaPlan },
+        { header: "Vence en HABA", value: (r) => r.cuentaVence },
+        { header: "Observación", value: (r) => r.observacion },
+        { header: "ID suscripción", value: (r) => r.suscripcion },
+      ], rows);
+      const sin: { numero: string; nombre: string; email: string; vence: string }[] = data.cuentasSinSuscripcion || [];
+      const activas = rows.filter((r) => r.estado === "authorized");
+      const rechazadas = activas.filter((r) => r.semaforo === "yellow");
+      const sinCuenta = activas.filter((r) => !r.cuentaEmail);
+      alert(
+        `Informe descargado.\n\nSuscripciones activas: ${activas.length}\nCon último cobro rechazado (MP reintenta): ${rechazadas.length}\nActivas sin cuenta de HABA: ${sinCuenta.length}\nCuentas con plan mensual sin suscripción activa: ${sin.length}` +
+          (sin.length ? `\n\nSin suscripción activa:\n${sin.map((x) => `- ${x.nombre || x.email}${x.numero ? ` (#${x.numero})` : ""} · vence ${x.vence}`).join("\n")}` : "")
+      );
+    } catch (err: any) {
+      alert("Error al armar el informe: " + err.message);
+    } finally {
+      setExportingSubscriptions(false);
+    }
+  };
 
   const handleLinkSubscriptions = async () => {
     if (
@@ -849,6 +918,18 @@ export default function AdminPage() {
           >
             <RefreshCw className={`w-4 h-4 text-[#3BB578] ${linkingSubscriptions ? "animate-spin" : ""}`} />
             <span>{linkingSubscriptions ? "Vinculando..." : "Vincular suscripciones"}</span>
+          </button>
+
+          {/* Botón Exportar suscripciones de Mercado Pago cruzadas con cuentas */}
+          <button
+            type="button"
+            onClick={handleExportSubscriptions}
+            disabled={exportingSubscriptions}
+            title="Descargar las suscripciones de Mercado Pago (estado, último cobro aprobado o rechazado, próximo cobro) cruzadas con las cuentas de HABA"
+            className="py-2.5 px-3.5 bg-white hover:bg-neutral-50 text-[#2B2B2B] border border-[#EAF0E8] rounded-2xl shadow-xs transition flex items-center gap-1.5 text-xs font-bold active:scale-[0.98] disabled:opacity-50 cursor-pointer"
+          >
+            <Download className={`w-4 h-4 text-[#3BB578] ${exportingSubscriptions ? "animate-pulse" : ""}`} />
+            <span>{exportingSubscriptions ? "Armando..." : "Exportar suscripciones MP"}</span>
           </button>
 
           {/* Botón Exportar CSV */}
