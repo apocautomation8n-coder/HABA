@@ -327,7 +327,6 @@ export async function reconcileSubscriptionCharges(
   const admin = getAdminClient();
   const planId = await resolvePlanId();
   const begin = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000).toISOString();
-  const end = new Date(Date.now() + 60 * 60 * 1000).toISOString();
   const result: ReconcileResult = {
     desde: begin.split("T")[0],
     pagosRevisados: 0,
@@ -342,9 +341,11 @@ export async function reconcileSubscriptionCharges(
   const payments: any[] = [];
   const PAGE = 100;
   for (let offset = 0, page = 0; page < 10; page++, offset += PAGE) {
+    // Formato de fechas que acepta la API (comprobado): rango por fecha de creación con NOW-xDAYS.
+    // El estado se filtra acá (los cobros de suscripción no aparecían con otros parámetros).
     const q =
-      `sort=date_approved&criteria=desc&range=date_approved&begin_date=${encodeURIComponent(begin)}` +
-      `&end_date=${encodeURIComponent(end)}&status=approved&limit=${PAGE}&offset=${offset}`;
+      `sort=date_created&criteria=desc&range=date_created&begin_date=NOW-${sinceDays}DAYS&end_date=NOW` +
+      `&limit=${PAGE}&offset=${offset}`;
     const res = await fetch(`${MP_API}/v1/payments/search?${q}`, { headers: mpHeaders() });
     if (!res.ok) {
       console.warn("[Conciliación MP] Búsqueda de pagos respondió", res.status);
