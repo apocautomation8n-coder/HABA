@@ -1,4 +1,4 @@
-import { canonicalEmail, isDisposableEmail } from "@/lib/email-guard";
+import { canonicalEmail, emailDomain, isDisposableEmailDeep } from "@/lib/email-guard";
 import { NextResponse } from "next/server";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
@@ -103,10 +103,18 @@ export async function GET(request: Request) {
       const c = canonicalEmail(u.email || "");
       if (c) canonicalCount.set(c, (canonicalCount.get(c) || 0) + 1);
     }
+    // Dominios descartables (lista propia, lista pública y servidores de correo temporal)
+    const disposableDomains = new Set<string>();
+    const domains = [...new Set((authData?.users || []).map((u) => emailDomain(u.email || "")).filter(Boolean))];
+    await Promise.all(
+      domains.map(async (d) => {
+        if (await isDisposableEmailDeep(`x@${d}`)) disposableDomains.add(d);
+      })
+    );
     const suspicionOf = (email: string | null | undefined): string | null => {
       const e = String(email || "");
       if (!e) return null;
-      if (isDisposableEmail(e)) return "Correo temporal";
+      if (disposableDomains.has(emailDomain(e))) return "Correo temporal";
       if ((canonicalCount.get(canonicalEmail(e)) || 0) > 1) return "Correo repetido en otra cuenta";
       return null;
     };

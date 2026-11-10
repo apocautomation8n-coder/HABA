@@ -37,6 +37,62 @@ const DISPOSABLE_DOMAINS = new Set<string>([
   "gufum.com", "bheps.com", "nqmo.com", "duck2.club", "tiktokng.com", "cevipsa.com", "lmaritimen.com",
 ]);
 
+/**
+ * Servidores de correo de servicios temporales. Estos servicios cambian de dominio todo el tiempo
+ * (digeros.com, drtall.com...), pero reciben en los mismos servidores: se bloquea por servidor.
+ */
+const DISPOSABLE_MX_HOSTS = [
+  "wabblywabble.com", "wallywatts.com", "necub.com", "yopmail.com", "mailinator.com", "guerrillamail.com",
+  "sharklasers.com", "mail.tm", "mail.gw", "temp-mail.org", "tempmail.com", "maildrop.cc", "mailnesia.com",
+  "dropmail.me", "1secmail.com", "emailfake.com", "generator.email", "fakemailgenerator.com", "trashmail.com",
+  "10minutemail.com", "getnada.com", "inboxkitten.com", "mohmal.com", "moakt.com", "tempail.com",
+  "mail-temp.com", "tempmail.plus", "emailondeck.com", "burnermail.io", "spamgourmet.com",
+];
+
+/** Lista pública y mantenida de dominios descartables (~10.000), cacheada 12 horas. */
+const REMOTE_LIST_URL =
+  "https://raw.githubusercontent.com/disposable-email-domains/disposable-email-domains/main/disposable_email_blocklist.conf";
+let remoteList: { set: Set<string>; at: number } | null = null;
+
+export async function getRemoteDisposableDomains(): Promise<Set<string>> {
+  if (remoteList && Date.now() - remoteList.at < 12 * 60 * 60 * 1000) return remoteList.set;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4000);
+    const res = await fetch(REMOTE_LIST_URL, { signal: controller.signal, cache: "no-store" });
+    clearTimeout(timer);
+    if (res.ok) {
+      const text = await res.text();
+      const set = new Set(
+        text
+          .split(/\r?\n/)
+          .map((l) => l.trim().toLowerCase())
+          .filter((l) => l && !l.startsWith("#"))
+      );
+      if (set.size > 1000) {
+        remoteList = { set, at: Date.now() };
+        return set;
+      }
+    }
+  } catch {
+    // sin conexión a la lista: se usan la lista propia y el control por servidor de correo
+  }
+  return remoteList?.set || new Set<string>();
+}
+
+function matchesDomainList(domain: string, list: { has(v: string): boolean }): boolean {
+  const parts = domain.split(".");
+  for (let i = 0; i < parts.length - 1; i++) {
+    if (list.has(parts.slice(i).join("."))) return true;
+  }
+  return false;
+}
+
+function isDisposableMxHost(host: string): boolean {
+  const h = String(host || "").toLowerCase().replace(/\.$/, "");
+  return DISPOSABLE_MX_HOSTS.some((d) => h === d || h.endsWith("." + d)) || matchesDomainList(h, DISPOSABLE_DOMAINS);
+}
+
 const COMMON_TYPOS: Record<string, string> = {
   "gamail.com": "gmail.com", "gmial.com": "gmail.com", "gmai.com": "gmail.com", "gmal.com": "gmail.com",
   "gmail.co": "gmail.com", "gmail.con": "gmail.com", "gnail.com": "gmail.com", "hotmial.com": "hotmail.com",
@@ -88,21 +144,37 @@ export function canonicalEmail(email: string): string {
   return `${local}@${domain}`;
 }
 
-/** true si el dominio tiene servidores de correo (MX). Ante un error de DNS no bloquea. */
-export async function domainReceivesEmail(email: string): Promise<boolean> {
+/** Servidores de correo (MX) del dominio. null si no se pudo consultar (no bloquea). */
+export async function getMxHosts(email: string): Promise<string[] | null> {
   const domain = emailDomain(email);
-  if (!domain) return false;
+  if (!domain) return [];
   const timeout = new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), 2500));
   try {
     const result = await Promise.race([dns.resolveMx(domain), timeout]);
-    if (result === "timeout") return true;
-    return Array.isArray(result) && result.length > 0;
+    if (result === "timeout") return null;
+    return Array.isArray(result) ? result.map((r) => String(r.exchange || "").toLowerCase()) : [];
   } catch (err: any) {
     const code = String(err?.code || "");
     // Dominio inexistente o sin registros de correo: no recibe mails
-    if (code === "ENOTFOUND" || code === "ENODATA" || code === "ENOTIMP") return false;
-    return true;
+    if (code === "ENOTFOUND" || code === "ENODATA" || code === "ENOTIMP") return [];
+    return null;
   }
+}
+
+/** true si el dominio tiene servidores de correo (MX). Ante un error de DNS no bloquea. */
+export async function domainReceivesEmail(email: string): Promise<boolean> {
+  const hosts = await getMxHosts(email);
+  return hosts === null || hosts.length > 0;
+}
+
+/** Descartable por la lista propia, la lista pública o porque recibe en servidores de correo temporal. */
+export async function isDisposableEmailDeep(email: string): Promise<boolean> {
+  if (isDisposableEmail(email)) return true;
+  const domain = emailDomain(email);
+  if (!domain) return false;
+  if (matchesDomainList(domain, await getRemoteDisposableDomains())) return true;
+  const hosts = await getMxHosts(email);
+  return Array.isArray(hosts) && hosts.some(isDisposableMxHost);
 }
 
 export type EmailCheck = { ok: true } | { ok: false; error: string };
@@ -113,7 +185,7 @@ export async function checkRegistrationEmail(email: string): Promise<EmailCheck>
   if (suggestion) {
     return { ok: false, error: `Revisá tu correo: ¿quisiste decir @${suggestion}?` };
   }
-  if (isDisposableEmail(email)) {
+  if (await isDisposableEmailDeep(email)) {
     return {
       ok: false,
       error: "No se permiten correos temporales o descartables. Registrate con tu correo personal o de tu negocio.",
