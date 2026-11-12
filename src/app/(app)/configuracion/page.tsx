@@ -36,6 +36,7 @@ import {
   HelpCircle,
 } from "lucide-react";
 import { ProfileAvatar, isRealUserAvatar } from "@/components/ProfileAvatar";
+import { LaborRateChangeModal } from "@/components/products/LaborRateChangeModal";
 import { HabaMascot } from "@/components/HabaMascot";
 import { WhatsAppIcon } from "@/components/WhatsAppIcon";
 import { buildProfileSupportWhatsAppUrl, buildSubscriptionWhatsAppUrl } from "@/lib/support";
@@ -112,6 +113,10 @@ export default function SettingsPage() {
   const [savingLabor, setSavingLabor] = useState<boolean>(false);
   const [laborSavedSuccess, setLaborSavedSuccess] = useState<boolean>(false);
   const [laborError, setLaborError] = useState<string | null>(null);
+  const [isLaborRateModalOpen, setIsLaborRateModalOpen] = useState<boolean>(false);
+  const [laborModalAffectedCount, setLaborModalAffectedCount] = useState<number>(0);
+  const [laborModalNewRate, setLaborModalNewRate] = useState<number>(0);
+  const [isRecalculatingAllLabor, setIsRecalculatingAllLabor] = useState<boolean>(false);
   const [subscribingMP, setSubscribingMP] = useState<boolean>(false);
   const [showSubscriptionModal, setShowSubscriptionModal] = useState<boolean>(false);
   const [syncingMP, setSyncingMP] = useState<boolean>(false);
@@ -507,13 +512,40 @@ export default function SettingsPage() {
 
       if (upsertError) throw upsertError;
 
-      setLaborSavedSuccess(true);
-      setTimeout(() => setLaborSavedSuccess(false), 3000);
+      // Auditar productos afectados por el nuevo valor del minuto
+      const { markProductsWithLaborChange } = await import("@/lib/products");
+      const { affectedCount } = await markProductsWithLaborChange(supabase, calculatedMinuteRate);
+
+      if (affectedCount > 0) {
+        setLaborModalAffectedCount(affectedCount);
+        setLaborModalNewRate(calculatedMinuteRate);
+        setIsLaborRateModalOpen(true);
+      } else {
+        setLaborSavedSuccess(true);
+        setTimeout(() => setLaborSavedSuccess(false), 3000);
+      }
     } catch (err: any) {
       console.error("Error saving labor settings:", err);
       setLaborError(err.message || "Error al guardar configuración.");
     } finally {
       setSavingLabor(false);
+    }
+  };
+
+  const handleRecalculateAllLabor = async () => {
+    try {
+      setIsRecalculatingAllLabor(true);
+      const { recalculateProductsLaborCost } = await import("@/lib/products");
+      const { updatedCount } = await recalculateProductsLaborCost(supabase, laborModalNewRate);
+      setIsLaborRateModalOpen(false);
+      setLaborSavedSuccess(true);
+      alert(`¡Listo! Se actualizaron los costos y precios de venta sugeridos de ${updatedCount} productos.`);
+      setTimeout(() => setLaborSavedSuccess(false), 3500);
+    } catch (err: any) {
+      console.error("Error al recalcular productos:", err);
+      alert("Hubo un error al recalcular los productos.");
+    } finally {
+      setIsRecalculatingAllLabor(false);
     }
   };
 
@@ -1779,6 +1811,20 @@ export default function SettingsPage() {
         onClose={() => setShowSubscriptionModal(false)}
         defaultEmail={email}
         returnUrl="/configuracion?status=approved"
+      />
+
+      {/* Modal de Acción Rápida al cambiar valor del minuto */}
+      <LaborRateChangeModal
+        isOpen={isLaborRateModalOpen}
+        onClose={() => setIsLaborRateModalOpen(false)}
+        affectedCount={laborModalAffectedCount}
+        newMinuteRate={laborModalNewRate}
+        onRecalculateAll={handleRecalculateAllLabor}
+        isRecalculatingAll={isRecalculatingAllLabor}
+        onGoToProducts={() => {
+          setIsLaborRateModalOpen(false);
+          router.push("/productos");
+        }}
       />
     </div>
   );

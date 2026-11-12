@@ -65,11 +65,18 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
         const outdatedProducts = await getOutdatedProductsList(supabase);
 
         outdatedProducts.forEach((p) => {
+          let description = `Los insumos de este producto subieron de costo (de ${formatMoney(p.direct_cost)} a ${formatMoney(p.currentMaterialsCost)}). Tocá para recalcular.`;
+          if (p.hasLaborChange && !p.hasMaterialsChange) {
+            description = `Actualización en el valor del minuto de trabajo (mano de obra: ${formatMoney(p.prevLaborCost || 0)} → ${formatMoney(p.currentLaborCost || 0)}). Tocá para recalcular.`;
+          } else if (p.hasLaborChange && p.hasMaterialsChange) {
+            description = `Variación en insumos y actualización en el valor del minuto de trabajo. Tocá para recalcular.`;
+          }
+
           items.push({
             id: `product-cost-${p.id}`,
             type: "price_increase",
             title: `Revisar costos: ${p.name}`,
-            description: `Los insumos de este producto subieron de costo (de ${formatMoney(p.direct_cost)} a ${formatMoney(p.currentMaterialsCost)}). Tocá para recalcular.`,
+            description,
             date: new Date().toISOString(),
             isRead: false,
           });

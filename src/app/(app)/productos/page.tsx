@@ -1677,11 +1677,20 @@ export default function ProductosPage() {
       const savedDirectCost = Math.round(Number(product.direct_cost || 0) * 100) / 100;
 
       // Costo laboral estrictamente UNITARIO (dividido por productYield)
-      const unitLaborCost = product.include_labor
-        ? currentMinuteRate > 0 && product.work_time_minutes
+      const savedLaborCost = Math.round(Number(product.labor_cost || 0) * 100) / 100;
+      const calculatedLaborCost =
+        product.include_labor && currentMinuteRate > 0 && product.work_time_minutes
           ? Math.round(((product.work_time_minutes * currentMinuteRate) / productYield) * 100) / 100
-          : Math.round(Number(product.labor_cost || 0) * 100) / 100
-        : 0;
+          : savedLaborCost;
+
+      const unitLaborCost = product.include_labor ? calculatedLaborCost : 0;
+      const laborCostDiff = Math.abs(calculatedLaborCost - savedLaborCost);
+      const hasLaborCostChange = Boolean(
+        product.include_labor &&
+        (product.work_time_minutes || 0) > 0 &&
+        currentMinuteRate > 0 &&
+        laborCostDiff > 0.01
+      );
 
       const currentTotalCost = Math.round((roundedUnitMaterialsCost + unitLaborCost) * 100) / 100;
 
@@ -1693,6 +1702,7 @@ export default function ProductosPage() {
       const isCostOutdated = !isDismissed && Boolean(
         product.needs_price_review ||
         hasModifiedSupplies ||
+        hasLaborCostChange ||
         (hasRecipe && costDifference > 0.05)
       );
 
@@ -1702,7 +1712,10 @@ export default function ProductosPage() {
         badge,
         product_prices: sortProductPrices(product.product_prices || []),
         currentMaterialsCost: hasRecipe ? roundedUnitMaterialsCost : savedDirectCost,
+        savedLaborCost,
         currentLaborCost: unitLaborCost,
+        laborCostDiff,
+        hasLaborCostChange,
         currentTotalCost,
         isCostOutdated,
         modifiedSupplies,
@@ -2577,11 +2590,15 @@ export default function ProductosPage() {
                     <div className="flex items-center gap-1.5 min-w-0 flex-1">
                       <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
                       <span className="text-[11px] font-semibold leading-tight line-clamp-1 sm:truncate">
-                        {product.modifiedSupplies && product.modifiedSupplies.length > 0
+                        {product.hasLaborCostChange && (!product.modifiedSupplies || product.modifiedSupplies.length === 0)
+                          ? "Actualización en el valor del minuto de trabajo"
+                          : product.hasLaborCostChange && product.modifiedSupplies && product.modifiedSupplies.length > 0
+                          ? `${product.modifiedSupplies.length} ${product.modifiedSupplies.length === 1 ? "insumo" : "insumos"} + Minuto de trabajo actualizado`
+                          : product.modifiedSupplies && product.modifiedSupplies.length > 0
                           ? product.modifiedSupplies.length === 1
                             ? `${product.modifiedSupplies[0].name} ${product.modifiedSupplies[0].isIncrease ? "aumentó" : "bajó"} de precio`
                             : `${product.modifiedSupplies.length} insumos cambiaron de precio`
-                          : "Insumos cambiaron de precio"}
+                          : "Costos de producción desactualizados"}
                       </span>
                     </div>
                     <div className="flex items-center gap-1.5 flex-shrink-0 self-end sm:self-auto">
@@ -2636,14 +2653,22 @@ export default function ProductosPage() {
                             <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
                             <div>
                               <strong className="block font-bold">
-                                Insumos con variación de precio detectada:
+                                {product.hasLaborCostChange && (!product.modifiedSupplies || product.modifiedSupplies.length === 0)
+                                  ? "Actualización en el valor del minuto de trabajo:"
+                                  : "Variación de costos detectada:"}
                               </strong>
                               <span className="text-[11px] text-amber-800">
-                                {product.modifiedSupplies && product.modifiedSupplies.length > 0
+                                {product.hasLaborCostChange && product.modifiedSupplies && product.modifiedSupplies.length > 0
+                                  ? `Se detectaron cambios en ${product.modifiedSupplies.length} ${
+                                      product.modifiedSupplies.length === 1 ? "insumo" : "insumos"
+                                    } de la receta y una actualización en el valor del minuto de trabajo.`
+                                  : product.hasLaborCostChange
+                                  ? "El valor del minuto de trabajo configurado difiere del costo de mano de obra guardado en este producto."
+                                  : product.modifiedSupplies && product.modifiedSupplies.length > 0
                                   ? `Se detectaron cambios en ${product.modifiedSupplies.length} ${
                                       product.modifiedSupplies.length === 1 ? "insumo" : "insumos"
                                     } de la receta.`
-                                  : "Uno o más insumos asignados a esta receta cambiaron de precio desde la última actualización."}
+                                  : "Los costos de producción difieren de los valores vigentes."}
                               </span>
                             </div>
                           </div>
@@ -3242,8 +3267,65 @@ export default function ProductosPage() {
                       </span>
                     )}
                   </div>
+
+                  {/* Comparativa reactiva de mano de obra anterior vs nueva */}
+                  {editMins > 0 && currentMinuteRate > 0 && (
+                    <div className="mt-1.5 space-y-1">
+                      <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
+                        <span className="text-neutral-500">
+                          Tarifa: <strong>{formatMoney(currentMinuteRate)}/min</strong>
+                        </span>
+                        {editModalProduct && editModalProduct.include_labor && (
+                          <>
+                            <span className="text-neutral-300">|</span>
+                            <span className="text-neutral-500">
+                              M.O. guardada: <strong>{formatMoney(Number(editModalProduct.labor_cost || 0))}</strong>
+                            </span>
+                            <span className="text-neutral-300">➔</span>
+                            <span className="font-bold text-[#1F7A4C]">
+                              Nueva: {formatMoney(editUnitLaborCost)}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                      {editModalProduct &&
+                        editModalProduct.include_labor &&
+                        Math.abs(editUnitLaborCost - Number(editModalProduct.labor_cost || 0)) > 0.01 && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 border border-amber-200">
+                            <Clock className="w-3 h-3 text-amber-700" />
+                            <span>
+                              {editUnitLaborCost > Number(editModalProduct.labor_cost || 0) ? "Aumento de " : "Disminución de "}
+                              {formatMoney(Math.abs(editUnitLaborCost - Number(editModalProduct.labor_cost || 0)))} por valor del minuto
+                            </span>
+                          </span>
+                        )}
+                    </div>
+                  )}
                 </div>
               </div>
+
+              {/* Banner informativo si varió el valor del minuto */}
+              {editModalProduct &&
+                editModalProduct.include_labor &&
+                editMins > 0 &&
+                Math.abs(editUnitLaborCost - Number(editModalProduct.labor_cost || 0)) > 0.01 && (
+                  <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200/90 text-xs text-amber-900 flex items-start gap-2.5">
+                    <Clock className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                    <div className="space-y-0.5">
+                      <strong className="block font-bold">
+                        Actualización en el valor del minuto de trabajo
+                      </strong>
+                      <p className="text-[11px] text-amber-800 leading-relaxed">
+                        El costo de mano de obra se actualizó con tu tarifa vigente de{" "}
+                        <strong>{formatMoney(currentMinuteRate)}/min</strong> (de{" "}
+                        {formatMoney(Number(editModalProduct.labor_cost || 0))} a{" "}
+                        <strong>{formatMoney(editUnitLaborCost)}</strong>). Al guardar los cambios,
+                        se persistirá el nuevo costo unitario ({formatMoney(editTotalCost)}) y se
+                        actualizarán los precios sugeridos en tus canales de venta manteniendo tus márgenes.
+                      </p>
+                    </div>
+                  </div>
+                )}
 
               {/* Descripción */}
               <div>

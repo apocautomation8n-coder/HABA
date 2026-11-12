@@ -1,11 +1,13 @@
 "use client";
 import React, { useEffect, useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { DollarSign, Clock, Plus, Trash2, Edit2, Calendar, AlertCircle, Check, Sparkles, X, Calculator, HelpCircle, Loader2, Info } from "lucide-react";
 import { HabaMascot } from "@/components/HabaMascot";
 import { createClient } from "@/lib/supabase/client";
 import { useFormatPrefs } from "@/hooks/useFormatPrefs";
 import { ExpenseModal, FixedExpense } from "@/components/gastos/ExpenseModal";
 import { DeleteExpenseModal } from "@/components/gastos/DeleteExpenseModal";
+import { LaborRateChangeModal } from "@/components/products/LaborRateChangeModal";
 
 interface LaborSettings {
   desired_monthly_salary: number;
@@ -30,6 +32,7 @@ export default function GastosPage() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Mano de Obra State
+  const router = useRouter();
   const [salary, setSalary] = useState<number | string>("");
   const [daysPerMonth, setDaysPerMonth] = useState<number | string>(20);
   const [hoursPerDay, setHoursPerDay] = useState<number | string>(6);
@@ -38,6 +41,10 @@ export default function GastosPage() {
   const [laborError, setLaborError] = useState<string | null>(null);
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
   const [showLaborInfo, setShowLaborInfo] = useState(false);
+  const [isLaborRateModalOpen, setIsLaborRateModalOpen] = useState(false);
+  const [laborModalAffectedCount, setLaborModalAffectedCount] = useState(0);
+  const [laborModalNewRate, setLaborModalNewRate] = useState(0);
+  const [isRecalculatingAllLabor, setIsRecalculatingAllLabor] = useState(false);
 
   // Cargar datos
   const loadData = async () => {
@@ -205,14 +212,42 @@ export default function GastosPage() {
       if (upsertError) throw upsertError;
 
       setLastSavedAt(now);
-      setLaborSavedSuccess(true);
-      showToast("Configuración de mano de obra guardada con éxito.");
-      setTimeout(() => setLaborSavedSuccess(false), 3500);
+
+      // Auditar y marcar productos con mano de obra cargada
+      const { markProductsWithLaborChange } = await import("@/lib/products");
+      const { affectedCount } = await markProductsWithLaborChange(supabase, calculatedMinuteRate);
+
+      if (affectedCount > 0) {
+        setLaborModalAffectedCount(affectedCount);
+        setLaborModalNewRate(calculatedMinuteRate);
+        setIsLaborRateModalOpen(true);
+      } else {
+        setLaborSavedSuccess(true);
+        showToast("Configuración de mano de obra guardada con éxito.");
+        setTimeout(() => setLaborSavedSuccess(false), 3500);
+      }
     } catch (err: any) {
       console.error("Error al guardar mano de obra:", err);
       setLaborError(err.message || "Error al guardar la configuración de mano de obra.");
     } finally {
       setSavingLabor(false);
+    }
+  };
+
+  const handleRecalculateAllLabor = async () => {
+    try {
+      setIsRecalculatingAllLabor(true);
+      const { recalculateProductsLaborCost } = await import("@/lib/products");
+      const { updatedCount } = await recalculateProductsLaborCost(supabase, laborModalNewRate);
+      setIsLaborRateModalOpen(false);
+      showToast(`¡Listo! Se actualizaron costos y precios de ${updatedCount} productos.`);
+      setLaborSavedSuccess(true);
+      setTimeout(() => setLaborSavedSuccess(false), 3500);
+    } catch (err: any) {
+      console.error("Error al recalcular productos en lote:", err);
+      showToast("Hubo un error al recalcular los productos.");
+    } finally {
+      setIsRecalculatingAllLabor(false);
     }
   };
 
@@ -568,6 +603,19 @@ export default function GastosPage() {
           setDeletingExpense(null);
         }}
         onSuccess={handleExpenseDeleted}
+      />
+
+      <LaborRateChangeModal
+        isOpen={isLaborRateModalOpen}
+        onClose={() => setIsLaborRateModalOpen(false)}
+        affectedCount={laborModalAffectedCount}
+        newMinuteRate={laborModalNewRate}
+        onRecalculateAll={handleRecalculateAllLabor}
+        isRecalculatingAll={isRecalculatingAllLabor}
+        onGoToProducts={() => {
+          setIsLaborRateModalOpen(false);
+          router.push("/productos");
+        }}
       />
 
       {toastMessage && (

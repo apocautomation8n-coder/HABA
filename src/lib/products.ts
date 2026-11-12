@@ -1093,6 +1093,12 @@ export interface OutdatedProductAlert {
   direct_cost: number;
   currentMaterialsCost: number;
   difference: number;
+  hasMaterialsChange?: boolean;
+  hasLaborChange?: boolean;
+  prevLaborCost?: number;
+  currentLaborCost?: number;
+  laborDifference?: number;
+  reasons?: string[];
 }
 
 export interface ProductComponentItem {
@@ -1170,6 +1176,23 @@ export function calculateComponentsCost(components: SelectedProductComponent[]):
 
 export async function getOutdatedProductsList(supabase: any): Promise<OutdatedProductAlert[]> {
   try {
+    let minuteRate = 0;
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: laborData } = await supabase
+          .from("labor_settings")
+          .select("minute_rate")
+          .eq("user_id", user.id)
+          .maybeSingle();
+        if (laborData?.minute_rate) {
+          minuteRate = Number(laborData.minute_rate) || 0;
+        }
+      }
+    } catch (laborErr) {
+      console.warn("No se pudo obtener labor_settings en getOutdatedProductsList:", laborErr);
+    }
+
     const { data: products, error } = await supabase
       .from("products")
       .select(`
@@ -1177,6 +1200,10 @@ export async function getOutdatedProductsList(supabase: any): Promise<OutdatedPr
         name,
         description,
         direct_cost,
+        labor_cost,
+        total_cost,
+        work_time_minutes,
+        include_labor,
         needs_price_review,
         product_supplies (
           id,
@@ -1197,6 +1224,7 @@ export async function getOutdatedProductsList(supabase: any): Promise<OutdatedPr
             id,
             name,
             direct_cost,
+            labor_cost,
             total_cost,
             needs_price_review
           )
@@ -1212,6 +1240,10 @@ export async function getOutdatedProductsList(supabase: any): Promise<OutdatedPr
           name,
           description,
           direct_cost,
+          labor_cost,
+          total_cost,
+          work_time_minutes,
+          include_labor,
           needs_price_review,
           product_supplies (
             id,
@@ -1227,17 +1259,17 @@ export async function getOutdatedProductsList(supabase: any): Promise<OutdatedPr
           )
         `);
       if (!fallbackProducts) return [];
-      return calculateOutdatedList(fallbackProducts);
+      return calculateOutdatedList(fallbackProducts, minuteRate);
     }
 
-    return calculateOutdatedList(products);
+    return calculateOutdatedList(products, minuteRate);
   } catch (err) {
     console.error("Error al obtener lista de productos desactualizados:", err);
     return [];
   }
 }
 
-function calculateOutdatedList(products: any[]): OutdatedProductAlert[] {
+function calculateOutdatedList(products: any[], minuteRate: number = 0): OutdatedProductAlert[] {
   const outdatedProducts: OutdatedProductAlert[] = [];
 
   for (const product of products) {
@@ -1285,8 +1317,36 @@ function calculateOutdatedList(products: any[]): OutdatedProductAlert[] {
     const roundedUnitCost = Math.round(unitMaterialsCost * 100) / 100;
     const savedDirectCost = Math.round(Number(product.direct_cost || 0) * 100) / 100;
 
-    const costDifference = hasRecipe ? Math.abs(roundedUnitCost - savedDirectCost) : 0;
-    const isCostOutdated = Boolean(product.needs_price_review || (hasRecipe && costDifference > 0.05));
+    const materialsDifference = hasRecipe ? Math.abs(roundedUnitCost - savedDirectCost) : 0;
+    const hasMaterialsChange = hasRecipe && materialsDifference > 0.05;
+
+    // 3. Validación de Mano de Obra (Valor del minuto vigente vs guardado)
+    const savedLaborCost = Math.round(Number(product.labor_cost || 0) * 100) / 100;
+    const workMinutes = Number(product.work_time_minutes) || 0;
+    const calculatedLaborCost =
+      product.include_labor && minuteRate > 0 && workMinutes > 0
+        ? Math.round(((workMinutes * minuteRate) / productYield) * 100) / 100
+        : savedLaborCost;
+    const laborDiff = Math.abs(calculatedLaborCost - savedLaborCost);
+    const hasLaborChange = Boolean(
+      product.include_labor &&
+      workMinutes > 0 &&
+      minuteRate > 0 &&
+      laborDiff > 0.01
+    );
+
+    const reasons: string[] = [];
+    if (hasMaterialsChange) reasons.push("Variación en costo de insumos");
+    if (hasLaborChange) reasons.push("Actualización en el valor del minuto de trabajo");
+    if (product.needs_price_review && reasons.length === 0) {
+      reasons.push("Revisión de precios pendiente");
+    }
+
+    const isCostOutdated = Boolean(
+      product.needs_price_review ||
+      hasMaterialsChange ||
+      hasLaborChange
+    );
 
     if (isCostOutdated) {
       outdatedProducts.push({
@@ -1294,12 +1354,175 @@ function calculateOutdatedList(products: any[]): OutdatedProductAlert[] {
         name: product.name,
         direct_cost: savedDirectCost,
         currentMaterialsCost: roundedUnitCost,
-        difference: Math.round(costDifference * 100) / 100,
+        difference: Math.round((materialsDifference + (hasLaborChange ? laborDiff : 0)) * 100) / 100,
+        hasMaterialsChange,
+        hasLaborChange,
+        prevLaborCost: savedLaborCost,
+        currentLaborCost: calculatedLaborCost,
+        laborDifference: Math.round(laborDiff * 100) / 100,
+        reasons,
       });
     }
   }
 
   return outdatedProducts;
+}
+
+/**
+ * Marca con `needs_price_review = true` a todos los productos cuya mano de obra
+ * cambie con el nuevo valor del minuto ingresado por el usuario.
+ */
+export async function markProductsWithLaborChange(
+  supabase: any,
+  newMinuteRate: number
+): Promise<{ affectedCount: number; affectedProductIds: string[] }> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { affectedCount: 0, affectedProductIds: [] };
+
+    const { data: products, error } = await supabase
+      .from("products")
+      .select("id, name, description, labor_cost, work_time_minutes, include_labor")
+      .eq("user_id", user.id)
+      .eq("include_labor", true)
+      .gt("work_time_minutes", 0);
+
+    if (error || !products) {
+      console.error("Error al consultar productos para alerta de mano de obra:", error);
+      return { affectedCount: 0, affectedProductIds: [] };
+    }
+
+    const affectedProductIds: string[] = [];
+
+    for (const p of products) {
+      const meta = parseProductMeta(p.description, p.id);
+      const productYield = meta.yield > 0 ? meta.yield : 1;
+      const savedLaborCost = Math.round(Number(p.labor_cost || 0) * 100) / 100;
+      const calculatedLaborCost = Math.round(((Number(p.work_time_minutes) * newMinuteRate) / productYield) * 100) / 100;
+      const diff = Math.abs(calculatedLaborCost - savedLaborCost);
+
+      if (diff > 0.01) {
+        affectedProductIds.push(p.id);
+      }
+    }
+
+    if (affectedProductIds.length > 0) {
+      const { error: updateError } = await supabase
+        .from("products")
+        .update({ needs_price_review: true, updated_at: new Date().toISOString() })
+        .in("id", affectedProductIds);
+
+      if (updateError) {
+        console.error("Error al marcar needs_price_review en lote:", updateError);
+      }
+    }
+
+    return { affectedCount: affectedProductIds.length, affectedProductIds };
+  } catch (err) {
+    console.error("Error en markProductsWithLaborChange:", err);
+    return { affectedCount: 0, affectedProductIds: [] };
+  }
+}
+
+/**
+ * Recalcula en lote el costo de mano de obra, el costo total y los precios sugeridos de canales
+ * para todos los productos con tiempo de producción cargado, usando el nuevo valor del minuto.
+ */
+export async function recalculateProductsLaborCost(
+  supabase: any,
+  newMinuteRate: number
+): Promise<{ updatedCount: number }> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { updatedCount: 0 };
+
+    const { data: products, error } = await supabase
+      .from("products")
+      .select(`
+        id,
+        name,
+        description,
+        direct_cost,
+        labor_cost,
+        total_cost,
+        work_time_minutes,
+        include_labor,
+        needs_price_review,
+        product_prices (
+          id,
+          channel_name,
+          profit_margin_percent,
+          selling_price
+        )
+      `)
+      .eq("user_id", user.id)
+      .eq("include_labor", true)
+      .gt("work_time_minutes", 0);
+
+    if (error || !products || products.length === 0) {
+      return { updatedCount: 0 };
+    }
+
+    const nowIso = new Date().toISOString();
+    let updatedCount = 0;
+
+    for (const p of products) {
+      const meta = parseProductMeta(p.description, p.id);
+      const productYield = meta.yield > 0 ? meta.yield : 1;
+      const savedLaborCost = Math.round(Number(p.labor_cost || 0) * 100) / 100;
+      const newLaborCost = Math.round(((Number(p.work_time_minutes) * newMinuteRate) / productYield) * 100) / 100;
+      const diff = Math.abs(newLaborCost - savedLaborCost);
+
+      if (diff <= 0.01 && !p.needs_price_review) {
+        continue;
+      }
+
+      const directCost = Math.round(Number(p.direct_cost || 0) * 100) / 100;
+      const newTotalCost = Math.round((directCost + newLaborCost) * 100) / 100;
+
+      // Actualizar producto
+      const { error: prodErr } = await supabase
+        .from("products")
+        .update({
+          labor_cost: newLaborCost,
+          total_cost: newTotalCost,
+          needs_price_review: false,
+          updated_at: nowIso,
+        })
+        .eq("id", p.id);
+
+      if (prodErr) {
+        console.error(`Error actualizando producto ${p.id}:`, prodErr);
+        continue;
+      }
+
+      // Actualizar precios de canales manteniendo el margen configurado
+      if (p.product_prices && p.product_prices.length > 0) {
+        for (const price of p.product_prices) {
+          const margin = Number(price.profit_margin_percent) || 0;
+          const newSellingPrice = Math.round(newTotalCost * (1 + margin / 100));
+          await supabase
+            .from("product_prices")
+            .update({ selling_price: newSellingPrice })
+            .eq("id", price.id);
+        }
+      }
+
+      // Limpiar snapshots guardados en localStorage
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.removeItem(`haba_product_review_${p.id}`);
+        } catch {}
+      }
+
+      updatedCount++;
+    }
+
+    return { updatedCount };
+  } catch (err) {
+    console.error("Error en recalculateProductsLaborCost:", err);
+    return { updatedCount: 0 };
+  }
 }
 
 export interface PriceDifferenceResult {

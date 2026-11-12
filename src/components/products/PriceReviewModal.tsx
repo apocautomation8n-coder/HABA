@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   DollarSign,
   Info,
+  Clock,
 } from "lucide-react";
 import { useFormatPrefs } from "@/hooks/useFormatPrefs";
 import { ModifiedSupplyInfo } from "@/lib/products";
@@ -37,16 +38,28 @@ export const PriceReviewModal: React.FC<PriceReviewModalProps> = ({
   if (!isOpen || !product) return null;
 
   const modifiedSupplies: ModifiedSupplyInfo[] = product.modifiedSupplies || [];
+  const hasLaborChange = Boolean(product.hasLaborCostChange);
   const currentMaterialsCost = Number(product.currentMaterialsCost) || 0;
   const savedDirectCost = Number(product.direct_cost) || 0;
   const costDiff = currentMaterialsCost - savedDirectCost;
+
+  const savedLaborCost = product.savedLaborCost !== undefined
+    ? Number(product.savedLaborCost)
+    : Number(product.labor_cost || 0);
+
   const totalLaborCost = product.currentLaborCost !== undefined
     ? Number(product.currentLaborCost)
-    : product.include_labor ? Number(product.labor_cost || 0) : 0;
-  const savedTotalCost = Number(product.total_cost) || (savedDirectCost + totalLaborCost);
+    : product.include_labor ? savedLaborCost : 0;
+
+  const laborCostDiff = Math.round((totalLaborCost - savedLaborCost) * 100) / 100;
+  const isLaborIncrease = laborCostDiff > 0.005;
+  const isLaborDecrease = laborCostDiff < -0.005;
+
+  const savedTotalCost = Number(product.total_cost) || (savedDirectCost + savedLaborCost);
   const newTotalCost = product.currentTotalCost !== undefined
     ? Number(product.currentTotalCost)
     : Math.round((currentMaterialsCost + totalLaborCost) * 100) / 100;
+  const totalCostDiff = Math.round((newTotalCost - savedTotalCost) * 100) / 100;
 
   const handleConfirmRecalculate = async () => {
     await onRecalculate(product);
@@ -79,8 +92,11 @@ export const PriceReviewModal: React.FC<PriceReviewModalProps> = ({
                   Revisión de Precios
                 </h3>
                 <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-amber-200/80 text-amber-900 flex-shrink-0">
-                  {modifiedSupplies.length}{" "}
-                  {modifiedSupplies.length === 1 ? "insumo modificado" : "insumos modificados"}
+                  {modifiedSupplies.length > 0 && hasLaborChange
+                    ? `${modifiedSupplies.length} ${modifiedSupplies.length === 1 ? "insumo" : "insumos"} + Minuto de trabajo`
+                    : hasLaborChange
+                    ? "Valor del minuto actualizado"
+                    : `${modifiedSupplies.length} ${modifiedSupplies.length === 1 ? "insumo modificado" : "insumos modificados"}`}
                 </span>
               </div>
               <p className="text-xs text-neutral-500 truncate mt-0.5">
@@ -102,12 +118,91 @@ export const PriceReviewModal: React.FC<PriceReviewModalProps> = ({
           {/* Mensaje explicativo */}
           <div className="bg-neutral-50 p-3 rounded-2xl border border-neutral-200/60 text-neutral-600 space-y-1">
             <p className="leading-relaxed">
-              Detectamos que el costo de reposición de uno o más insumos cambió desde la última vez que guardaste este producto.
+              {hasLaborChange && modifiedSupplies.length > 0
+                ? "Detectamos cambios en el costo de reposición de tus insumos y una actualización en el valor del minuto de trabajo configurado."
+                : hasLaborChange
+                ? "Detectamos una actualización en el valor del minuto de trabajo que impacta en el costo de mano de obra de este producto."
+                : "Detectamos que el costo de reposición de uno o más insumos cambió desde la última vez que guardaste este producto."}
             </p>
             <p className="text-[11px] text-neutral-400">
-              Revisá el detalle de cada insumo afectado y decidí si querés recalcular los costos y actualizar los precios de venta en tus canales.
+              Revisá el detalle y decidí si querés recalcular los costos y actualizar los precios de venta sugeridos en tus canales manteniendo tus márgenes.
             </p>
           </div>
+
+          {/* Sección de variación en Mano de Obra si cambió el valor del minuto */}
+          {hasLaborChange && (
+            <div className="space-y-2">
+              <h4 className="text-[11px] font-bold text-neutral-500 uppercase tracking-wider flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-amber-600" />
+                Mano de Obra (Tiempo de Producción):
+              </h4>
+              <div
+                className={`p-3 rounded-2xl border space-y-2 transition ${
+                  isLaborIncrease
+                    ? "bg-amber-50/40 border-amber-200/80 hover:bg-amber-50/60"
+                    : "bg-sky-50/40 border-sky-200/80 hover:bg-sky-50/60"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-bold text-neutral-900 text-sm">
+                        Mano de Obra ({product.work_time_minutes || 0} min)
+                      </span>
+                      <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-md bg-amber-200/60 text-amber-800">
+                        Actualización en el valor del minuto de trabajo
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-neutral-500 block mt-0.5">
+                      Tiempo de elaboración cargado: <strong>{product.work_time_minutes || 0} minutos</strong>
+                    </span>
+                  </div>
+
+                  <div className="text-right flex-shrink-0">
+                    <span
+                      className={`inline-flex items-center gap-1 text-[11px] font-extrabold px-2 py-0.5 rounded-lg border shadow-2xs ${
+                        isLaborIncrease
+                          ? "bg-amber-100 text-amber-800 border-amber-300"
+                          : "bg-sky-100 text-sky-800 border-sky-300"
+                      }`}
+                    >
+                      {isLaborIncrease ? (
+                        <TrendingUp className="w-3 h-3 text-amber-700" />
+                      ) : (
+                        <TrendingDown className="w-3 h-3 text-sky-700" />
+                      )}
+                      {isLaborIncrease
+                        ? `+${formatMoney(laborCostDiff)}`
+                        : `-${formatMoney(Math.abs(laborCostDiff))}`}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 bg-white p-2 rounded-xl border border-amber-200/50 text-[11px]">
+                  <div>
+                    <span className="text-neutral-400 block text-[10px]">Costo anterior guardado:</span>
+                    <span className="font-semibold text-neutral-700">
+                      {formatMoney(savedLaborCost)}
+                    </span>
+                  </div>
+                  <div className="border-l border-neutral-100 pl-2">
+                    <span className="text-neutral-400 block text-[10px]">Costo vigente:</span>
+                    <span className={`font-bold ${isLaborIncrease ? "text-amber-900" : "text-sky-900"}`}>
+                      {formatMoney(totalLaborCost)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between text-[11px] pt-0.5 text-neutral-600">
+                  <span>Impacto en mano de obra:</span>
+                  <strong className={`font-bold ${isLaborIncrease ? "text-amber-800" : "text-sky-700"}`}>
+                    {isLaborIncrease ? "+" : "-"}
+                    {formatMoney(Math.abs(laborCostDiff))}
+                  </strong>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Listado explícito de insumos modificados */}
           <div className="space-y-2">
@@ -118,7 +213,9 @@ export const PriceReviewModal: React.FC<PriceReviewModalProps> = ({
 
             {modifiedSupplies.length === 0 ? (
               <div className="p-3 bg-neutral-50 rounded-2xl border border-dashed border-neutral-200 text-center text-neutral-500 text-xs italic">
-                El costo total de la receta difiere del costo guardado ({formatMoney(savedDirectCost)} vs {formatMoney(currentMaterialsCost)}).
+                {hasLaborChange
+                  ? "Los insumos de la receta mantienen su precio. La variación detectada corresponde exclusivamente a la mano de obra."
+                  : `El costo total de la receta difiere del costo guardado (${formatMoney(savedDirectCost)} vs ${formatMoney(currentMaterialsCost)}).`}
               </div>
             ) : (
               <div className="space-y-2.5">
@@ -212,32 +309,39 @@ export const PriceReviewModal: React.FC<PriceReviewModalProps> = ({
             </span>
             <div className="grid grid-cols-3 gap-2 text-center">
               <div className="p-2 bg-white rounded-xl border border-neutral-200/60">
-                <span className="text-[10px] text-neutral-400 block">Costo Guardado</span>
+                <span className="text-[10px] text-neutral-400 block">Costo Total Guardado</span>
                 <span className="font-bold text-neutral-800 text-xs">
-                  {formatMoney(savedDirectCost)}
+                  {formatMoney(savedTotalCost)}
                 </span>
               </div>
               <div className="p-2 bg-white rounded-xl border border-neutral-200/60">
-                <span className="text-[10px] text-neutral-400 block">Nuevo Costo</span>
+                <span className="text-[10px] text-neutral-400 block">Nuevo Costo Total</span>
                 <span className="font-bold text-amber-800 text-xs">
-                  {formatMoney(currentMaterialsCost)}
+                  {formatMoney(newTotalCost)}
                 </span>
               </div>
               <div className="p-2 bg-amber-100/50 rounded-xl border border-amber-200/60">
-                <span className="text-[10px] text-amber-700 block">Diferencia</span>
+                <span className="text-[10px] text-amber-700 block">Diferencia Total</span>
                 <span className="font-extrabold text-amber-900 text-xs">
-                  {costDiff > 0 ? "+" : ""}
-                  {formatMoney(costDiff)}
+                  {totalCostDiff > 0 ? "+" : ""}
+                  {formatMoney(totalCostDiff)}
                 </span>
               </div>
             </div>
 
-            {product.include_labor && (
-              <div className="text-[11px] text-neutral-500 flex justify-between pt-1 border-t border-neutral-200/40">
-                <span>Costo productivo (mano de obra):</span>
-                <span>{formatMoney(totalLaborCost)}</span>
+            {/* Desglose de materiales y mano de obra */}
+            <div className="pt-2 border-t border-neutral-200/50 space-y-1 text-[11px] text-neutral-500">
+              <div className="flex justify-between">
+                <span>Materiales (insumos + componentes):</span>
+                <span>{formatMoney(savedDirectCost)} → <strong className="text-neutral-800">{formatMoney(currentMaterialsCost)}</strong></span>
               </div>
-            )}
+              {product.include_labor && (
+                <div className="flex justify-between">
+                  <span>Mano de obra productiva ({product.work_time_minutes || 0} min):</span>
+                  <span>{formatMoney(savedLaborCost)} → <strong className="text-neutral-800">{formatMoney(totalLaborCost)}</strong></span>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Simulación de Precios de Venta por Canal */}
